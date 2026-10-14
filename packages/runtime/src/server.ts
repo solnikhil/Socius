@@ -22,6 +22,7 @@ import {
   type SkillManifest,
 } from "@socius/contracts";
 import type {
+  ActionRecord,
   Approval,
   BotDraft,
   BotLayout,
@@ -165,8 +166,17 @@ export async function startRuntime(options: RuntimeOptions) {
   // Running task id → its controller and the provider connection it uses.
   const active = new Map<
     string,
-    { controller: AbortController; connections: Set<string> }
+    {
+      controller: AbortController;
+      connections: Set<string>;
+      /** Streams an event to the chat that started the task. */
+      send?: (event: unknown) => void;
+      /** Pauses the task deadline while the user decides; returns a release. */
+      hold?: () => () => void;
+    }
   >();
+  /** How long a bot waits for the user to review a change before moving on. */
+  const APPROVAL_WAIT_MS = 15 * 60_000;
   const providers = new ProviderService(
     store,
     options.secretBox,
@@ -246,6 +256,9 @@ export async function startRuntime(options: RuntimeOptions) {
         tools.push({
           name: action.toolName,
           description: action.description,
+          app:
+            packages.installedRelease(connector.id)?.manifest.name ??
+            connector.id,
           inputSchema: action.params,
           execute: async (args) => {
             const current = store.get<Installation>(
@@ -263,18 +276,65 @@ export async function startRuntime(options: RuntimeOptions) {
               action: action.id,
               arguments: args,
             });
-            return result.status === "completed"
-              ? { summary: result.summary, untrustedData: result.data }
-              : {
-                  status: "awaiting-approval",
-                  summary: result.summary,
-                  note: "The user must approve this exact change in Socius. It has not happened yet.",
-                };
+            if (result.status === "completed")
+              return { summary: result.summary, untrustedData: result.data };
+            // Wait for the user's review, then report what actually happened.
+            const task = active.get(actor.taskId);
+            task?.send?.({ type: "approval", actionId: result.actionId });
+            const release = task?.hold?.();
+            let decided: ActionRecord | null;
+            try {
+              decided = await broker.waitForDecision(
+                result.actionId,
+                task?.controller.signal ?? AbortSignal.abort(),
+                APPROVAL_WAIT_MS,
+              );
+            } finally {
+              release?.();
+            }
+            return decisionResult(result.summary, decided);
           },
         });
       }
     }
     return tools;
+  }
+  /** What a bot learns once the user has reviewed its proposed change. */
+  function decisionResult(summary: string, a: ActionRecord | null) {
+    if (!a || a.state === "pending")
+      return {
+        status: "still-waiting",
+        summary,
+        note: "The user has not reviewed this change yet. It has not happened. Tell them it is waiting for their approval in this chat.",
+      };
+    if (a.state === "succeeded")
+      return {
+        status: "done",
+        summary: a.result?.summary ?? summary,
+        ...(a.result?.url ? { url: a.result.url } : {}),
+      };
+    if (a.state === "denied")
+      return a.feedback
+        ? {
+            status: "declined-with-feedback",
+            summary,
+            userFeedback: a.feedback,
+            note: "The user did not approve this change and replied instead. Follow their reply; if they want a revised change, propose it again.",
+          }
+        : {
+            status: "declined",
+            summary,
+            note: "The user declined. Nothing happened. Do not propose it again unless they ask.",
+          };
+    return {
+      status: a.state === "unknown" ? "outcome-unclear" : "not-done",
+      summary,
+      error: a.error,
+      note:
+        a.state === "unknown"
+          ? "It is unclear whether the change happened. Ask the user to check the app before trying again."
+          : "The change did not happen. Explain briefly and offer to adjust it.",
+    };
   }
   /** Skills (loaded on demand) and connector tools for one bot's model call. */
   function packageTools(
@@ -499,10 +559,6 @@ export async function startRuntime(options: RuntimeOptions) {
       store.event("task.started", `Task started for ${label}.`);
     });
     const controller = new AbortController();
-    active.set(task.id, {
-      controller,
-      connections: new Set(task.model ? [task.model.connectionId] : []),
-    });
     res.writeHead(200, {
       "Content-Type": "application/x-ndjson",
       "Cache-Control": "no-store",
@@ -512,10 +568,36 @@ export async function startRuntime(options: RuntimeOptions) {
     };
     send({ type: "started", taskId: task.id });
     let timedOut = false;
-    const timeout = setTimeout(() => {
+    const expire = () => {
       timedOut = true;
       controller.abort();
-    }, timeoutMs);
+    };
+    let deadline = Date.now() + timeoutMs,
+      timeout = setTimeout(expire, timeoutMs),
+      holds = 0,
+      remaining = timeoutMs;
+    // Time spent waiting on the user's review never counts against the task.
+    const hold = () => {
+      if (holds++ === 0) {
+        clearTimeout(timeout);
+        remaining = Math.max(deadline - Date.now(), 60_000);
+      }
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        if (--holds === 0) {
+          deadline = Date.now() + remaining;
+          timeout = setTimeout(expire, remaining);
+        }
+      };
+    };
+    active.set(task.id, {
+      controller,
+      connections: new Set(task.model ? [task.model.connectionId] : []),
+      send,
+      hold,
+    });
     // Browser disconnect does not stop work; it remains visible after reload.
     try {
       const messages = await work(controller.signal, send);
@@ -1349,6 +1431,10 @@ export async function startRuntime(options: RuntimeOptions) {
               id: uuid,
               digest: z.string().length(64),
               approve: z.boolean(),
+              feedback: z.string().trim().min(1).max(2000).optional(),
+            })
+            .refine((v) => !(v.approve && v.feedback), {
+              message: "Feedback replaces approval",
             })
             .parse(await body(req));
           json(res, 200, await broker.resolve(input));

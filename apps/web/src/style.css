@@ -3491,3 +3491,165 @@ dialog.create-bot,
     transform: none;
   }
 }
+
+/* ---------- Connected-app change review ---------- */
+.decision-card {
+  width: min(560px, 78%);
+  margin-bottom: 24px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bubble);
+  animation: stream-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.decision-card:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.decision-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.decision-head .app-icon {
+  margin-top: 1px;
+}
+.decision-head strong {
+  font-weight: 600;
+}
+.decision-details {
+  margin: 10px 0 2px 32px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.decision-field {
+  margin: 0 0 4px;
+}
+.decision-field span {
+  color: var(--text-3);
+}
+.decision-prose {
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-2);
+}
+.decision-prose .markdown > :first-child {
+  margin-top: 0;
+}
+.decision-prose .markdown > :last-child {
+  margin-bottom: 0;
+}
+.decision-prose.clamped {
+  max-height: 7.5em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent);
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.decision-details .text-button {
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+.decision-options {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.decision-options button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  max-width: none;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 14.5px;
+  text-align: left;
+  transition: background 0.12s;
+}
+.decision-options button + button {
+  border-top: 1px solid var(--border);
+}
+.decision-options button:hover:not(:disabled),
+.decision-options button:focus-visible {
+  background: var(--surface);
+}
+.decision-options kbd {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: 600 11.5px/1 inherit;
+}
+.decision-reply {
+  position: relative;
+  margin-top: 10px;
+}
+.decision-reply input {
+  width: 100%;
+  padding: 11px 44px 11px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: transparent;
+  font-size: 14.5px;
+}
+.decision-reply .icon {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--solid);
+  color: var(--solid-text);
+}
+.decision-meta {
+  margin: 8px 2px 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.decision-outcome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0 32px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.state-succeeded .decision-outcome svg {
+  color: var(--success);
+}
+.decision-outcome a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+}
+.decision-error {
+  margin: 6px 0 0 32px;
+  color: var(--danger);
+  font-size: 13px;
+}
+.decision-card .modal-actions {
+  margin-top: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .decision-card {
+    animation: none;
+  }
+}

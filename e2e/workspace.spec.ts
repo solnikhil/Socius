@@ -536,25 +536,37 @@ test("connect Notion, read, approve one exact page and see the result", async ({
     .getByRole("textbox", { name: "Message Socius" })
     .fill("Make a brief from my Q3 planning page");
   await page.getByRole("button", { name: "Send message" }).click();
+  // The reply pauses on a review card instead of claiming the change is made.
+  await expect(page.getByText("Socius is waiting for you")).toBeVisible();
+  const card = page.locator(".action-card");
   await expect(
-    page.getByText("From Q3 planning: ship connectors."),
+    card.getByText("Create Notion page “Q3 brief”?", { exact: true }),
   ).toBeVisible();
-  const card = page
-    .locator(".action-card")
-    .filter({ hasText: "Review a change" });
-  await expect(card.getByText("Create Notion page “Q3 brief”")).toBeVisible();
-  await expect(card.getByText("## Findings")).toBeVisible();
+  // Only what matters: the page body reads as text; IDs and package details stay hidden.
+  await expect(card.getByText("Findings", { exact: true })).toBeVisible();
+  await expect(card.getByText("## Findings")).toHaveCount(0);
+  await expect(card.getByText(/11111111-1111/)).toHaveCount(0);
+  await expect(card.getByText(/socius\/notion|documents\.write/)).toHaveCount(
+    0,
+  );
+  await expect(card).toBeFocused();
   await page.screenshot({
     path: "test-results/socius-action-review.png",
     animations: "disabled",
   });
-  await card.getByRole("button", { name: "Approve this change" }).click();
-  const done = page.locator(".action-card").filter({ hasText: "Change made" });
-  await expect(done.getByText("Created Notion page “Q3 brief”.")).toBeVisible();
-  await expect(done.getByRole("link", { name: "Open" })).toHaveAttribute(
+  // "A" answers from the keyboard; the same reply then reports the outcome.
+  await page.keyboard.press("a");
+  await expect(
+    page.getByText("Done, the “Q3 brief” page is in Notion."),
+  ).toBeVisible();
+  await expect(
+    card.getByText(/Done · Created Notion page “Q3 brief”/),
+  ).toBeVisible();
+  await expect(card.getByRole("link", { name: "Open" })).toHaveAttribute(
     "href",
     /notion\.so/,
   );
+  await expect(page.getByRole("button", { name: "Stop task" })).toHaveCount(0);
   await page.screenshot({
     path: "test-results/socius-action-done.png",
     animations: "disabled",
