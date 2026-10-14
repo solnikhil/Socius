@@ -1399,41 +1399,84 @@ button.member-row:hover {
   top: 18px;
   right: 18px;
 }
+html[data-theme="dark"] .connect-apps-dialog {
+  background: #3a3a3a;
+  border-color: #5c5c5c;
+  --surface: #4c4c4c;
+  --surface-2: #585858;
+  --surface-3: #646464;
+  --input: #454545;
+  --border: #6a6a6a;
+  --border-strong: #808080;
+  --elevated: #3a3a3a;
+  --text: #f5f5f5;
+  --text-2: #dedede;
+  --text-3: #c4c4c4;
+}
 .connect-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 18px 0 28px;
+}
+.connect-head h2 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+.connect-head p {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.connect-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.connected-count {
+  height: 34px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 10px 0 12px;
+  gap: 8px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+.connected-count:hover {
+  background: var(--surface-2);
+}
+.connect-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 28px 0;
+}
+.connect-toolbar-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 50px 38px 16px;
+  gap: 12px 16px;
+  flex-wrap: wrap;
 }
-.connect-head h2 {
-  font-size: 20px;
-  font-weight: 500;
-}
-.connected-count {
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  padding: 4px 6px;
+.connect-imports {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
-.connected-count:hover {
-  background: var(--surface);
-}
-.connect-search {
-  display: flex;
-  gap: 10px;
-  padding: 0 38px;
-}
-.connect-search .search {
-  flex: 1;
-}
-.connect-search .pill {
-  height: 40px;
+.connect-imports .pill {
+  height: 34px;
+  padding: 0 12px;
   background: transparent;
   border: 1px solid var(--border);
-  gap: 8px;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
 }
-.connect-search .pill:hover {
+.connect-imports .pill:hover {
   background: var(--surface);
 }
 .search {
@@ -1463,7 +1506,7 @@ button.member-row:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 16px 38px 8px;
+  padding: 0;
 }
 .chips button {
   border: none;
@@ -1479,68 +1522,89 @@ button.member-row:hover {
 .connect-body {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 38px 30px;
+  padding: 6px 28px 28px;
 }
 .connect-apps-dialog > .error {
-  margin: 8px 38px 0;
+  margin: 8px 28px 0;
 }
 .app-section {
-  margin-top: 18px;
+  margin-top: 22px;
 }
 .app-section-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
 }
 .app-section-head h3 {
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
   margin: 0;
+}
+.app-section-head .text-button {
+  color: var(--accent);
+  font-size: 13px;
 }
 .app-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 24px;
-  margin: 0 -14px;
+  gap: 10px;
 }
 .app-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  gap: 14px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  padding: 12px 14px;
+  min-height: 76px;
+  padding: 12px 12px 12px 14px;
   border-radius: 14px;
-  transition: background 0.12s;
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
 .app-row:hover {
-  background: var(--surface);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
 }
 .app-row h4 {
-  margin: 0 0 2px;
-  font-size: 15px;
-  font-weight: 500;
+  margin: 0 0 3px;
+  font-size: 14.5px;
+  font-weight: 600;
 }
 .app-row p {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 13px;
+  line-height: 1.35;
   color: var(--text-2);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
-.app-row .pill {
-  background: transparent;
+.app-row .pill,
+.app-row .added {
+  min-width: 88px;
+  height: 32px;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--elevated);
+  padding: 0 10px;
+  font-size: 13px;
 }
 .app-row .pill:hover,
-.app-row:hover .pill {
-  background: var(--surface-2);
+.app-row .added:hover {
+  background: var(--surface-3);
+}
+.app-row .pill:disabled {
+  background: transparent;
+  color: var(--text-3);
 }
 .added {
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  padding: 6px 8px;
+  color: var(--text);
   gap: 5px;
 }
 .added svg {
@@ -2720,6 +2784,15 @@ h4.with-mark {
 }
 
 @media (max-width: 720px) {
+  .app-grid {
+    grid-template-columns: 1fr;
+  }
+  .connect-head,
+  .connect-toolbar,
+  .connect-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
   .kanban {
     grid-template-columns: 1fr;
     padding: 12px 16px;
@@ -3073,17 +3146,13 @@ h4.with-mark {
   padding-left: 18px;
   color: var(--text-2);
 }
-.connect-search {
-  flex-wrap: wrap;
-}
 .connect-notice {
-  margin: 8px 38px 0;
+  margin: 8px 28px 0;
 }
 .registry-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0 -14px;
+  gap: 10px;
 }
 .registry-row {
   display: grid;
@@ -3092,9 +3161,12 @@ h4.with-mark {
   align-items: center;
   padding: 12px 14px;
   border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
 .registry-row:hover {
-  background: var(--surface);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
 }
 .registry-row h4 {
   margin: 0 0 2px;

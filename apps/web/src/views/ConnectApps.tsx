@@ -16,12 +16,7 @@ import {
 import type { Manifest } from "@socius/contracts";
 import type { RegistryPage, Snapshot } from "@socius/contracts/app";
 import { api } from "../api.js";
-import {
-  Avatar,
-  ErrorNote,
-  MAIN_BOT_TEMPLATE,
-  useDialogMotion,
-} from "../components/chrome.js";
+import { Avatar, ErrorNote, useDialogMotion } from "../components/chrome.js";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AppIcon } from "../components/AppIcon.js";
 import { connectorStatus, PackageDetail } from "./PackageDetail.js";
@@ -227,27 +222,34 @@ export function ConnectApps({
     items: Manifest[],
     more?: Filter,
     planned: readonly PlannedConnector[] = [],
-  ) =>
-    (items.length > 0 || planned.length > 0) && (
-      <section className="app-section" key={title}>
-        <div className="app-section-head">
-          <h3>{title}</h3>
-          {more && filter === "all" && (
-            <button className="text-button" onClick={() => setFilter(more)}>
-              View all
-            </button>
-          )}
-        </div>
-        <div className="app-grid">
-          {items.map(row)}
-          {planned.map(plannedRow)}
-        </div>
-      </section>
+  ) => {
+    // The All view previews each category. View all opens the full list.
+    const capped = filter === "all" && !!more;
+    const shownItems = capped ? items.slice(0, 4) : items;
+    const shownPlanned = capped
+      ? planned.slice(0, Math.max(0, 4 - shownItems.length))
+      : planned;
+    const overflow =
+      items.length + planned.length > shownItems.length + shownPlanned.length;
+    return (
+      (shownItems.length > 0 || shownPlanned.length > 0) && (
+        <section className="app-section" key={title}>
+          <div className="app-section-head">
+            <h3>{title}</h3>
+            {overflow && more && (
+              <button className="text-button" onClick={() => setFilter(more)}>
+                View all
+              </button>
+            )}
+          </div>
+          <div className="app-grid">
+            {shownItems.map(row)}
+            {shownPlanned.map(plannedRow)}
+          </div>
+        </section>
+      )
     );
-  const recommended = matches.filter(
-    (p) =>
-      !installed(p) && p.kind !== "connector" && p.id !== MAIN_BOT_TEMPLATE,
-  );
+  };
   const visible =
     filter === "added"
       ? added.filter((p) => matches.includes(p))
@@ -264,29 +266,34 @@ export function ConnectApps({
           if (detail) e.preventDefault();
         }}
       >
-      <button
-        className="icon ghost dialog-close"
-        aria-label="Close dialog"
-        onClick={motion.requestClose}
-      >
-        <X size={18} />
-      </button>
       <header className="connect-head">
-        <DialogTitle id="connect-apps-title">Connect Apps</DialogTitle>
-        <button
-          className="connected-count"
-          onClick={() => setFilter(filter === "added" ? "all" : "added")}
-        >
-          <span className="app-stack">
-            {added.slice(0, 4).map((p) => (
-              <AppIcon key={p.id} item={p} size={20} />
-            ))}
-          </span>
-          {added.length} connected
-          <ChevronRight size={14} />
-        </button>
+        <div>
+          <DialogTitle id="connect-apps-title">Connect Apps</DialogTitle>
+          <p>Skills, connectors, and bot templates for this workspace.</p>
+        </div>
+        <div className="connect-head-actions">
+          <button
+            className="connected-count"
+            onClick={() => setFilter(filter === "added" ? "all" : "added")}
+          >
+            <span className="app-stack">
+              {added.slice(0, 4).map((p) => (
+                <AppIcon key={p.id} item={p} size={18} />
+              ))}
+            </span>
+            {added.length} connected
+            <ChevronRight size={14} />
+          </button>
+          <button
+            className="icon ghost"
+            aria-label="Close dialog"
+            onClick={motion.requestClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
       </header>
-      <div className="connect-search">
+      <div className="connect-toolbar">
         <label className="search">
           <Search size={16} />
           <input
@@ -300,19 +307,36 @@ export function ConnectApps({
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
-        <button className="pill" onClick={() => folder.current?.click()}>
-          <FolderUp size={15} />
-          Import skill
-        </button>
-        <button className="pill" onClick={() => template.current?.click()}>
-          <FileUp size={15} />
-          Import template
-        </button>
-        <button className="pill" onClick={() => setFilter("bot")}>
-          <Avatar name="Socius" main size={18} />
-          Bot templates
-          <ArrowUpRight size={14} />
-        </button>
+        <div className="connect-toolbar-row">
+          <div className="chips" role="tablist" aria-label="Categories">
+            {filters.map((f) => (
+              <button
+                key={f.value}
+                role="tab"
+                aria-selected={filter === f.value}
+                className={filter === f.value ? "selected" : ""}
+                onClick={() => setFilter(f.value)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="connect-imports">
+            <button className="pill" onClick={() => folder.current?.click()}>
+              <FolderUp size={15} />
+              Import skill
+            </button>
+            <button className="pill" onClick={() => template.current?.click()}>
+              <FileUp size={15} />
+              Import template
+            </button>
+            <button className="pill" onClick={() => setFilter("bot")}>
+              <Avatar name="Socius" main size={18} />
+              Bot templates
+              <ArrowUpRight size={14} />
+            </button>
+          </div>
+        </div>
         <input
           ref={folder}
           type="file"
@@ -330,19 +354,6 @@ export function ConnectApps({
           aria-label="Bot template file"
           onChange={(e) => void importTemplate(e.target.files)}
         />
-      </div>
-      <div className="chips" role="tablist" aria-label="Categories">
-        {filters.map((f) => (
-          <button
-            key={f.value}
-            role="tab"
-            aria-selected={filter === f.value}
-            className={filter === f.value ? "selected" : ""}
-            onClick={() => setFilter(f.value)}
-          >
-            {f.label}
-          </button>
-        ))}
       </div>
       <ErrorNote error={detail ? "" : error} />
       {notice && !detail && (
@@ -363,17 +374,14 @@ export function ConnectApps({
         ) : (
           <>
             {filter === "all" ? (
-              <>
-                {!q && section("Recommended for you", recommended.slice(0, 6))}
-                {(["skill", "connector", "bot"] as const).map((kind) =>
-                  section(
-                    sectionTitle[kind],
-                    matches.filter((p) => p.kind === kind),
-                    kind,
-                    kind === "connector" ? plannedMatches : [],
-                  ),
-                )}
-              </>
+              (["skill", "connector", "bot"] as const).map((kind) =>
+                section(
+                  sectionTitle[kind],
+                  matches.filter((p) => p.kind === kind),
+                  kind,
+                  kind === "connector" ? plannedMatches : [],
+                ),
+              )
             ) : filter === "added" ? (
               section("Connected", visible)
             ) : (

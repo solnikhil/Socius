@@ -7,7 +7,7 @@ Owner: **You**. These tasks are separate from teammates' backend implementation.
 - [ ] Refine layout, spacing, typography, light/dark colors, avatars and navigation consistency.
 - [ ] Polish the chat composer, streamed replies, code/Markdown presentation, copy/export and attachment states.
 - [ ] Refine New Chat and custom-bot creation/editing; clarify the main bot versus specialists.
-- [ ] Refine Connect Apps search, skill/connector/bot categories, detail views and install/setup states.
+- [ ] Refine Connect Apps detail views and install/setup states. The catalog is a card grid: search on its own line, category chips with import actions beside them, and each package listed once under its kind.
 - [x] Settings is a floating dialog (General, Models, Providers, Privacy & data); `SettingsView.tsx` was replaced by `views/settings`. OpenRouter is now a first-class provider, superseding Luna's hint.
 - [x] Dialogs, menus, chat details, and shell tooltips use shadcn/ui (Radix plus `tw-animate-css`). Colors stay on the Socius tokens. Form controls and page layout stay in `style.css`. A bot's model is chosen in its name menu. The composer has no model chip.
 - [x] Multi-provider connections, model discovery/testing, default and per-bot model picker, classified setup errors with a Settings action (branch `model-enhancements`).
