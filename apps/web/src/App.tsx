@@ -384,13 +384,6 @@ export function App() {
                       : "Create a bot or add one from Connect Apps."}
                   </small>
                 )}
-                <button
-                  className="group-link"
-                  onClick={() => setEditingCategory({})}
-                >
-                  New category
-                  <Plus size={14} />
-                </button>
               </>
             )}
           </section>

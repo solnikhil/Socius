@@ -83,4 +83,4 @@ POST   /api/categories/move    {"botId", "categoryId" | null}    → 200 (null r
 DELETE /api/categories         {"id"}                            → 200 (bots are kept)
 ```
 
-Everything is created from the `To:` palette that the top **+** opens: pick a bot or group to chat, or **Create new bot**, **Create group chat** or **Create category**. Section headings only fold; **Unassigned** also ends with a **New category** link. Right-click a category's heading to edit or delete it, and right-click a bot to move it.
+Everything is created from the `To:` palette that the top **+** opens: pick a bot or group to chat, or **Create new bot**, **Create group chat** or **Create category**. Section headings only fold. Right-click a category's heading to edit or delete it, and right-click a bot to move it.

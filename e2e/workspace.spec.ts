@@ -261,12 +261,10 @@ test("configure a model, create bots manually and through Socius, install skills
     unassigned.getByRole("button", { name: /Planner/ }),
   ).toBeVisible();
   await expect(page.getByPlaceholder("Search bots")).toHaveCount(0);
-  // Unassigned offers New category; the + palette does too.
-  await unassigned.getByRole("button", { name: "New category" }).click();
+  // Categories are created only from the + palette.
   await expect(
-    page.getByRole("heading", { name: "New category" }),
-  ).toBeVisible();
-  await page.keyboard.press("Escape");
+    unassigned.getByRole("button", { name: "New category" }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Create", exact: true })
     .first()
