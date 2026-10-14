@@ -306,7 +306,7 @@ export class Store {
       for (const g of this.all<GroupChat>("group")) if (g.memberIds.includes(id)) this.put("group", g.id, { ...g, memberIds: g.memberIds.filter((b) => b !== id) });
       for (const m of this.all<Message>("message")) if (m.botId === id && !m.groupId) this.delete("message", m.id);
       for (const a of this.all<Approval>("approval")) if (a.botId === id && a.state === "pending") this.delete("approval", a.id);
-      for (const kind of ["dream-run", "dream-processed", "dream-suppressed", "dream-last", "skill-assignment", "skill-review"]) {
+      for (const kind of ["dream-run", "dream-processed", "dream-suppressed", "dream-last", "skill-assignment", "skill-review", "connector-grant"]) {
         for (const row of this.db.prepare("SELECT id, data FROM records WHERE kind=?").all(kind)) {
           if (JSON.parse(row.data as string).botId === id) this.delete(kind, row.id as string);
         }

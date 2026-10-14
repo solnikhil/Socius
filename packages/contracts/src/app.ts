@@ -286,7 +286,13 @@ export interface ActionRecord {
   createdAt: string;
   updatedAt: string;
 }
+export interface ConnectorGrant {
+  botId: string;
+  connectorId: string;
+  capability: Capability;
+}
 export interface Snapshot {
+  connectorGrants: ConnectorGrant[];
   dreaming: DreamingStatus;
   bots: BotInstance[];
   groups: GroupChat[];

@@ -3,9 +3,22 @@ import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startRuntime } from "../packages/runtime/src/server.js";
+import { z } from "zod";
 import { startNotionFixture } from "../packages/connectors/test/fixture.js";
 const dir = await mkdtemp(join(tmpdir(), "socius-e2e-"));
 const notion = await startNotionFixture();
+// Linear's reviewed tool names over the same real OAuth/PKCE + MCP fixture.
+const linear = await startNotionFixture({
+  tools: {
+    list_issues: { query: z.string(), limit: z.number() },
+    get_issue: { id: z.string() },
+    save_issue: {
+      team: z.string(),
+      title: z.string(),
+      description: z.string(),
+    },
+  },
+});
 const PARENT = "11111111-1111-1111-1111-111111111111";
 const registryPage = {
   servers: [
@@ -45,7 +58,10 @@ const runtime = await startRuntime({
     encrypt: async (v) => `sealed:${Buffer.from(v).toString("base64")}`,
     decrypt: async (v) => Buffer.from(v.slice(7), "base64").toString(),
   },
-  connectorEndpoints: { "socius/notion": `${notion.url}/mcp` },
+  connectorEndpoints: {
+    "socius/notion": `${notion.url}/mcp`,
+    "socius/linear": `${linear.url}/mcp`,
+  },
   registry: {
     fetch: (async () =>
       new Response(JSON.stringify(registryPage))) as unknown as typeof fetch,
@@ -161,6 +177,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
       void runtime
         .close()
         .then(() => notion.close())
+        .then(() => linear.close())
         .then(() => rm(dir, { recursive: true, force: true }))
         .then(() => process.exit(0)),
   );

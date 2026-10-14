@@ -1,3 +1,4 @@
+import { linear } from "./linear.js";
 import { z } from "zod";
 import type { Capability, ConnectorManifest } from "@socius/contracts";
 import { ConnectorError, type McpToolClient } from "./mcp.js";
@@ -39,6 +40,13 @@ export interface ConnectorAction<
 export interface ReviewedConnector {
   id: string;
   serverUrl: string;
+  accountLabel?: string;
+  oauth?: {
+    scopes: string[];
+    clientIdEnv?: string;
+    clientSecretEnv?: string;
+    authorizationParams?: Record<string, string>;
+  };
   /** Upstream tools and input properties the reviewed actions depend on. */
   requiredTools: Record<string, string[]>;
   actions: ConnectorAction[];
@@ -229,7 +237,7 @@ export const notion: ReviewedConnector = {
   },
   actions: [search, fetchPage, createPage] as unknown as ConnectorAction[],
 };
-export const reviewedConnectors: ReviewedConnector[] = [notion];
+export const reviewedConnectors: ReviewedConnector[] = [notion, linear];
 export const reviewedConnector = (id: string) =>
   reviewedConnectors.find((c) => c.id === id);
 
