@@ -11,6 +11,7 @@ import type { BotInstance } from "@socius/contracts";
 import type { Memory, BotDraft } from "@socius/contracts/app";
 import type { ModelRef } from "@socius/contracts/providers";
 import { ProviderFailure, failureMessage } from "./providers/errors.js";
+import { hostTimeZone, isTimeZone, timeContext, timeFacts } from "./clock.js";
 
 export interface ModelRequest {
   /** AI SDK language model built from the selected provider connection. */
@@ -54,6 +55,10 @@ export interface ModelRequest {
   askMember?: (member: string, request: string) => Promise<string>;
   signal: AbortSignal;
   fetch?: typeof globalThis.fetch;
+  /** Clock for time facts; tests inject a fixed one. Defaults to the host clock. */
+  now?: () => Date;
+  /** IANA zone for time facts. Defaults to the host's zone. */
+  timeZone?: string;
 }
 /** Proposals that wait for the user's review card and report the outcome. */
 export interface Orchestration {
@@ -118,6 +123,18 @@ export const runModel: ModelRunner = async (request, onText) => {
   const { bot } = request;
   const preloaded = request.preloadedSkills ?? [];
   const tools: ToolSet = {};
+  const now = request.now ?? (() => new Date());
+  const zone = request.timeZone ?? hostTimeZone();
+  if (request.tools)
+    tools.getCurrentTime = tool({
+      description:
+        'Read the exact current date and time from this computer\'s clock, optionally in another IANA time zone such as "Asia/Kolkata" or "America/New_York". Read-only.',
+      inputSchema: z.object({ timeZone: z.string().max(64).optional() }),
+      execute: ({ timeZone }) =>
+        timeZone && !isTimeZone(timeZone)
+          ? { error: `Unknown time zone: ${timeZone}` }
+          : timeFacts(now(), timeZone ?? zone),
+    });
   if (
     request.tools &&
     request.proposeBot &&
@@ -281,6 +298,7 @@ export const runModel: ModelRunner = async (request, onText) => {
     instructions: [
       bot.instructions,
       request.briefing ?? DEFAULT_FRAMING,
+      timeContext(now(), zone, request.tools),
       CHAT_STYLE,
       ...(request.feedback ? [request.feedback] : []),
       ...(request.tools
