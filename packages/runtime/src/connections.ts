@@ -199,7 +199,15 @@ export class ConnectionService {
   private redirect(connector?: ReviewedConnector) {
     return `${connector?.oauth?.clientIdEnv ? this.callbackOrigin : this.origin()}/oauth/callback`;
   }
-  private oauthSettings(connector: ReviewedConnector) {
+  private oauthSettings(
+    connector: ReviewedConnector,
+  ):
+    | {
+        scopes: string[];
+        client?: OAuthClientInformationMixed;
+        authorizationParams?: Record<string, string>;
+      }
+    | undefined {
     const env = this.options.env ?? process.env;
     const config = connector.oauth;
     if (!config) return undefined;
@@ -621,9 +629,11 @@ export class ConnectionService {
       const metadata = state.discoveryState?.authorizationServerMetadata as
         { revocation_endpoint?: string } | undefined;
       const token = state.tokens?.refresh_token ?? state.tokens?.access_token;
-      const clientId = (
-        state.clientInformation as { client_id?: string } | undefined
-      )?.client_id;
+      const clientId =
+        (state.clientInformation as { client_id?: string } | undefined)
+          ?.client_id ??
+        this.oauthSettings(this.connector(connection.connectorId))?.client
+          ?.client_id;
       if (metadata?.revocation_endpoint && token && clientId) {
         const response = await (this.options.fetch ?? fetch)(
           metadata.revocation_endpoint,

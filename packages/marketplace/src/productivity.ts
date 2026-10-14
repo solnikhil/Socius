@@ -77,3 +77,30 @@ export const githubManifest = productivityConnector(
     },
   ],
 );
+
+export const gmailManifest = productivityConnector(
+  "gmail",
+  "Gmail",
+  "https://gmailmcp.googleapis.com/mcp/v1",
+  "Requires Google Workspace MCP Developer Preview enrollment, enabled Gmail and Gmail MCP APIs, and a Web OAuth client marked as an AI agent. Configure SOCIUS_GMAIL_CLIENT_ID and SOCIUS_GMAIL_CLIENT_SECRET with callback http://127.0.0.1:37377/oauth/callback. First release creates drafts only; messages.send is the runtime permission for draft changes. No email sending.",
+  [
+    {
+      id: "gmail.search",
+      access: "read",
+      capability: "messages.read",
+      description: "Search threads.",
+    },
+    {
+      id: "gmail.fetch-thread",
+      access: "read",
+      capability: "messages.read",
+      description: "Read a thread.",
+    },
+    {
+      id: "gmail.create-draft",
+      access: "write",
+      capability: "messages.send",
+      description: "Create a plain-text draft after approval; never send.",
+    },
+  ],
+);

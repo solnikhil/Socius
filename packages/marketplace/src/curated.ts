@@ -1,4 +1,8 @@
-import { linearManifest, githubManifest } from "./productivity.js";
+import {
+  linearManifest,
+  githubManifest,
+  gmailManifest,
+} from "./productivity.js";
 import { mainBot, type ReleaseInput } from "./index.js";
 import { botTemplates } from "./templates.js";
 import type { Manifest } from "@socius/contracts";
@@ -36,6 +40,7 @@ export const curatedCatalog: Manifest[] = [
   mainBot,
   linearManifest,
   githubManifest,
+  gmailManifest,
   summary,
   research,
   ...botTemplates,
