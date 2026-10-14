@@ -37,6 +37,8 @@ Reported checks: baseline full check passed with 19 tests; targeted runtime test
 
 ### Teammate: Teams & Boards
 
+> Direction change (2026-10-14): the user replaced boards with group chats coordinated by Socius, now on `main` ([Group chats](architecture/group-chats.md)). PR #4 (boards) is not merged. Coordinate before building further board work; reusable pieces such as budgets or recovery should extend group chats.
+
 - [ ] Persistent boards, objectives, membership and coordinator.
 - [ ] Scoped delegation, attributed contributions, task graph and consolidated result.
 - [ ] Any roster size with separately configurable concurrency/budgets.
@@ -56,7 +58,7 @@ Reported checks: baseline full check passed with 19 tests; targeted runtime test
 - [ ] Polish chat, New Chat/bot management, Connect Apps, memory and settings.
 - [ ] Review the pending OpenRouter Settings hint.
 - [ ] Refine rich response/attachment states, inline approvals and error/empty/loading behavior.
-- [ ] Build board/roster/shared-chat/task/result screens against agreed DTOs.
+- [x] Group chat screens: create/edit/delete, roster popover, attributed replies (replaces board screens).
 - [ ] Accessibility, responsive behavior, visual consistency and final workflow review.
 
 ### Testing / integration next

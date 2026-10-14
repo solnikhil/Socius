@@ -131,6 +131,65 @@ test("configure a model, create bots manually and through Socius, install skills
     path: "test-results/socius-memory.png",
     fullPage: true,
   });
+  await page.getByRole("button", { name: "New chat" }).click();
+  await page.keyboard.press("ControlOrMeta+2");
+  await expect(
+    page.getByRole("heading", { name: "New group chat" }),
+  ).toBeVisible();
+  await page.getByRole("checkbox", { name: /Planner/ }).click();
+  await page.getByRole("checkbox", { name: /College assistant/ }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Launch crew");
+  await page.screenshot({
+    path: "test-results/socius-new-group.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Start group chat" }).click();
+  await expect(
+    page.getByRole("heading", { name: "What shall we work on together?" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Launch crew Socius, Planner/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Message Launch crew" })
+    .fill("Plan our launch");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("Planner here. 1. Research")).toBeVisible();
+  await expect(page.getByText("Thanks, Planner.")).toBeVisible();
+  await expect(page.locator(".speaker")).toHaveText(["Planner", "Socius"]);
+  await page.screenshot({
+    path: "test-results/socius-group-chat-light.png",
+    animations: "disabled",
+  });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("button", { name: "Launch crew details" }).click();
+  await expect(page.getByText("3 bots · Socius coordinates")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/socius-group-chat-dark.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Edit members" }).click();
+  await page.getByRole("checkbox", { name: /College assistant/ }).click();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    page.getByRole("button", { name: /Launch crew Socius, Planner$/ }),
+  ).toBeVisible();
+  // Group messages stay out of each bot's direct chat.
+  await page
+    .getByRole("button", { name: /Planner Planning specialist/ })
+    .click();
+  await expect(page.getByText("Planner here. 1. Research")).toBeHidden();
+  await page.getByRole("button", { name: /Launch crew/ }).click();
+  await page.getByRole("button", { name: "Launch crew details" }).click();
+  await page.getByRole("button", { name: "Delete group chat" }).click();
+  await page.getByRole("button", { name: "Delete for good?" }).click();
+  await expect(
+    page.locator(".bot-row", { hasText: "Launch crew" }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole("textbox", { name: "Message Socius" }),
+  ).toBeVisible();
+  await page.emulateMedia({ colorScheme: "light" });
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Activity", level: 1 }),

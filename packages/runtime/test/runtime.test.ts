@@ -10,6 +10,7 @@ import type {
   Message,
   InstallPreview,
   Memory,
+  GroupChat,
 } from "@socius/contracts/app";
 import type { ModelRunner } from "../src/model.js";
 
@@ -331,7 +332,10 @@ test("a bounded document summary persists the attachment and streamed result", a
       await r.request(`messages?botId=${botId}`)
     ).json()) as Message[];
     assert.match(messages[0]!.content, /Support wait time rose/);
-    assert.equal(messages[1]!.content, "The report finds three practical risks.");
+    assert.equal(
+      messages[1]!.content,
+      "The report finds three practical risks.",
+    );
     const after = (await (await r.request("state")).json()) as Snapshot;
     assert.equal(after.tasks[0]!.state, "completed");
   } finally {
@@ -417,9 +421,7 @@ test("cancellation reaches a running model and leaves an explicit cancelled task
       taskId: string;
     };
     assert.equal(
-      (
-        await r.request("tasks/cancel", { id: first.taskId })
-      ).status,
+      (await r.request("tasks/cancel", { id: first.taskId })).status,
       200,
     );
     let output = "";
@@ -463,7 +465,10 @@ test("provider failures are redacted, persisted, and require an explicit new run
     assert.doesNotMatch(failedOutput, /secret-provider-response-body/);
     let state = (await (await r.request("state")).json()) as Snapshot;
     assert.equal(state.tasks[0]!.state, "failed");
-    assert.doesNotMatch(JSON.stringify(state.activity), /secret-provider-response-body/);
+    assert.doesNotMatch(
+      JSON.stringify(state.activity),
+      /secret-provider-response-body/,
+    );
     assert.equal(calls, 1);
 
     const retried = await r.request("chat", { botId, content: "try this" });
@@ -474,6 +479,142 @@ test("provider failures are redacted, persisted, and require an explicit new run
       ["failed", "completed"],
     );
     assert.equal(calls, 2);
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("group chats let the main bot ask members, who answer with their own instructions and grants", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-group-"));
+  const calls: {
+    bot: string;
+    tools: string[];
+    briefing: string;
+    prompt: string;
+  }[] = [];
+  const runner: ModelRunner = async (request, onText) => {
+    calls.push({
+      bot: request.bot.name,
+      tools: request.askMember ? ["askMember"] : [],
+      briefing: request.briefing ?? "",
+      prompt: String(request.messages.at(-1)?.content),
+    });
+    if (request.askMember) {
+      assert.match(
+        await request.askMember("nobody", "Hello?"),
+        /No member is called "nobody"/,
+      );
+      const research = await request.askMember(
+        "researcher",
+        "Find three risks.",
+      );
+      assert.equal(research, "Risks: cost, time, scope.");
+      onText("Combined plan built on the research.");
+      return "Combined plan built on the research.";
+    }
+    assert.throws(() =>
+      request.proposeBot({ name: "X", role: "Y", instructions: "Z" }),
+    );
+    onText("Risks: cost, time, scope.");
+    return "Risks: cost, time, scope.";
+  };
+  const r = await paired(dir, runner);
+  try {
+    await r.request("settings", {
+      provider: "compatible",
+      model: "fixture-model",
+      baseURL: "http://127.0.0.1:1234/v1",
+    });
+    const researcher = await (
+      await r.request("bots", {
+        name: "Researcher",
+        role: "Evidence and risks",
+        instructions: "Cite the sources you were given.",
+      })
+    ).json();
+    const writer = await (
+      await r.request("bots", {
+        name: "Writer",
+        role: "Drafts",
+        instructions: "Write plainly.",
+      })
+    ).json();
+    const state = (await (await r.request("state")).json()) as Snapshot;
+    const main = state.bots.find((b) => b.template.id === "socius/main")!;
+    assert.equal(
+      (await r.request("groups", { memberIds: [main.id, researcher.id] }))
+        .status,
+      400,
+    );
+    const created = await r.request("groups", {
+      memberIds: [researcher.id, writer.id],
+    });
+    assert.equal(created.status, 201);
+    const group = (await created.json()) as GroupChat;
+    assert.equal(group.name, "Researcher, Writer");
+
+    const stream = await (
+      await r.request("groups/chat", {
+        groupId: group.id,
+        content: "Plan the launch.",
+      })
+    ).text();
+    assert.match(stream, /"type":"done"/);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0]!.bot, "Socius");
+    assert.match(calls[0]!.briefing, /Researcher: Evidence and risks/);
+    assert.match(calls[0]!.briefing, /Cite the sources you were given/);
+    assert.equal(calls[1]!.bot, "Researcher");
+    assert.deepEqual(calls[1]!.tools, []);
+    assert.match(calls[1]!.prompt, /User: Plan the launch\./);
+    assert.match(calls[1]!.prompt, /Socius asks you:\nFind three risks\./);
+
+    const messages = (await (
+      await r.request(`groups/messages?groupId=${group.id}`)
+    ).json()) as Message[];
+    assert.deepEqual(
+      messages.map((m) => [m.role, m.botId]),
+      [
+        ["user", main.id],
+        ["assistant", researcher.id],
+        ["assistant", main.id],
+      ],
+    );
+    // Group messages never leak into the bots' direct chats.
+    assert.deepEqual(
+      await (await r.request(`messages?botId=${main.id}`)).json(),
+      [],
+    );
+    assert.deepEqual(
+      await (await r.request(`messages?botId=${researcher.id}`)).json(),
+      [],
+    );
+
+    // The coordinator sees members' replies attributed in its next turn.
+    await (
+      await r.request("groups/chat", { groupId: group.id, content: "Thanks" })
+    ).text();
+    assert.match(calls[2]!.prompt, /Thanks/);
+
+    const renamed = await r.request("groups/update", {
+      id: group.id,
+      name: "Launch",
+      memberIds: [writer.id],
+    });
+    assert.deepEqual(((await renamed.json()) as GroupChat).memberIds, [
+      writer.id,
+    ]);
+    assert.equal(
+      (await r.request("groups", { id: group.id }, "DELETE")).status,
+      200,
+    );
+    const after = (await (await r.request("state")).json()) as Snapshot;
+    assert.deepEqual(after.groups, []);
+    assert.equal(
+      (await r.request(`groups/messages?groupId=${group.id}`)).status,
+      404,
+    );
   } finally {
     await r.close();
     await rm(dir, { recursive: true, force: true });
