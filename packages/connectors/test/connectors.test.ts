@@ -156,3 +156,15 @@ test("failures are classified by what they prove about the remote effect", () =>
   );
   assert.equal(classifyError(new TypeError("fetch failed")).kind, "ambiguous");
 });
+
+test("a refused write shows the service's own reason as clipped plain text", async () => {
+  const { refusal } = await import("../src/actions.js");
+  assert.equal(
+    refusal("Team “ENG” not found.\u0007\n Use a team ID."),
+    "The service refused: Team “ENG” not found. Use a team ID.",
+  );
+  assert.equal(refusal("  \n"), "The service rejected this reviewed action.");
+  const long = refusal("x".repeat(500));
+  assert.ok(long.endsWith("…"));
+  assert.ok(long.length < 330);
+});

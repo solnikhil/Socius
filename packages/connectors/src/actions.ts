@@ -28,10 +28,7 @@ export function reviewedAction<A extends Record<string, unknown>>(options: {
         options.arguments ? options.arguments(args as A) : args,
       );
       if (result.isError)
-        throw new ConnectorError(
-          "rejected",
-          "The service rejected this reviewed action.",
-        );
+        throw new ConnectorError("rejected", refusal(result.text));
       // Remote text is data; limit what enters chat. Writes without provider-supported
       // reconciliation remain unknown after ambiguous outcomes and are never auto-replayed.
       return {
@@ -45,6 +42,19 @@ export function reviewedAction<A extends Record<string, unknown>>(options: {
       };
     },
   };
+}
+/**
+ * The service's own reason for refusing, so the user can see why. It is
+ * remote text: control characters are stripped and it is clipped, and the
+ * interface renders it as plain text.
+ */
+export function refusal(text: string): string {
+  const reason = text
+    .replace(/[\p{Cc}\p{Cf}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!reason) return "The service rejected this reviewed action.";
+  return `The service refused: ${reason.length > 300 ? `${reason.slice(0, 300)}…` : reason}`;
 }
 export const reference = z
   .string()
