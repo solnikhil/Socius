@@ -298,6 +298,7 @@ export class ActionBroker {
       };
       const abort = () => done(null);
       const timer = setTimeout(() => done(null), maxMs);
+      timer.unref?.();
       this.listeners.add(listener);
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
