@@ -2516,6 +2516,20 @@ h4.with-mark {
 }
 
 /* ---------- Context menus ---------- */
+/* Out of the shell grid, so opening a menu does not add a blank row. */
+.menu-layer {
+  position: fixed;
+  inset: 0 auto auto 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 40;
+}
+.menu-layer .popover,
+.menu-layer dialog {
+  pointer-events: auto;
+}
 .context-menu {
   position: fixed;
   width: 260px;

@@ -97,7 +97,7 @@ export function BotMenu({
     }
   }
   return (
-    <div ref={ref}>
+    <div ref={ref} className="menu-layer">
       {!renaming && (
         <div
           ref={menuRef}
