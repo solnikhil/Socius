@@ -1,9 +1,9 @@
 import { useCallback, useRef } from "react";
-import { Bot, MessageCirclePlus, Users } from "lucide-react";
+import { Bot, FolderPlus, MessageCirclePlus, Users } from "lucide-react";
 import { useDismiss } from "./ui.js";
 import { useMenuPlacement } from "./menu.js";
 
-/** The top-bar create menu: one place to start a chat, a group chat, a bot. */
+/** The top-bar create menu: start a chat, a group chat, a bot or a folder. */
 export function CreateMenu({
   x,
   y,
@@ -11,6 +11,7 @@ export function CreateMenu({
   onChat,
   onGroup,
   onBot,
+  onFolder,
 }: {
   x: number;
   y: number;
@@ -18,6 +19,7 @@ export function CreateMenu({
   onChat: () => void;
   onGroup: () => void;
   onBot: () => void;
+  onFolder: () => void;
 }) {
   const close = useCallback(() => onClose(), [onClose]);
   const ref = useDismiss(true, close);
@@ -47,6 +49,10 @@ export function CreateMenu({
       <button role="menuitem" onClick={pick(onBot)}>
         <Bot size={15} />
         New bot
+      </button>
+      <button role="menuitem" onClick={pick(onFolder)}>
+        <FolderPlus size={15} />
+        New folder
       </button>
     </div>
   );

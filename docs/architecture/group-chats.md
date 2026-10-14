@@ -65,3 +65,16 @@ Stream events:
 - No shared group files beyond chat attachments.
 - Model calls are not checkpointed. An interrupted reply is marked failed and must be resent.
 - Deterministic fixtures exercise the API and UI. No live-model group run has been recorded yet.
+
+## Folders are not groups
+
+Sidebar **folders** (`BotFolder` in `packages/contracts/src/app.ts`) only organise the Bots list. Bots in a folder share no context, memory or thread, and never talk to each other. A bot is in at most one folder; the main bot is never in one. Folder changes never touch group membership, and deleting a folder returns its bots to the Bots list.
+
+```
+POST   /api/folders         {"name", "botIds"?}             → 201 BotFolder (filed bots leave any other folder)
+POST   /api/folders/update  {"id", "name"?, "botIds"?}      → 200 BotFolder
+POST   /api/folders/move    {"botId", "folderId" | null}    → 200 (null removes the bot from its folder)
+DELETE /api/folders         {"id"}                          → 200 (bots are kept)
+```
+
+Create a folder from the **+** on the **Bots** heading or **New folder** in the create menu. Right-click a folder to edit or delete it, and right-click a bot to move it.

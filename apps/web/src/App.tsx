@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   BookOpen,
   ChevronRight,
+  Folder,
   Monitor,
   Moon,
   PanelLeft,
@@ -13,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { GroupChat, Snapshot } from "@socius/contracts/app";
+import type { BotFolder, GroupChat, Snapshot } from "@socius/contracts/app";
 import { api } from "./api.js";
 import {
   Avatar,
@@ -36,6 +37,8 @@ import { CreateBot } from "./views/CreateBot.js";
 import { CreateGroup } from "./views/CreateGroup.js";
 import { BotMenu } from "./components/BotMenu.js";
 import { CreateMenu } from "./components/CreateMenu.js";
+import { FolderMenu } from "./components/FolderMenu.js";
+import { EditFolder } from "./views/EditFolder.js";
 
 const FOLDED_KEY = "socius.sidebar.folded";
 // Collapsed sidebar sections are a per-device preference.
@@ -67,6 +70,14 @@ export function App() {
       id: string;
       x: number;
       y: number;
+    } | null>(null),
+    [folderMenu, setFolderMenu] = useState<{
+      id: string;
+      x: number;
+      y: number;
+    } | null>(null),
+    [editingFolder, setEditingFolder] = useState<{
+      folder?: BotFolder;
     } | null>(null),
     [apps, setApps] = useState(false),
     [collapsed, setCollapsed] = useState(false),
@@ -195,6 +206,7 @@ export function App() {
       onClick={() => open(b)}
       onContextMenu={(e) => {
         e.preventDefault();
+        setFolderMenu(null);
         setBotMenu({ id: b.id, x: e.clientX, y: e.clientY });
       }}
     >
@@ -242,6 +254,51 @@ export function App() {
       </h3>
     );
   };
+  // Folders only group rows in the sidebar; bots outside one list directly under Bots.
+  const filed = new Set(state.folders.flatMap((f) => f.botIds));
+  const loose = specialists.filter((b) => !filed.has(b.id));
+  const folderRow = (f: BotFolder) => {
+    const expanded = !folded.has(`folder:${f.id}`);
+    const bots = f.botIds
+      .map((id) => specialists.find((b) => b.id === id))
+      .filter((b): b is BotInstance => !!b);
+    return (
+      <div key={f.id} className="folder-group">
+        <button
+          className="folder-row"
+          aria-expanded={expanded}
+          onClick={() => toggleFold(`folder:${f.id}`)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setBotMenu(null);
+            setFolderMenu({ id: f.id, x: e.clientX, y: e.clientY });
+          }}
+        >
+          <ChevronRight size={13} className="folder-chevron" />
+          <Folder size={15} className="folder-icon" />
+          <strong>{f.name}</strong>
+          <span className="section-count">{bots.length}</span>
+        </button>
+        {expanded && (
+          <div
+            className="folder-members"
+            role="group"
+            aria-label={`${f.name} bots`}
+          >
+            {bots.map((b) => botRow(b, true))}
+            {!bots.length && (
+              <small className="bots-empty">
+                Right-click a bot to move it here.
+              </small>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const menuFolder = folderMenu
+    ? state.folders.find((f) => f.id === folderMenu.id)
+    : undefined;
   const menuBot = botMenu
     ? state.bots.find((b) => b.id === botMenu.id)
     : undefined;
@@ -272,7 +329,7 @@ export function App() {
         aria-label="Create"
         aria-haspopup="menu"
         aria-expanded={!!createMenu}
-        title="New chat, group chat or bot"
+        title="New chat, group chat, bot or folder"
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           setCreateMenu((m) => (m ? null : { x: r.left, y: r.bottom + 6 }));
@@ -346,10 +403,14 @@ export function App() {
               ))}
           </section>
           <section className="bot-group" aria-label="Specialist bots">
-            {sectionHeading("bots", "Bots", specialists.length)}
+            {sectionHeading("bots", "Bots", specialists.length, {
+              label: "New folder",
+              onClick: () => setEditingFolder({}),
+            })}
             {!folded.has("section:bots") && (
               <>
-                {specialists.map((b) => botRow(b, false))}
+                {state.folders.map(folderRow)}
+                {loose.map((b) => botRow(b, false))}
                 {!specialists.length && (
                   <small className="bots-empty">
                     Create a bot or add one from Connect Apps.
@@ -544,6 +605,7 @@ export function App() {
           onChat={() => setPage("new")}
           onGroup={() => setGrouping("new")}
           onBot={() => setCreating(true)}
+          onFolder={() => setEditingFolder({})}
         />
       )}
       {botMenu && menuBot && (
@@ -561,6 +623,29 @@ export function App() {
             setBotMenu(null);
           }}
           onRefresh={refresh}
+          {...(menuBot.id === main.id ? {} : { folders: state.folders })}
+        />
+      )}
+      {folderMenu && menuFolder && (
+        <FolderMenu
+          folder={menuFolder}
+          x={folderMenu.x}
+          y={folderMenu.y}
+          onClose={() => setFolderMenu(null)}
+          onEdit={() => {
+            setEditingFolder({ folder: menuFolder });
+            setFolderMenu(null);
+          }}
+          onRefresh={refresh}
+        />
+      )}
+      {editingFolder && (
+        <EditFolder
+          specialists={specialists}
+          folders={state.folders}
+          {...(editingFolder.folder ? { folder: editingFolder.folder } : {})}
+          onClose={() => setEditingFolder(null)}
+          onSaved={() => void refresh()}
         />
       )}
       {grouping && (

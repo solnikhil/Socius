@@ -10,6 +10,7 @@ import type {
   InstallPreview,
   Memory,
   GroupChat,
+  BotFolder,
 } from "@socius/contracts/app";
 import type { ModelRunner } from "../src/model.js";
 import { paired, connectModel } from "./helpers.js";
@@ -631,6 +632,71 @@ test("retired board routes cannot execute work and preserve historical records a
       })
     ).json();
     assert.equal(group.memberIds[0], created.id);
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("folders file each bot in at most one place and never touch group chats", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-folders-"));
+  const r = await paired(dir);
+  try {
+    const make = async (name: string) =>
+      (await (
+        await r.request("bots", { name, role: name, instructions: "Help." })
+      ).json()) as { id: string };
+    const a = await make("Planner"),
+      b = await make("Writer");
+    const state = async () =>
+      (await (await r.request("state")).json()) as Snapshot;
+    const main = (await state()).bots.find(
+      (x) => x.template.id === "socius/main",
+    )!;
+    assert.equal(
+      (await r.request("folders", { name: "Home", botIds: [main.id] })).status,
+      400,
+    );
+    const home = (await (
+      await r.request("folders", { name: "Home", botIds: [a.id, b.id] })
+    ).json()) as BotFolder;
+    const work = (await (
+      await r.request("folders", { name: "Work", botIds: [b.id] })
+    ).json()) as BotFolder;
+    const group = (await (
+      await r.request("groups", { memberIds: [a.id, b.id] })
+    ).json()) as GroupChat;
+    const ids = async () =>
+      Object.fromEntries(
+        (await state()).folders.map((f) => [f.name, f.botIds]),
+      );
+    // Filing Writer into Work took it out of Home.
+    assert.deepEqual(await ids(), { Home: [a.id], Work: [b.id] });
+    await r.request("folders/move", { botId: a.id, folderId: work.id });
+    assert.deepEqual(await ids(), { Home: [], Work: [b.id, a.id] });
+    await r.request("folders/move", { botId: b.id, folderId: null });
+    assert.deepEqual(await ids(), { Home: [], Work: [a.id] });
+    await r.request("folders/update", {
+      id: home.id,
+      name: "Personal",
+      botIds: [a.id],
+    });
+    assert.deepEqual(await ids(), { Personal: [a.id], Work: [] });
+    assert.equal(
+      (await r.request("folders", { id: home.id }, "DELETE")).status,
+      200,
+    );
+    const after = await state();
+    assert.deepEqual(
+      after.folders.map((f) => f.name),
+      ["Work"],
+    );
+    // Bots and group membership survive folder changes.
+    assert.equal(after.bots.length, 3);
+    assert.deepEqual(after.groups.find((g) => g.id === group.id)?.memberIds, [
+      a.id,
+      b.id,
+    ]);
   } finally {
     await r.close();
     await rm(dir, { recursive: true, force: true });

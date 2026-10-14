@@ -2637,6 +2637,49 @@ h4.with-mark {
   padding: 4px 10px 8px;
   color: var(--text-3);
 }
+/* Sidebar folders: labels for bots, not collaboration. */
+.folder-group {
+  margin-bottom: 2px;
+}
+.folder-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 4px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+}
+.folder-row:hover {
+  background: var(--surface);
+}
+.folder-row strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.folder-chevron,
+.folder-icon {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.folder-chevron {
+  transition: transform 0.12s;
+}
+.folder-row[aria-expanded="true"] .folder-chevron {
+  transform: rotate(90deg);
+}
+.folder-members {
+  margin: 0 0 6px 14px;
+  padding-left: 8px;
+  border-left: 1px solid var(--sidebar-line);
+}
 .new-member {
   margin-top: 10px;
   gap: 6px;
