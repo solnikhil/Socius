@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Boxes, Moon, Plug, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
+import {
+  Boxes,
+  Moon,
+  Plug,
+  ShieldCheck,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import type { Snapshot } from "@socius/contracts/app";
 import {
   useDialogMotion,
@@ -7,6 +14,7 @@ import {
 } from "../../components/chrome.js";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { SettingsTab } from "../../models.js";
+import { RemotePane } from "./RemotePane.js";
 import { GeneralPane } from "./GeneralPane.js";
 import { ModelsPane } from "./ModelsPane.js";
 import { ProvidersPane } from "./ProvidersPane.js";
@@ -17,6 +25,7 @@ const tabs: { id: SettingsTab; label: string; icon: typeof Plug }[] = [
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "models", label: "Models", icon: Boxes },
   { id: "providers", label: "Providers", icon: Plug },
+  { id: "remote", label: "Remote access & devices", icon: ShieldCheck },
   { id: "dreaming", label: "Dreaming", icon: Moon },
   { id: "privacy", label: "Privacy & data", icon: ShieldCheck },
 ];
@@ -70,72 +79,80 @@ export function SettingsDialog({
           }
         }}
       >
-      <nav className="settings-nav" aria-label="Settings sections">
-        <DialogTitle id="settings-title">Settings</DialogTitle>
-        <div role="tablist" aria-orientation="vertical">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              id={`settings-tab-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls="settings-panel"
-              className={tab === t.id ? "selected" : ""}
-              onClick={() => go(t.id)}
-            >
-              <t.icon size={16} />
-              {t.label}
-              {t.id === "providers" && state.connections.length > 0 && (
-                <span className="nav-count">{state.connections.length}</span>
-              )}
-              {t.id === "models" && state.models.length > 0 && (
-                <span className="nav-count">{state.models.length}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      </nav>
-      <section
-        className="settings-pane"
-        id="settings-panel"
-        role="tabpanel"
-        aria-labelledby={`settings-tab-${tab}`}
-      >
-        <button
-          className="icon ghost dialog-close"
-          aria-label="Close settings"
-          onClick={motion.requestClose}
+        <nav className="settings-nav" aria-label="Settings sections">
+          <DialogTitle id="settings-title">Settings</DialogTitle>
+          <div role="tablist" aria-orientation="vertical">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                id={`settings-tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls="settings-panel"
+                className={tab === t.id ? "selected" : ""}
+                onClick={() => go(t.id)}
+              >
+                <t.icon size={16} />
+                {t.label}
+                {t.id === "providers" && state.connections.length > 0 && (
+                  <span className="nav-count">{state.connections.length}</span>
+                )}
+                {t.id === "models" && state.models.length > 0 && (
+                  <span className="nav-count">{state.models.length}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </nav>
+        <section
+          className="settings-pane"
+          id="settings-panel"
+          role="tabpanel"
+          aria-labelledby={`settings-tab-${tab}`}
         >
-          <X size={18} />
-        </button>
-        {tab === "general" && (
-          <GeneralPane
-            theme={theme}
-            onTheme={onTheme}
-            onOpenActivity={onOpenActivity}
-          />
-        )}
-        {tab === "models" && (
-          <ModelsPane
-            key={focus ?? "models"}
-            state={state}
-            onRefresh={onRefresh}
-            focus={focus}
-            onNavigate={go}
-            backRef={back}
-          />
-        )}
-        {tab === "providers" && (
-          <ProvidersPane
-            state={state}
-            onRefresh={onRefresh}
-            onNavigate={go}
-            backRef={back}
-          />
-        )}
-        {tab === "privacy" && <PrivacyPane state={state} />}
-        {tab === "dreaming" && <DreamingPane state={state} onRefresh={onRefresh} />}
-      </section>
+          <button
+            className="icon ghost dialog-close"
+            aria-label="Close settings"
+            onClick={motion.requestClose}
+          >
+            <X size={18} />
+          </button>
+          {tab === "general" && (
+            <GeneralPane
+              theme={theme}
+              onTheme={onTheme}
+              onOpenActivity={onOpenActivity}
+            />
+          )}
+          {tab === "models" && (
+            <ModelsPane
+              key={focus ?? "models"}
+              state={state}
+              onRefresh={onRefresh}
+              focus={focus}
+              onNavigate={go}
+              backRef={back}
+            />
+          )}
+          {tab === "providers" && location.protocol === "https:" && (
+            <p>
+              Do this on your laptop. Provider credentials stay on the host.
+            </p>
+          )}
+          {tab === "providers" && location.protocol !== "https:" && (
+            <ProvidersPane
+              state={state}
+              onRefresh={onRefresh}
+              onNavigate={go}
+              backRef={back}
+            />
+          )}
+          {tab === "dreaming" && (
+            <DreamingPane state={state} onRefresh={onRefresh} />
+          )}
+          {tab === "remote" && <RemotePane />}
+          {tab === "privacy" && <PrivacyPane state={state} />}
+        </section>
       </DialogContent>
     </Dialog>
   );

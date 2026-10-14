@@ -16,7 +16,9 @@ import {
 } from "lucide-react";
 import type { BotInstance, BotManifest } from "@socius/contracts";
 import type { Category, GroupChat, Snapshot } from "@socius/contracts/app";
-import { api } from "./api.js";
+import { PhonePairing, initialPairingToken } from "./phone-pairing.js";
+import { ConnectionBanner } from "./connection.js";
+import { ApiError, api } from "./api.js";
 import {
   Avatar,
   ErrorNote,
@@ -67,6 +69,7 @@ const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
 export function App() {
+  const [needsPairing, setNeedsPairing] = useState(!!initialPairingToken);
   const [state, setState] = useState<Snapshot | null>(null),
     [selected, setSelected] = useState(""),
     [groupId, setGroupId] = useState(""),
@@ -78,7 +81,9 @@ export function App() {
       category?: Category;
     } | null>(null),
     [apps, setApps] = useState(false),
-    [collapsed, setCollapsed] = useState(false),
+    [collapsed, setCollapsed] = useState(
+      () => matchMedia("(max-width: 600px)").matches,
+    ),
     [settings, setSettings] = useState<{
       tab: SettingsTab;
       connectionId?: string | undefined;
@@ -89,10 +94,25 @@ export function App() {
   async function refresh() {
     try {
       const next = await api<Snapshot>("state");
+      setNeedsPairing(false);
       setState(next);
       setSelected((s) => s || next.bots[0]?.id || "");
       setError("");
     } catch (e) {
+      if (
+        e instanceof ApiError &&
+        e.status === 401 &&
+        location.protocol === "https:"
+      ) {
+        setNeedsPairing(true);
+        setState(null);
+      }
+      if (
+        e instanceof ApiError &&
+        e.status === 403 &&
+        location.protocol === "https:"
+      )
+        setState(null);
       setError((e as Error).message);
     }
   }
@@ -148,9 +168,17 @@ export function App() {
       return next;
     });
   const current = state?.bots.find((b) => b.id === selected) ?? state?.bots[0];
+  if (needsPairing)
+    return (
+      <>
+        <ConnectionBanner />
+        <PhonePairing onPaired={() => void refresh()} />
+      </>
+    );
   if (!state || !current)
     return (
       <div className="boot">
+        <ConnectionBanner />
         <Avatar name="Socius" main size={64} />
         <h1>Socius</h1>
         <p>{error || "Starting your local workspace…"}</p>
@@ -175,6 +203,7 @@ export function App() {
   const waiting = (b: BotInstance) => pending.some((a) => a.botId === b.id);
   const layoutOf = (id: string) => state.layouts.find((l) => l.botId === id);
   const open = (b: BotInstance) => {
+    if (matchMedia("(max-width: 600px)").matches) setCollapsed(true);
     setSelected(b.id);
     setGroupId("");
     setPage("chat");
@@ -184,6 +213,7 @@ export function App() {
       );
   };
   const openGroup = (g: GroupChat) => {
+    if (matchMedia("(max-width: 600px)").matches) setCollapsed(true);
     setGroupId(g.id);
     setPage("chat");
   };
@@ -370,6 +400,7 @@ export function App() {
 
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""}`}>
+      <ConnectionBanner />
       <aside className="sidebar" aria-label="Bots" inert={collapsed}>
         <div className="sidebar-top drag">{toolbar}</div>
         <div className="sidebar-scroll">

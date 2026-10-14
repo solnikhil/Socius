@@ -52,3 +52,43 @@ export async function connectModel(
   assert.equal(added.status, 201);
   return connection;
 }
+
+/** Real wire Host override: Node's fetch deliberately ignores a custom Host header. */
+export async function proxyRequest(
+  origin: string,
+  path: string,
+  remoteOrigin: string,
+  data?: unknown,
+  headers: Record<string, string> = {},
+  method = data === undefined ? "GET" : "POST",
+): Promise<Response> {
+  const { request } = await import("node:http");
+  const { Readable } = await import("node:stream");
+  return new Promise((resolve, reject) => {
+    const req = request(
+      origin + path,
+      {
+        method,
+        headers: {
+          Host: new URL(remoteOrigin).host,
+          Origin: remoteOrigin,
+          ...(data === undefined ? {} : { "Content-Type": "application/json" }),
+          ...headers,
+        },
+      },
+      (res) => {
+        const h = new Headers();
+        for (let i = 0; i < res.rawHeaders.length; i += 2)
+          h.append(res.rawHeaders[i]!, res.rawHeaders[i + 1]!);
+        resolve(
+          new Response(Readable.toWeb(res) as ReadableStream<Uint8Array>, {
+            status: res.statusCode!,
+            headers: h,
+          }),
+        );
+      },
+    );
+    req.on("error", reject);
+    req.end(data === undefined ? undefined : JSON.stringify(data));
+  });
+}

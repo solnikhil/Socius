@@ -3796,6 +3796,121 @@ dialog.create-bot,
   }
 }
 
+/* Functional remote controls; visual refinement remains with the UI owner. */
+.connection-banner {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  max-width: min(92vw, 640px);
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--bg, #fff);
+  color: var(--text, #111);
+  border: 1px solid #999;
+  box-shadow: 0 2px 12px #0002;
+}
+.phone-login {
+  max-width: 430px;
+  margin: auto;
+  padding: 24px;
+}
+.phone-login form,
+.phone-login label,
+.phone-pairing {
+  display: grid;
+  gap: 12px;
+}
+.phone-login input,
+.phone-login button,
+.device-row button,
+.phone-pairing button {
+  min-height: 44px;
+}
+.phone-pairing img {
+  max-width: 100%;
+}
+.settings-pane pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.device-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+@media (max-width: 600px) {
+  .shell {
+    grid-template-columns: min(78vw, 280px) minmax(0, 1fr);
+  }
+  .shell.collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+  .shell:not(.collapsed) > main {
+    min-width: 100vw;
+  }
+  .shell {
+    overflow-x: hidden;
+  }
+  .sidebar {
+    max-width: 78vw;
+  }
+  .settings-dialog {
+    display: flex;
+    flex-direction: column;
+    width: 96vw;
+    max-width: 96vw;
+    height: 94dvh;
+  }
+  .settings-nav {
+    flex-shrink: 0;
+    padding: 16px;
+  }
+  .settings-nav [role="tablist"] {
+    display: flex;
+    overflow-x: auto;
+  }
+  .settings-nav [role="tab"] {
+    flex-shrink: 0;
+    min-height: 44px;
+  }
+  .settings-pane {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 20px;
+  }
+  .settings-pane input {
+    max-width: 100%;
+    min-height: 44px;
+  }
+  .settings-pane button,
+  .composer button,
+  .sidebar button,
+  .approval-card button,
+  .action-card button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .device-row {
+    flex-wrap: wrap;
+  }
+  .thread,
+  .composer-wrap {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+@media (max-width: 600px) {
+  .sidebar-reveal,
+  .chat-head button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 /* ---------- Connected-app change review ---------- */
 .decision-card {
   width: min(560px, 78%);

@@ -52,7 +52,7 @@ import {
   type ModelRequest,
   type ModelRunner,
 } from "./model.js";
-import { body, errorResponse, fail, json } from "./http.js";
+import { body, errorResponse, fail, json, validateBody } from "./http.js";
 import {
   CreateConnection,
   ModelId,
@@ -73,11 +73,30 @@ import {
   type DreamerOptions,
 } from "./dreaming.js";
 
+import {
+  reserveRequest,
+  idempotentRoute,
+  acceptStream,
+  assertSession,
+} from "./idempotency.js";
+import { DeviceService } from "./devices.js";
+import {
+  requestOrigin,
+  remoteSettings,
+  RemoteSettingsSchema,
+  cookieToken,
+  sessionCookie,
+  remoteSafe,
+  hasTailscaleCLI,
+} from "./remote.js";
+
 export type { SecretBox };
 export interface RuntimeOptions {
   dataDir: string;
   webDir?: string;
   port?: number;
+  /** Electron only: remembered preferred port, with bounded fallback. */
+  preferredPort?: number;
   secretBox?: SecretBox;
   runner?: ModelRunner;
   /** Test-only background synthesis boundary; production uses structured AI SDK output. */
@@ -184,7 +203,7 @@ export async function startRuntime(options: RuntimeOptions) {
   // Running task id → skill activation evidence, saved with the task when it ends.
   const taskSkills = new Map<string, TaskSkill[]>();
   let pairingToken = randomBytes(32).toString("hex");
-  const session = randomBytes(32).toString("hex");
+  const devices = new DeviceService(store);
   // Running task id → its controller and the provider connection it uses.
   const active = new Map<
     string,
@@ -721,18 +740,21 @@ export async function startRuntime(options: RuntimeOptions) {
       send: (event: unknown) => void,
     ) => Promise<Message[]>,
   ) {
+    assertSession(res);
     dreaming.foregroundStarted();
     store.transaction(() => {
       store.put("task", task.id, task);
       store.put("message", user.id, user);
       store.event("task.started", `Task started for ${label}.`);
     });
+    acceptStream(res, task.id);
     const controller = new AbortController();
     res.writeHead(200, {
       "Content-Type": "application/x-ndjson",
       "Cache-Control": "no-store",
     });
     const send = (event: unknown) => {
+      if (res.writableLength > 1024 * 1024) res.destroy();
       if (!res.destroyed) res.write(JSON.stringify(event) + "\n");
     };
     send({ type: "started", taskId: task.id });
@@ -1095,12 +1117,36 @@ export async function startRuntime(options: RuntimeOptions) {
       "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     );
     try {
-      const expectedHost = new URL(origin).host;
-      if (req.headers.host !== expectedHost) fail(403, "Invalid host");
-      const url = new URL(req.url ?? "/", origin);
+      const context = requestOrigin(req, origin, remoteSettings(store));
+      const url = new URL(req.url ?? "/", context.origin);
+      if (
+        req.method === "POST" &&
+        url.pathname === "/api/remote/pair" &&
+        context.kind === "remote"
+      ) {
+        const input = z
+          .strictObject({
+            challenge: z.string().min(6).max(64),
+            label: z.string().trim().min(1).max(80),
+          })
+          .parse(await body(req));
+        requestOrigin(req, origin, remoteSettings(store));
+        const paired = devices.exchange(input.challenge, input.label);
+        res.writeHead(303, {
+          "Set-Cookie": sessionCookie(paired.token, true),
+          Location: "/",
+          "Cache-Control": "no-store",
+        });
+        res.end();
+        return;
+      }
       // OAuth redirects arrive from the system browser without the app session; the
       // one-time state created by an explicit sign-in authenticates them instead.
-      if (req.method === "GET" && url.pathname === "/oauth/callback") {
+      if (
+        req.method === "GET" &&
+        url.pathname === "/oauth/callback" &&
+        context.kind === "local"
+      ) {
         const result = await connections.callback(url.searchParams);
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "text/html; charset=utf-8",
@@ -1109,13 +1155,18 @@ export async function startRuntime(options: RuntimeOptions) {
         res.end(callbackPage(result.message));
         return;
       }
-      if (req.method === "GET" && url.pathname === "/pair") {
+      if (
+        req.method === "GET" &&
+        url.pathname === "/pair" &&
+        context.kind === "local"
+      ) {
         const token = url.searchParams.get("token") ?? "";
         if (!pairingToken || !same(token, pairingToken))
           fail(403, "Invalid or expired pairing token");
         pairingToken = "";
+        const { token: session } = devices.create("Desktop browser", "local");
         res.writeHead(303, {
-          "Set-Cookie": `socius_session=${session}; HttpOnly; SameSite=Strict; Path=/`,
+          "Set-Cookie": sessionCookie(session, false),
           Location: "/",
           "Cache-Control": "no-store",
         });
@@ -1123,21 +1174,159 @@ export async function startRuntime(options: RuntimeOptions) {
         return;
       }
       if (url.pathname.startsWith("/api/")) {
-        const cookie =
-          (req.headers.cookie ?? "")
-            .split(";")
-            .map((s) => s.trim())
-            .find((s) => s.startsWith("socius_session="))
-            ?.slice(15) ?? "";
-        if (!same(cookie, session))
-          fail(401, "Pair this browser with Socius first");
-        if (req.headers.origin && req.headers.origin !== origin)
-          fail(403, "Invalid origin");
-        if (req.headers["sec-fetch-site"] === "cross-site")
-          fail(403, "Cross-site request blocked");
-        if (req.method !== "GET" && req.headers.origin !== origin)
-          fail(403, "Mutation requires the paired application origin");
+        const cookie = cookieToken(req, context.kind === "remote");
+        const device = devices.authenticate(cookie, context.kind);
+        res.setHeader(
+          "Set-Cookie",
+          sessionCookie(cookie, context.kind === "remote"),
+        );
+        const untrack = devices.track(device.id, () => res.destroy());
+        const expiry = setInterval(() => {
+          try {
+            devices.authenticate(cookie, context.kind, false);
+            requestOrigin(req, origin, remoteSettings(store));
+          } catch {
+            res.destroy();
+          }
+        }, 1000);
+        expiry.unref();
+        res.once("close", () => {
+          untrack();
+          clearInterval(expiry);
+        });
+        const localOnly = () => {
+          if (context.kind !== "local") fail(403, "Do this on your laptop");
+        };
+        if (
+          context.kind === "remote" &&
+          !remoteSafe(req.method ?? "GET", url.pathname)
+        )
+          fail(403, "Do this on your laptop");
+        const check = () => {
+          devices.authenticate(cookie, context.kind, false);
+          requestOrigin(req, origin, remoteSettings(store));
+        };
+        validateBody(req, check);
         const path = url.pathname;
+        if (req.method === "POST" && idempotentRoute(path)) {
+          const key = req.headers["idempotency-key"];
+          if (context.kind === "remote" && !key)
+            fail(400, "An Idempotency-Key is required for this action");
+          if (key) {
+            if (typeof key !== "string") fail(400, "Invalid Idempotency-Key");
+            const input = await body(req);
+            check();
+            const replay = reserveRequest(
+              store,
+              device.id,
+              key as string,
+              path,
+              input,
+              res,
+              check,
+            );
+            if (replay) {
+              json(res, replay.status, replay.result);
+              return;
+            }
+          }
+        }
+        if (req.method === "GET" && /^\/api\/chats\/[^/]+$/.test(path)) {
+          const id = uuid.parse(path.split("/")[3]);
+          const g = store.get<GroupChat>("group", id);
+          if (!g) bot(id);
+          const messages = g ? store.groupMessages(id) : store.messages(id);
+          // A bounded authoritative snapshot also recovers edits to the last partial message.
+          // `since` is a hint, not an append-only cursor; never omit a still-changing reply.
+          json(res, 200, {
+            messages: messages.slice(-500),
+            tasks: store
+              .all<Task>("task")
+              .filter((t) =>
+                g ? t.groupId === id : t.botId === id && !t.groupId,
+              )
+              .slice(-100),
+            lastEventId: messages.at(-1)?.id ?? null,
+          });
+          return;
+        }
+
+        if (req.method === "GET" && path === "/api/remote/status") {
+          json(res, 200, {
+            enabled: remoteSettings(store).enabled,
+            origin: remoteSettings(store).origin,
+            localOwner: context.kind === "local",
+            ...(context.kind === "local"
+              ? {
+                  localTarget: origin,
+                  port: Number(new URL(origin).port),
+                  cliAvailable: hasTailscaleCLI(),
+                  needsServeUpdate:
+                    remoteSettings(store).enabled &&
+                    remoteSettings(store).configuredPort !==
+                      Number(new URL(origin).port),
+                  serveCommand: `tailscale serve --bg --https=443 ${origin}`,
+                  teardownCommand: "tailscale serve --https=443 off",
+                }
+              : {}),
+          });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/remote/settings") {
+          localOnly();
+          const input = RemoteSettingsSchema.parse(await body(req));
+          devices.authenticate(cookie, "local");
+          const previous = remoteSettings(store);
+          if (!input.enabled || input.origin !== previous.origin)
+            devices.revokeRemote();
+          store.put("remote-settings", "owner", {
+            ...input,
+            configuredPort: new URL(origin).port
+              ? Number(new URL(origin).port)
+              : 80,
+          });
+          store.event(
+            "remote.configured",
+            input.enabled
+              ? "Private remote access enabled."
+              : "Private remote access disabled.",
+          );
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/devices/signout") {
+          json(res, 200, { ok: true });
+          devices.revoke(device.id);
+          return;
+        }
+
+        if (req.method === "GET" && path === "/api/devices") {
+          json(res, 200, {
+            currentDeviceId: device.id,
+            devices: context.kind === "local" ? devices.list() : [device],
+          });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/devices/revoke-remote") {
+          devices.revokeRemote();
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (
+          req.method === "POST" &&
+          /^\/api\/devices\/[^/]+\/revoke$/.test(path)
+        ) {
+          devices.revoke(uuid.parse(path.split("/")[3]));
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/devices/pair") {
+          localOnly();
+          if (!remoteSettings(store).enabled)
+            fail(409, "Enable remote access on your laptop first");
+          json(res, 201, devices.pairing());
+          return;
+        }
         if (req.method === "GET" && path === "/api/state") {
           json(res, 200, {
             bots: store.all("bot"),
@@ -1742,6 +1931,7 @@ export async function startRuntime(options: RuntimeOptions) {
               message: "Feedback replaces approval",
             })
             .parse(await body(req));
+          check();
           json(res, 200, await broker.resolve(input));
           return;
         }
@@ -2309,14 +2499,54 @@ export async function startRuntime(options: RuntimeOptions) {
       else errorResponse(res, error);
     }
   });
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(options.port ?? 0, "127.0.0.1", resolve);
-  });
+  server.headersTimeout = 10000;
+  server.requestTimeout = 15000;
+  server.maxHeadersCount = 50;
+  const savedPort = store.get<{ port: number }>(
+    "runtime-port",
+    "electron",
+  )?.port;
+  const preferred = options.preferredPort;
+  if (
+    preferred !== undefined &&
+    (!Number.isInteger(preferred) || preferred < 1024 || preferred > 65515)
+  )
+    throw new Error("Invalid preferred runtime port");
+  const initialPort =
+    options.port ?? (preferred === undefined ? 0 : (savedPort ?? preferred));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const error = (e: Error) => {
+          server.off("listening", ready);
+          reject(e);
+        };
+        const ready = () => {
+          server.off("error", error);
+          resolve();
+        };
+        server.once("error", error);
+        server.once("listening", ready);
+        server.listen(initialPort + attempt, "127.0.0.1");
+      });
+      break;
+    } catch (e) {
+      if (
+        preferred === undefined ||
+        (e as NodeJS.ErrnoException).code !== "EADDRINUSE" ||
+        attempt >= 20
+      ) {
+        store.close();
+        throw e;
+      }
+    }
+  }
   const address = server.address();
   if (!address || typeof address === "string")
     throw new Error("Runtime failed to bind");
   origin = `http://127.0.0.1:${address.port}`;
+  if (preferred !== undefined)
+    store.put("runtime-port", "electron", { port: address.port });
   dreaming.start();
   return {
     origin,
@@ -2333,6 +2563,7 @@ export async function startRuntime(options: RuntimeOptions) {
       await dreaming.close();
       for (const t of active.values()) t.controller.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
+      devices.close();
       await new Promise<void>((resolve, reject) =>
         server.close((e) => (e ? reject(e) : resolve())),
       );
