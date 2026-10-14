@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -6,6 +6,7 @@ import {
   ChevronRight,
   LayoutGrid,
   Pencil,
+  Plus,
   Settings,
   UserPlus,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import type { BotInstance } from "@socius/contracts";
 import type { Board } from "@socius/contracts/app";
 import { api } from "../api.js";
 import { Avatar, ErrorNote, useDismiss } from "./ui.js";
+import { useMenuPlacement } from "./menu.js";
 
 /** Right-click menu for a board in the sidebar. */
 export function BoardMenu({
@@ -22,6 +24,7 @@ export function BoardMenu({
   y,
   onClose,
   onOpen,
+  onCreateBot,
   onRefresh,
 }: {
   board: Board;
@@ -30,27 +33,19 @@ export function BoardMenu({
   y: number;
   onClose: () => void;
   onOpen: (tab: "thread" | "team") => void;
+  onCreateBot: () => void;
   onRefresh: () => Promise<void>;
 }) {
   const [view, setView] = useState<"main" | "add" | "rename">("main"),
     [name, setName] = useState(board.name),
-    [error, setError] = useState(""),
-    [position, setPosition] = useState({ left: x, top: y });
+    [error, setError] = useState("");
   const close = useCallback(() => onClose(), [onClose]);
   const ref = useDismiss(true, close);
   const archived = !!board.archivedAt;
   const outside = bots.filter(
     (b) => !board.members.some((m) => m.botId === b.id),
   );
-  useLayoutEffect(() => {
-    // Keep the menu inside the window when opened near an edge.
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
-    setPosition({
-      left: Math.max(8, Math.min(x, innerWidth - r.width - 8)),
-      top: Math.max(8, Math.min(y, innerHeight - r.height - 8)),
-    });
-  }, [x, y, view, ref]);
+  const position = useMenuPlacement(ref, x, y, view);
   async function run(path: string, body: unknown, done = true) {
     setError("");
     try {
@@ -91,6 +86,10 @@ export function BoardMenu({
             <UserPlus size={15} />
             Add bots
             <ChevronRight size={14} className="menu-trailing" />
+          </button>
+          <button role="menuitem" disabled={archived} onClick={onCreateBot}>
+            <Plus size={15} />
+            New bot on this board
           </button>
           <button role="menuitem" onClick={() => onOpen("team")}>
             <Settings size={15} />

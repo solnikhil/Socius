@@ -2336,3 +2336,69 @@ dialog::backdrop {
 .intro-roster strong {
   font-weight: 500;
 }
+.board-group {
+  margin-bottom: 2px;
+}
+.board-group .board-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 4px 0 0;
+}
+.board-toggle {
+  width: 22px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.board-toggle:hover {
+  background: transparent;
+  color: var(--text);
+}
+.board-toggle svg {
+  transition: transform 0.12s;
+}
+.board-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.board-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 7px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 12px;
+}
+.board-open:hover {
+  background: transparent;
+}
+.board-members {
+  margin: 0 0 6px 22px;
+  padding-left: 8px;
+  border-left: 1px solid var(--sidebar-line);
+}
+.bot-row.nested {
+  grid-template-columns: 30px 1fr auto;
+  gap: 10px;
+  padding: 5px 8px;
+}
+.bot-row.nested .bot-text strong {
+  font-size: 13.5px;
+}
+.board-empty {
+  display: block;
+  padding: 4px 10px 8px;
+  color: var(--text-3);
+}
+.new-member {
+  margin-top: 10px;
+  gap: 6px;
+}

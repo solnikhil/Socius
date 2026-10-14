@@ -89,7 +89,9 @@ The `kind` values are `board`, `source`, `run`, `task` and `message`, and each i
 - `packages/runtime/src/boards.ts`: authenticated endpoints and the model invoker that enforces each bot's grants.
 - `packages/runtime/src/model.ts`: optional `proposePlan` tool, per-call limits, board briefing and usage reporting on the existing AI SDK adapter.
 - `apps/web/src/views/BoardView.tsx`, `CreateBoard.tsx`: board switcher entries, thread with plan review, task board, roster and limits, sources.
-- `apps/web/src/components/BoardMenu.tsx`: right-click menu on a sidebar board (open, add bots, how this board works, rename, archive).
+- Sidebar (`apps/web/src/App.tsx`): each board expands to list its bots (with their board roles). Bots on no active board appear under **Unassigned**, which is where new bots land.
+- `apps/web/src/components/BoardMenu.tsx`: right-click a board to open it, add bots, create a new bot directly on it, change how it works, rename or archive it.
+- `apps/web/src/components/BotMenu.tsx`: right-click a bot to chat, add it to or remove it from a board (the coordinator stays until replaced), start a new board with it, open its memory, or toggle its memory access.
 
 ## API examples
 

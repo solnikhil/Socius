@@ -5,6 +5,7 @@ import {
   ArchiveRestore,
   Crown,
   FileText,
+  Plus,
   RotateCcw,
   Square,
   Trash2,
@@ -60,6 +61,7 @@ export function BoardView({
   onClose,
   onSettings,
   initialTab = "thread",
+  onCreateBot,
 }: {
   boardId: string;
   state: Snapshot;
@@ -67,6 +69,7 @@ export function BoardView({
   onClose: () => void;
   onSettings: () => void;
   initialTab?: Tab;
+  onCreateBot: (board: Board) => void;
 }) {
   const [detail, setDetail] = useState<BoardDetail | null>(null),
     [tab, setTab] = useState<Tab>(initialTab),
@@ -196,7 +199,13 @@ export function BoardView({
           <Tasks detail={detail} state={state} bot={bot} act={act} />
         )}
         {tab === "team" && (
-          <Team board={board} state={state} bot={bot} act={act} />
+          <Team
+            board={board}
+            state={state}
+            bot={bot}
+            act={act}
+            onCreateBot={() => onCreateBot(board)}
+          />
         )}
         {tab === "sources" && <Sources detail={detail} act={act} />}
       </div>
@@ -526,11 +535,13 @@ function Team({
   state,
   bot,
   act,
+  onCreateBot,
 }: {
   board: Board;
   state: Snapshot;
   bot: BotLookup;
   act: Act;
+  onCreateBot: () => void;
 }) {
   const [adding, setAdding] = useState("");
   const archived = !!board.archivedAt;
@@ -665,6 +676,12 @@ function Team({
               Add member
             </button>
           </form>
+        )}
+        {!archived && (
+          <button className="text-button new-member" onClick={onCreateBot}>
+            <Plus size={14} />
+            Create a new bot for this board
+          </button>
         )}
       </section>
       <section className="settings-card">

@@ -8,18 +8,21 @@ import { Avatar, ErrorNote, Modal } from "../components/ui.js";
 export function CreateBoard({
   bots,
   mainId,
+  preselect,
   onClose,
   onCreated,
 }: {
   bots: BotInstance[];
   mainId: string;
+  /** Start with just these bots (plus the coordinator) instead of everyone. */
+  preselect?: string[] | undefined;
   onClose: () => void;
   onCreated: (board: Board) => void;
 }) {
   // Every bot starts on the board; the coordinator picks whoever fits each task.
   const [members, setMembers] = useState<string[]>(() => [
       mainId,
-      ...bots.map((b) => b.id).filter((id) => id !== mainId),
+      ...(preselect ?? bots.map((b) => b.id)).filter((id) => id !== mainId),
     ]),
     [coordinator, setCoordinator] = useState(mainId),
     [error, setError] = useState(""),

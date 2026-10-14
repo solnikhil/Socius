@@ -139,29 +139,68 @@ test("a four-member research board plans, delegates and returns one reviewed bri
     await page.getByRole("button", { name: "Share source" }).click();
     await expect(page.getByText("market-notes.txt")).toBeVisible();
 
-    // A bot created later joins through the board's right-click menu.
+    // A new bot starts under Unassigned, then joins a board from its own menu.
+    const sidebar = page.getByRole("complementary", { name: "Bots" });
+    const unassigned = sidebar.getByRole("region", { name: "Unassigned" });
+    const boardMembers = sidebar.getByRole("group", {
+      name: "Market research members",
+    });
+    await expect(boardMembers.getByRole("button")).toHaveCount(3);
     await api(page, "bots", {
       name: "Editor",
       role: "Tightens wording",
       instructions: "Edit for clarity.",
     });
     await page.reload();
-    await page
-      .getByRole("button", { name: /Market research/ })
-      .click({ button: "right" });
-    await page.getByRole("menuitem", { name: "Add bots" }).click();
+    const editor = unassigned.getByRole("button", { name: /Editor/ });
+    await expect(editor).toBeVisible();
+    await editor.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Add to board" }).click();
+    await page.screenshot({
+      path: "test-results/socius-bot-menu.png",
+      animations: "disabled",
+    });
+    await page.getByRole("menuitem", { name: "Market research" }).click();
+    await expect(
+      boardMembers.getByRole("button", { name: /Editor/ }),
+    ).toBeVisible();
+    await expect(
+      unassigned.getByRole("button", { name: /Editor/ }),
+    ).toHaveCount(0);
+
+    // A bot can also be created from inside a board, straight onto it.
+    const boardButton = sidebar.getByRole("button", {
+      name: /^Market research/,
+    });
+    await boardButton.click({ button: "right" });
     await page.screenshot({
       path: "test-results/socius-board-menu.png",
       animations: "disabled",
     });
-    await page.getByRole("menuitem", { name: /Editor/ }).click();
-    await expect(page.getByText("On this board · 5")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await page
-      .getByRole("button", { name: /Market research/ })
-      .click({ button: "right" });
+    await page.getByRole("menuitem", { name: "New bot on this board" }).click();
+    const create = page.getByRole("dialog");
+    await expect(
+      create.getByRole("heading", { name: "New bot for Market research" }),
+    ).toBeVisible();
+    await create.getByLabel("Name", { exact: true }).fill("Fact checker");
+    await create.getByLabel("Role", { exact: true }).fill("Verifies numbers");
+    await create
+      .getByLabel("Instructions", { exact: true })
+      .fill("Check every figure against the sources.");
+    await create
+      .getByLabel("Role on Market research")
+      .fill("Checks every figure");
+    await create.getByRole("button", { name: "Create bot" }).click();
+    await expect(
+      boardMembers.getByRole("button", { name: /Fact checker/ }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: "test-results/socius-sidebar-groups.png",
+      animations: "disabled",
+    });
+    await boardButton.click({ button: "right" });
     await page.getByRole("menuitem", { name: "How this board works" }).click();
-    await expect(page.locator(".roster li")).toHaveCount(5);
+    await expect(page.locator(".roster li")).toHaveCount(6);
     await page.screenshot({
       path: "test-results/socius-board-team.png",
       animations: "disabled",
@@ -218,7 +257,7 @@ test("a four-member research board plans, delegates and returns one reviewed bri
     await page.emulateMedia({ colorScheme: "light" });
 
     await page.reload();
-    await page.getByRole("button", { name: /Market research/ }).click();
+    await page.getByRole("button", { name: /^Market research/ }).click();
     await expect(page.getByText("Final brief.")).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Hide sidebar" }).first().click();
