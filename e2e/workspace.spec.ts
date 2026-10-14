@@ -152,31 +152,28 @@ test("configure a model, create bots manually and through Socius, install skills
   await page.getByRole("button", { name: "Connect apps" }).click();
   await expect(page.getByRole("tab", { name: "Skills" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Skills" })).toHaveCount(0);
-  // Only installable connectors are listed, each with its service logo.
+  // Only installable connectors are listed; planned rows are gone.
   await expect(
     page.getByRole("heading", { name: "Razorpay", exact: true }),
   ).toHaveCount(0);
-  const notionRow = page
-    .locator(".app-row")
-    .filter({
-      has: page.getByRole("heading", { name: "Notion", exact: true }),
-    });
-  await expect(notionRow.locator(".app-icon img")).toBeVisible();
-  await expect(notionRow.locator(".monogram")).toHaveCount(0);
   await page.screenshot({
     path: "test-results/socius-connect-apps.png",
     animations: "disabled",
   });
   await page.getByRole("tab", { name: "Connectors", exact: true }).click();
+  const notionRow = page.locator(".app-row").filter({
+    has: page.getByRole("heading", { name: "Notion", exact: true }),
+  });
+  await expect(notionRow.locator(".app-icon img")).toBeVisible();
+  // Every reviewed connector shows its logo, never a letter fallback.
+  await expect(page.locator(".app-row .monogram")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Payments", exact: true }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "IRCTC", exact: true }),
   ).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /: planned$/ })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("button", { name: /: planned$/ })).toHaveCount(0);
   await page.getByRole("tab", { name: "Bots", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Researcher", exact: true }),
