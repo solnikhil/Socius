@@ -9,134 +9,13 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react";
-import { Star, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 export const MAIN_BOT_TEMPLATE = "socius/main";
 
-const hash = (text: string) => {
-  let h = 2166136261;
-  for (const c of text) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  return h >>> 0;
-};
-const colors = [
-  "#3b82f6",
-  "#a26d3f",
-  "#46c36b",
-  "#ec4f9c",
-  "#2ec4b6",
-  "#ef4444",
-  "#f2a33a",
-  "#8b5cf6",
-];
-// Each shape is drawn in a 40×40 box; the eyes sit in the upper right.
-const shapes = [
-  <circle key="c" cx="20" cy="21" r="17" />,
-  <rect key="r" x="3" y="4" width="34" height="34" rx="13" />,
-  <path
-    key="e"
-    d="M21 3.5c9.4 0 16 7.6 16 17.2 0 9.8-7 16.3-17.2 16.3C9.6 37 3 30.6 3 21.4 3 11.2 11 3.5 21 3.5z"
-  />,
-  <path
-    key="h"
-    d="M15 4.5h11.5a6 6 0 0 1 5.3 3.2l5 9.6a6 6 0 0 1 0 5.6l-5 9.6a6 6 0 0 1-5.3 3.2H15a6 6 0 0 1-5.3-3.2l-5-9.6a6 6 0 0 1 0-5.6l5-9.6A6 6 0 0 1 15 4.5z"
-  />,
-  <ellipse key="o" cx="20" cy="22" rx="18" ry="14.5" />,
-];
-
-export function botColor(name: string) {
-  return colors[hash(name) % colors.length]!;
-}
-
-export function Avatar({
-  name,
-  main = false,
-  size = 36,
-  badge = false,
-}: {
-  name: string;
-  main?: boolean;
-  size?: number;
-  badge?: boolean;
-}) {
-  const h = hash(name);
-  return (
-    <span
-      className={`avatar ${main ? "main" : ""}`}
-      style={{ width: size, height: size }}
-      aria-hidden="true"
-    >
-      <svg viewBox="0 0 40 40" width={size} height={size}>
-        <g fill={main ? "var(--main-avatar)" : botColor(name)}>
-          {main ? shapes[0] : shapes[(h >>> 8) % shapes.length]}
-        </g>
-        <g fill={main ? "var(--main-avatar-eyes)" : "rgba(0,0,0,0.82)"}>
-          <rect
-            x="18.5"
-            y="11"
-            width="3.6"
-            height="7.6"
-            rx="1.8"
-            transform="rotate(-14 20 15)"
-          />
-          <rect
-            x="26.5"
-            y="12.4"
-            width="3.6"
-            height="7.6"
-            rx="1.8"
-            transform="rotate(-14 28 16)"
-          />
-        </g>
-      </svg>
-      {badge && (
-        <span className="avatar-badge">
-          <Star size={size * 0.13} fill="currentColor" strokeWidth={0} />
-        </span>
-      )}
-    </span>
-  );
-}
-
-/** Up to three member avatars tucked into one tile; the coordinator comes first. */
-export function GroupAvatar({
-  names,
-  size = 36,
-}: {
-  names: { name: string; main?: boolean }[];
-  size?: number;
-}) {
-  const shown = names.slice(0, 3);
-  const inner = Math.round(size * (shown.length > 2 ? 0.54 : 0.62));
-  const spots =
-    shown.length > 2
-      ? [
-          [0, 0],
-          [size - inner, 0],
-          [(size - inner) / 2, size - inner],
-        ]
-      : [
-          [0, 0],
-          [size - inner, size - inner],
-        ];
-  return (
-    <span
-      className="avatar group-avatar"
-      style={{ width: size, height: size }}
-      aria-hidden="true"
-    >
-      {shown.map((n, i) => (
-        <span
-          key={`${n.name}-${i}`}
-          style={{ left: spots[i]![0], top: spots[i]![1] }}
-        >
-          <Avatar name={n.name} main={!!n.main} size={inner} />
-        </span>
-      ))}
-    </span>
-  );
-}
+export { Avatar, GroupAvatar, botColor } from "./avatar.js";
 
 export function initials(name: string) {
   return name
