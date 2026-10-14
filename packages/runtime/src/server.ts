@@ -51,9 +51,6 @@ import {
   type SecretBox,
 } from "./providers/service.js";
 import { classify } from "./providers/errors.js";
-import { TeamEngine, TeamError } from "@socius/teams/engine";
-import { TeamStore } from "./team-store.js";
-import { createInvoke, handleBoards } from "./boards.js";
 import { PackageError, PackageService } from "./packages.js";
 import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
@@ -154,14 +151,12 @@ export async function startRuntime(options: RuntimeOptions) {
     string,
     { controller: AbortController; connections: Set<string> }
   >();
-  const boardConnections = new Map<string, number>();
   const providers = new ProviderService(
     store,
     options.secretBox,
     options.fetch,
     (connectionId) =>
-      [...active.values()].some((t) => t.connections.has(connectionId)) ||
-      (boardConnections.get(connectionId) ?? 0) > 0,
+      [...active.values()].some((t) => t.connections.has(connectionId)),
     options.env ?? process.env,
   );
   const ModelRefSchema = z.strictObject({
@@ -315,33 +310,6 @@ export async function startRuntime(options: RuntimeOptions) {
       .all<Task>("task")
       .some((t) => t.state === "running" && match(t));
   }
-  const teams = new TeamStore(store);
-  const engine = new TeamEngine(
-    teams,
-    createInvoke({
-      store,
-      runner: executeModel,
-      resolveModel: async (botId) => {
-        const selected = await providers.forChat(botId);
-        const id = selected.ref.connectionId;
-        boardConnections.set(id, (boardConnections.get(id) ?? 0) + 1);
-        return {
-          model: selected.model,
-          modelRef: selected.ref,
-          tools: selected.entry.tools !== false,
-          release: () => {
-            const count = (boardConnections.get(id) ?? 1) - 1;
-            if (count) boardConnections.set(id, count);
-            else boardConnections.delete(id);
-          },
-        };
-      },
-      packageTools,
-      proposeMemory: (botId, taskId, runId, content) =>
-        proposal(botId, taskId, "memory", content, runId),
-    }),
-  );
-  engine.recover();
   /** Everything a model call needs except its messages, checked against the bot's own grants. */
   async function modelContext(
     b: BotInstance,
@@ -458,14 +426,6 @@ export async function startRuntime(options: RuntimeOptions) {
             proposeBot: (draft: BotDraft) => {
               usedTool = true;
               return request.proposeBot!(draft);
-            },
-          }
-        : {}),
-      ...(request.proposePlan
-        ? {
-            proposePlan: (plan: unknown) => {
-              usedTool = true;
-              return request.proposePlan!(plan);
             },
           }
         : {}),
@@ -640,7 +600,6 @@ export async function startRuntime(options: RuntimeOptions) {
             models: store.providers.models(),
             selection: store.providers.selection(),
             environment: providers.environment(),
-            boards: teams.boards(),
             secretStorage: !!options.secretBox,
           });
           return;
@@ -1402,19 +1361,6 @@ export async function startRuntime(options: RuntimeOptions) {
           );
           return;
         }
-        if (
-          path.startsWith("/api/boards") &&
-          (await handleBoards({
-            req,
-            res,
-            url,
-            store,
-            teams,
-            engine,
-            checkModel: (botId) => providers.forChat(botId),
-          }))
-        )
-          return;
         return fail(404, "Endpoint not found");
       }
       if (req.method !== "GET") fail(405, "Method not allowed");
@@ -1443,7 +1389,7 @@ export async function startRuntime(options: RuntimeOptions) {
       });
       res.end(await readFile(file));
     } catch (error) {
-      if (error instanceof TeamError || error instanceof PackageError)
+      if (error instanceof PackageError)
         json(res, error.status, { error: error.message });
       else errorResponse(res, error);
     }
@@ -1463,9 +1409,7 @@ export async function startRuntime(options: RuntimeOptions) {
     packages,
     connections,
     broker,
-    engine,
     close: async () => {
-      await engine.close();
       for (const t of active.values()) t.controller.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
       await new Promise<void>((resolve, reject) =>

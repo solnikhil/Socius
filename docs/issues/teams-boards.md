@@ -1,3 +1,5 @@
+> Historical specification — Boards were retired on 2026-10-14. Group chats are the active collaboration model; this document describes the former design, not current functionality. Existing board data is preserved.
+
 Tracking: [GitHub issue #2](https://github.com/solnikhil/Socius/issues/2). Companion: [Skills & Connectors #3](https://github.com/solnikhil/Socius/issues/3).
 
 ## Assignment

@@ -1,17 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Plus } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { Board } from "@socius/contracts/app";
 import { api } from "../api.js";
 import { Modal, ErrorNote } from "../components/ui.js";
 
 export function CreateBot({
-  board,
   onClose,
   onCreated,
 }: {
-  /** When set, the new bot joins this board; otherwise it starts unassigned. */
-  board?: Board | undefined;
   onClose: () => void;
   onCreated: (bot: BotInstance) => void;
 }) {
@@ -28,12 +24,6 @@ export function CreateBot({
         role: data.get("role"),
         instructions: data.get("instructions"),
       });
-      if (board)
-        await api("boards/members", {
-          boardId: board.id,
-          botId: bot.id,
-          role: data.get("boardRole") ?? "",
-        });
       onCreated(bot);
       onClose();
     } catch (e) {
@@ -43,15 +33,10 @@ export function CreateBot({
     }
   }
   return (
-    <Modal
-      title={board ? `New bot for ${board.name}` : "Meet your next bot"}
-      onClose={onClose}
-    >
+    <Modal title="Meet your next bot" onClose={onClose}>
       <p className="muted">
-        Give it one clear job. It starts with its own memory and no permissions
-        {board
-          ? `, and joins ${board.name} right away.`
-          : ". Until you add it to a board it appears under Unassigned."}
+        Give it one clear job. It starts with its own memory and no permissions.
+        Add it to a group chat when you want it to collaborate.
       </p>
       <form onSubmit={submit} className="form">
         <label>
@@ -83,16 +68,6 @@ export function CreateBot({
             rows={5}
           />
         </label>
-        {board && (
-          <label>
-            Role on {board.name}
-            <input
-              name="boardRole"
-              placeholder="Optional. What it does for this board; teammates see this."
-              maxLength={200}
-            />
-          </label>
-        )}
         <ErrorNote error={error} />
         <button className="primary" disabled={busy}>
           {busy ? "Creating…" : "Create bot"}

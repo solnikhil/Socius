@@ -156,11 +156,12 @@ export const ReleaseIdentity = z.strictObject({
 });
 export type ReleaseIdentity = z.infer<typeof ReleaseIdentity>;
 
-// Shared action-broker request used by single bots and board tasks. Callers name a
+// Shared action-broker request used by single bots and group members. Callers name a
 // reviewed action and arguments only; they cannot supply code or grant permissions.
 export const ActionActor = z.strictObject({
   botId: z.string().uuid(),
   taskId: z.string().min(1).max(100),
+  // Legacy board context is retained for historical approvals and audit records.
   boardId: z.string().min(1).max(100).optional(),
   runId: z.string().min(1).max(100).optional(),
 });

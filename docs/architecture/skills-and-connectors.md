@@ -82,7 +82,7 @@ Arguments are validated by strict schemas: page references must be Notion IDs or
 
 ## Action broker (`packages/runtime/src/broker.ts`)
 
-This is the single external-action policy point for single bots, board tasks and delegated work.
+This is the single external-action policy point for single bots, group member tasks and delegated work.
 
 ```ts
 import type { ActionRequest } from "@socius/contracts";
@@ -161,3 +161,5 @@ New record kinds: `release`, `connection`, `action`, `registry-cache`. The curat
 IRCTC, DigiLocker, MakeMyTrip, Air India, IndiGo, Zomato, Swiggy, Airtel and Jio appear as searchable **Planned** listings in Connect Apps → Connectors. `packages/marketplace/src/connector-directory.ts` holds these discovery entries separately from installable, verified releases. They have no authentication endpoints, executable adapters, tools or permission grants. A listing disappears automatically when a compatible release with its ID is available.
 
 Each integration still needs a supported access method, account authentication, reviewed action schemas, capability enforcement, approval rules and end-to-end account validation before becoming connectable. The existing Notion integration retains its normal installation and authentication flow.
+
+Boards were retired on 2026-10-14. New connector calls originate in direct or group chats. Optional board/run actor metadata remains readable for historical approval and audit records.

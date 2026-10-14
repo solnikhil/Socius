@@ -1,3 +1,5 @@
+> Historical specification — Boards were retired on 2026-10-14. Group chats are the active collaboration model; this document describes the former design, not current functionality. Existing board data is preserved.
+
 # Teams & Boards
 
 Status: boards, delegation, the run queue, budgets, cancellation and restart recovery are implemented. External actions through the connector broker are not; see Limitations. Tracking: [issue #2](https://github.com/solnikhil/Socius/issues/2).

@@ -1,4 +1,4 @@
-// The single external-action policy point for single bots, board tasks and delegated work.
+// The single external-action policy point for single bots and group member work.
 // Callers submit a typed request naming a reviewed action; they cannot supply code or
 // grant themselves permissions. Authorization is rechecked at request and execution.
 import { randomUUID, timingSafeEqual } from "node:crypto";

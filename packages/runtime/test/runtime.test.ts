@@ -587,3 +587,52 @@ test("group chats let the main bot ask members, who answer with their own instru
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("retired board routes cannot execute work and preserve historical records and bots", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-retired-boards-"));
+  const r = await paired(dir, fake);
+  try {
+    const created = await (
+      await r.request("bots", {
+        name: "Former board member",
+        role: "Research",
+        instructions: "Review supplied sources",
+      })
+    ).json();
+    const saved = JSON.stringify({
+      id: "legacy-board",
+      memberIds: [created.id],
+      state: "running",
+    });
+    r.store.db
+      .prepare("INSERT INTO team_records VALUES('board',?,'legacy-board',?)")
+      .run("legacy-board", saved);
+    for (const [path, data] of [
+      ["boards/detail?id=legacy-board", undefined],
+      ["boards", { name: "New board" }],
+      ["boards/runs", { boardId: "legacy-board", content: "Run" }],
+      ["boards/runs/retry", { id: "legacy-run" }],
+    ] as const)
+      assert.equal((await r.request(path, data)).status, 404);
+    const state = (await (await r.request("state")).json()) as Snapshot;
+    assert.equal("boards" in state, false);
+    assert.ok(state.bots.some((b) => b.id === created.id));
+    assert.equal(
+      r.store.db
+        .prepare("SELECT data FROM team_records WHERE id=?")
+        .get("legacy-board")!.data,
+      saved,
+    );
+    await connectModel(r);
+    const group = await (
+      await r.request("groups", {
+        name: "Research group",
+        memberIds: [created.id],
+      })
+    ).json();
+    assert.equal(group.memberIds[0], created.id);
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

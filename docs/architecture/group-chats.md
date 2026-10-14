@@ -1,6 +1,6 @@
 # Group chats
 
-Status: implemented. Group chats are the conversational way bots work together. [Boards](teams.md) are the structured alternative, with planned task graphs and budgets. Both ship together.
+Status: implemented. Group chats are the single collaboration model. Boards were retired on 2026-10-14; existing board data is preserved as history and former members remain available as bots.
 
 ![A group chat where Socius brings in Planner](../assets/socius-group-chat.png)
 
