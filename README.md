@@ -29,7 +29,8 @@ Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The 
 - Memory is private per bot: editable Markdown files plus SQLite FTS5 search. External file edits reconcile when memory is read.
 - Enable memory per bot explicitly; model-proposed saves require review and recheck permissions.
 - Messaging-style interface: bot sidebar with the main bot featured, a `To:` new-chat palette (⌘N/⌘K, ⌘1–9 to pick), chat bubbles with safe Markdown rendering, and a Connect Apps modal. Appearance (System/Light/Dark) is in Settings and the account menu; the choice is stored locally.
-- Activity records omit provider keys and exception bodies. Analytics and remote crash reporting are off.
+- Approvals (proposed bots and memory saves) are reviewed inline in the proposing bot's chat; a blue dot marks that bot in the sidebar. There is no separate review screen.
+- Activity keeps a local record of chats, reviews, memory changes, and installs. Provider keys and exception bodies are omitted. The Activity page and Settings show that record. Analytics and remote crash reporting are off.
 
 Pending approvals survive restart and cannot be approved twice. An interrupted running task is marked failed and requires explicit retry; model execution is not checkpoint-resumed. Creating specialist bots does not yet delegate tasks to them automatically.
 

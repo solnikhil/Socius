@@ -27,6 +27,7 @@ export interface ModelRequest {
   proposeMemory: (content: string) => { approvalId: string };
   proposeBot: (draft: BotDraft) => { approvalId: string };
   signal: AbortSignal;
+  fetch?: typeof globalThis.fetch;
 }
 export interface SkillSummary {
   id: string;
@@ -49,13 +50,20 @@ export const runModel: ModelRunner = async (request, onText) => {
     throw new Error("Choose a model in Settings before sending a message.");
   const model =
     settings.provider === "openai"
-      ? createOpenAI(apiKey ? { apiKey } : {})(settings.model)
+      ? createOpenAI({
+          ...(apiKey ? { apiKey } : {}),
+          ...(request.fetch ? { fetch: request.fetch } : {}),
+        })(settings.model)
       : settings.provider === "anthropic"
-        ? createAnthropic(apiKey ? { apiKey } : {})(settings.model)
+        ? createAnthropic({
+            ...(apiKey ? { apiKey } : {}),
+            ...(request.fetch ? { fetch: request.fetch } : {}),
+          })(settings.model)
         : createOpenAICompatible({
             name: settings.provider,
             baseURL: settings.baseURL,
             ...(apiKey ? { apiKey } : {}),
+            ...(request.fetch ? { fetch: request.fetch } : {}),
           })(settings.model);
   const tools: ToolSet = {};
   if (bot.template.id === "socius/main")
@@ -127,6 +135,7 @@ export const runModel: ModelRunner = async (request, onText) => {
   const agent = new ToolLoopAgent({
     model,
     tools,
+    maxRetries: 2,
     stopWhen: isStepCount(6),
     maxOutputTokens: 4000,
     instructions: [

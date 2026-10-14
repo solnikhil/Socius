@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import {
   Check,
+  History,
   Monitor,
   Moon,
   Palette,
@@ -11,6 +12,7 @@ import {
 import type { ModelSettings, Snapshot } from "@socius/contracts/app";
 import { api } from "../api.js";
 import { ErrorNote, type ThemePreference } from "../components/ui.js";
+import { ActivityList } from "./ActivityView.js";
 
 const themes = [
   { value: "system", label: "System", icon: Monitor },
@@ -23,11 +25,13 @@ export function SettingsView({
   onRefresh,
   theme,
   onTheme,
+  onOpenActivity,
 }: {
   state: Snapshot;
   onRefresh: () => Promise<void>;
   theme: ThemePreference;
   onTheme: (theme: ThemePreference) => void;
+  onOpenActivity: () => void;
 }) {
   const [settings, setSettings] = useState<ModelSettings>(state.settings),
     [key, setKey] = useState(""),
@@ -35,6 +39,9 @@ export function SettingsView({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [saved, setSaved] = useState(false);
+  const isOpenRouter =
+    settings.provider === "compatible" &&
+    new URL(settings.baseURL).hostname === "openrouter.ai";
   async function save(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -142,6 +149,11 @@ export function SettingsView({
                 setSettings({ ...settings, model: e.target.value })
               }
             />
+            {isOpenRouter && (
+              <small>
+                Use the model ID shown by OpenRouter, in provider/model format.
+              </small>
+            )}
           </label>
           {["ollama", "compatible"].includes(settings.provider) && (
             <label>
@@ -154,6 +166,11 @@ export function SettingsView({
                   setSettings({ ...settings, baseURL: e.target.value })
                 }
               />
+              {isOpenRouter && (
+                <small>
+                  OpenRouter API endpoint: https://openrouter.ai/api/v1
+                </small>
+              )}
             </label>
           )}
           {settings.provider !== "ollama" && (
@@ -194,7 +211,9 @@ export function SettingsView({
               {settings.provider === "ollama"
                 ? "Chat context is sent to the configured Ollama endpoint. Use a local model for offline inference."
                 : settings.provider === "compatible"
-                  ? "Chat context is sent to this endpoint. Confirm whether your server uses local or cloud inference."
+                  ? isOpenRouter
+                    ? "Your conversation, attachments, and approved memory are sent to OpenRouter and the selected model provider."
+                    : "Chat context is sent to this endpoint. Confirm whether your server uses local or cloud inference."
                   : "Your conversation, attachments, and retrieved memory are sent to this cloud provider."}
             </span>
           </div>
@@ -237,6 +256,28 @@ export function SettingsView({
             <strong>Review before applying</strong>
           </div>
         </div>
+      </div>
+      <div className="settings-card" id="activity">
+        <div className="settings-heading">
+          <History size={20} />
+          <div>
+            <h2>Activity</h2>
+            <p>
+              A local record of chats, reviews, memory changes, and installs.
+              Provider keys and raw error text are omitted.
+            </p>
+          </div>
+        </div>
+        <ActivityList events={state.activity.slice(0, 8)} />
+        {state.activity.length > 8 && (
+          <button
+            type="button"
+            className="text-button activity-more"
+            onClick={onOpenActivity}
+          >
+            Show all activity
+          </button>
+        )}
       </div>
     </section>
   );

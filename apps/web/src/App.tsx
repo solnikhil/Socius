@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity as ActivityIcon,
   BookOpen,
   Monitor,
   Moon,
@@ -24,16 +23,15 @@ import {
   type ThemePreference,
 } from "./components/ui.js";
 import { AppIcon } from "./components/AppIcon.js";
-import { needsAttention } from "./components/ActionCard.js";
 import { Chat } from "./views/Chat.js";
 import { NewChat } from "./views/NewChat.js";
 import { ConnectApps } from "./views/ConnectApps.js";
 import { MemoryView } from "./views/MemoryView.js";
-import { ActivityView } from "./views/ActivityView.js";
 import { SettingsView } from "./views/SettingsView.js";
+import { ActivityView } from "./views/ActivityView.js";
 import { CreateBot } from "./views/CreateBot.js";
 
-type Page = "chat" | "new" | "memory" | "activity" | "settings";
+type Page = "chat" | "new" | "memory" | "settings" | "activity";
 const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
@@ -96,8 +94,6 @@ export function App() {
   const pending = state.approvals.filter(
     (a) => a.state === "pending" && Date.parse(a.expiresAt) > Date.now(),
   );
-  const attention =
-    pending.length + state.actions.filter(needsAttention).length;
   const main =
     state.bots.find((b) => b.template.id === MAIN_BOT_TEMPLATE) ??
     state.bots[0]!;
@@ -117,8 +113,8 @@ export function App() {
     <div className="window-tools">
       <button
         className="icon ghost"
-        aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
-        title={"Toggle sidebar  ⌘\\"}
+        aria-label="Hide sidebar"
+        title={"Hide sidebar  ⌘\\"}
         onClick={() => setCollapsed((c) => !c)}
       >
         <PanelLeft size={17} />
@@ -150,7 +146,7 @@ export function App() {
 
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""}`}>
-      <aside className="sidebar" aria-label="Bots">
+      <aside className="sidebar" aria-label="Bots" inert={collapsed}>
         <div className="sidebar-top drag">{toolbar}</div>
         <div className="sidebar-scroll">
           <div className="featured">
@@ -160,7 +156,12 @@ export function App() {
             >
               <Avatar name={main.name} main size={66} badge />
               <span>{main.name}</span>
-              {running(main) && <span className="pulse" />}
+              {(running(main) || waiting(main)) && (
+                <span
+                  className={`review-dot ${running(main) ? "pulse" : ""}`}
+                  aria-label={running(main) ? "Working" : "Needs review"}
+                />
+              )}
             </button>
           </div>
           {specialists.length > 0 && (
@@ -197,7 +198,6 @@ export function App() {
               onClick={() => setPage("activity")}
             >
               Activity
-              <span>{attention || ""}</span>
             </button>
             <button
               className={`group-link ${page === "memory" ? "active" : ""}`}
@@ -216,7 +216,6 @@ export function App() {
               onClick={() => setMenu((m) => !m)}
             >
               <User size={16} />
-              {attention > 0 && <span className="dot" />}
             </button>
             {menu && (
               <div className="popover account-menu" role="menu">
@@ -239,19 +238,6 @@ export function App() {
                 >
                   <BookOpen size={15} />
                   Memory
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setPage("activity");
-                    setMenu(false);
-                  }}
-                >
-                  <ActivityIcon size={15} />
-                  Activity
-                  {pending.length > 0 && (
-                    <span className="count">{pending.length}</span>
-                  )}
                 </button>
                 <div className="menu-divider" />
                 <div className="menu-label">Appearance</div>
@@ -285,7 +271,16 @@ export function App() {
         </div>
       </aside>
       <main>
-        {collapsed && <div className="floating-tools drag">{toolbar}</div>}
+        <button
+          className="sidebar-reveal icon ghost"
+          aria-label="Show sidebar"
+          title={"Show sidebar  ⌘\\"}
+          tabIndex={collapsed ? 0 : -1}
+          aria-hidden={!collapsed}
+          onClick={() => setCollapsed(false)}
+        >
+          <PanelLeft size={17} />
+        </button>
         <ErrorNote error={error} />
         {page === "chat" && (
           <Chat
@@ -309,10 +304,16 @@ export function App() {
             }}
           />
         )}
-        {(page === "memory" || page === "activity" || page === "settings") && (
+        {(page === "memory" || page === "settings" || page === "activity") && (
           <div className="page-frame">
             <header className="page-bar drag">
-              <span>{page[0]!.toUpperCase() + page.slice(1)}</span>
+              <span>
+                {page === "memory"
+                  ? "Memory"
+                  : page === "settings"
+                    ? "Settings"
+                    : "Activity"}
+              </span>
               <button
                 className="icon ghost"
                 aria-label="Close"
@@ -329,17 +330,16 @@ export function App() {
                 onSelect={setSelected}
               />
             )}
-            {page === "activity" && (
-              <ActivityView state={state} onRefresh={refresh} />
-            )}
             {page === "settings" && (
               <SettingsView
                 state={state}
                 onRefresh={refresh}
                 theme={theme}
                 onTheme={setTheme}
+                onOpenActivity={() => setPage("activity")}
               />
             )}
+            {page === "activity" && <ActivityView events={state.activity} />}
           </div>
         )}
       </main>
