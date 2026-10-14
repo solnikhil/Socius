@@ -498,14 +498,14 @@ function ConnectorSetup({
                     type="checkbox"
                     aria-label={`${b.name} ${c}`}
                     checked={
-                      b.grantedCapabilities.includes(c) &&
-                      (item.id === "socius/notion" ||
-                        state.connectorGrants.some(
-                          (g) =>
-                            g.botId === b.id &&
-                            g.connectorId === item.id &&
-                            g.capability === c,
-                        ))
+                      item.id === "socius/notion"
+                        ? b.grantedCapabilities.includes(c)
+                        : state.connectorGrants.some(
+                            (g) =>
+                              g.botId === b.id &&
+                              g.connectorId === item.id &&
+                              g.capability === c,
+                          )
                     }
                     disabled={busy}
                     onChange={(e) =>

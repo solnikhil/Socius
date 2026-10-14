@@ -117,7 +117,10 @@ export class ActionBroker {
       !receipt.consentedCapabilities.includes(action.capability)
     )
       fail(403, `The installation was not consented for ${action.capability}`);
-    if (!bot.grantedCapabilities.includes(action.capability))
+    if (
+      connector.id === "socius/notion" &&
+      !bot.grantedCapabilities.includes(action.capability)
+    )
       fail(403, `${bot.name} has not been granted ${action.capability}`);
     if (
       connector.id !== "socius/notion" &&
