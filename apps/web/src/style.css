@@ -2637,6 +2637,14 @@ h4.with-mark {
   padding: 4px 10px 8px;
   color: var(--text-3);
 }
+.search.sidebar-bot-search {
+  height: 32px;
+  margin: 2px 8px 8px;
+  padding: 0 10px;
+}
+.search.sidebar-bot-search input {
+  font-size: 13px;
+}
 /* Sidebar folders: labels for bots, not collaboration. */
 .folder-group {
   margin-bottom: 2px;

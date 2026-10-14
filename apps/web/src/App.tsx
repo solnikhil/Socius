@@ -87,6 +87,7 @@ export function App() {
       connectionId?: string | undefined;
     } | null>(null),
     [memoryBot, setMemoryBot] = useState<string | null>(null),
+    [botQuery, setBotQuery] = useState(""),
     [error, setError] = useState("");
   const [theme, setTheme] = useTheme();
   async function refresh() {
@@ -257,11 +258,29 @@ export function App() {
   // Folders only group rows in the sidebar; bots outside one list directly under Bots.
   const filed = new Set(state.folders.flatMap((f) => f.botIds));
   const loose = specialists.filter((b) => !filed.has(b.id));
+  const botQueryText = botQuery.trim().toLowerCase();
+  const botMatches = (b: BotInstance) =>
+    b.name.toLowerCase().includes(botQueryText) ||
+    b.role.toLowerCase().includes(botQueryText);
+  const visibleLoose = botQueryText ? loose.filter(botMatches) : loose;
+  const visibleFolders = botQueryText
+    ? state.folders.filter((f) => {
+        if (f.name.toLowerCase().includes(botQueryText)) return true;
+        return f.botIds.some((id) => {
+          const bot = specialists.find((b) => b.id === id);
+          return !!bot && botMatches(bot);
+        });
+      })
+    : state.folders;
   const folderRow = (f: BotFolder) => {
-    const expanded = !folded.has(`folder:${f.id}`);
-    const bots = f.botIds
+    const nameHit =
+      !!botQueryText && f.name.toLowerCase().includes(botQueryText);
+    const members = f.botIds
       .map((id) => specialists.find((b) => b.id === id))
       .filter((b): b is BotInstance => !!b);
+    const bots =
+      botQueryText && !nameHit ? members.filter(botMatches) : members;
+    const expanded = botQueryText ? true : !folded.has(`folder:${f.id}`);
     return (
       <div key={f.id} className="folder-group">
         <button
@@ -409,13 +428,27 @@ export function App() {
             })}
             {!folded.has("section:bots") && (
               <>
-                {state.folders.map(folderRow)}
-                {loose.map((b) => botRow(b, false))}
-                {!specialists.length && (
+                <label className="search sidebar-bot-search">
+                  <Search size={14} />
+                  <input
+                    aria-label="Search bots"
+                    placeholder="Search bots"
+                    value={botQuery}
+                    onChange={(e) => setBotQuery(e.target.value)}
+                  />
+                </label>
+                {visibleFolders.map(folderRow)}
+                {visibleLoose.map((b) => botRow(b, false))}
+                {!botQueryText && !specialists.length && (
                   <small className="bots-empty">
                     Create a bot or add one from Connect Apps.
                   </small>
                 )}
+                {botQueryText &&
+                  !visibleFolders.length &&
+                  !visibleLoose.length && (
+                    <small className="bots-empty">No matching bots</small>
+                  )}
               </>
             )}
           </section>
