@@ -49,7 +49,7 @@ Browser mode does not persist keys entered through a browser; it uses each provi
 
 Desktop data is under Electron's per-user app-data directory in `workspace/`. Browser mode uses `.socius/`. `SOCIUS_DATA_DIR` and `SOCIUS_PORT` configure browser mode; `SOCIUS_USER_DATA` selects a separate desktop profile. Shut down Socius before backing up the whole workspace, including SQLite/WAL files.
 
-The API binds loopback and uses one-time pairing, an HttpOnly same-site cookie, host/origin checks and bounded requests. Phone pairing/Tailscale exposure is a remaining integration. Packaging uses electron-builder; public signing, notarization and updater hosting are release work.
+The API binds loopback and uses one-time pairing, an HttpOnly same-site cookie, host/origin checks and bounded requests. Private phone pairing/Tailscale access is available as a bounded milestone: see [setup and the manual phone checklist](docs/architecture/remote-access.md). Real tailnet/device verification and full remote lifecycle remain pending. Packaging uses electron-builder; public signing, notarization and updater hosting are release work.
 
 ## Remaining workstreams
 

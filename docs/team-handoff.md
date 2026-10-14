@@ -131,3 +131,7 @@ npm run test:e2e
 ```
 
 Controlled fixtures are test-only. Live model/provider checks are recorded separately. The project is ready for parallel work, but both major feature workflows remain unfinished.
+
+## R01 phone access milestone
+
+Branch `codex/phone-remote-access` adds per-browser hashed device sessions, local-owner pairing/revocation, one exact configured Tailscale HTTPS origin, a stable preferred Electron port, manual Serve setup commands and mobile reconnect/idempotency. The phone shares Electron's existing runtime and credential bridge. See [remote access](architecture/remote-access.md) for the supported route boundary and owner-run real-device checklist. No Tailscale settings or services were changed during implementation. This milestone does not close #12; live phone/tailnet acceptance, SSH recovery, platform matrix and full automatic service lifecycle/teardown remain unverified or deferred. Scheduling, Dreaming, per-bot assignment and historical boards are unchanged.

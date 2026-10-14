@@ -11,9 +11,11 @@ import {
   ArrowUp,
   BookOpen,
   Check,
+  ChevronDown,
   Copy,
   Download,
   FileText,
+  Mic,
   Pencil,
   Plus,
   Puzzle,
@@ -29,7 +31,7 @@ import {
   type Reaction,
   type Snapshot,
 } from "@socius/contracts/app";
-import { api } from "../api.js";
+import { requestKey, requestKnown, api } from "../api.js";
 import {
   Avatar,
   ErrorNote,
@@ -53,7 +55,14 @@ import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
 import { BotSkills } from "./BotSkills.js";
 import { BotModelMenu } from "../components/ModelPicker.js";
-import { resolvedModel, SETUP_CODES, type OpenSettings } from "../models.js";
+import { ProviderMark } from "../components/ProviderMark.js";
+import { useDictation } from "../components/dictation.js";
+import {
+  connectionOf,
+  resolvedModel,
+  SETUP_CODES,
+  type OpenSettings,
+} from "../models.js";
 
 const suggestions = [
   "Create a research bot that turns my supplied sources into evidence-based briefs.",
@@ -112,6 +121,7 @@ export function Chat({
     [exporting, setExporting] = useState(false),
     [skillsOpen, setSkillsOpen] = useState(false),
     [copied, setCopied] = useState("");
+  const streamAbort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null),
     thread = useRef<HTMLDivElement>(null),
     upload = useRef<HTMLInputElement>(null),
@@ -119,6 +129,19 @@ export function Chat({
   const closeDetails = useCallback(() => {
     setDetails(false);
     setConfirmDelete(false);
+  }, []);
+  useEffect(() => {
+    const recover = () => {
+      if (document.visibilityState === "visible") streamAbort.current?.abort();
+    };
+    const disconnect = () => streamAbort.current?.abort();
+    document.addEventListener("visibilitychange", recover);
+    window.addEventListener("offline", disconnect);
+    return () => {
+      document.removeEventListener("visibilitychange", recover);
+      window.removeEventListener("offline", disconnect);
+      streamAbort.current?.abort();
+    };
   }, []);
   const conversation = group?.id ?? bot.id;
   const title = group?.name ?? bot.name;
@@ -153,6 +176,9 @@ export function Chat({
             (t.state === "failed" || t.state === "cancelled"),
         );
   const model = resolvedModel(state, bot.id);
+  const modelOwner = model && connectionOf(state, model.entry.connectionId);
+  const [modelMenu, setModelMenu] = useState(false);
+  const dictation = useDictation(setText);
   const fail = (message: string, code = "") => {
     setError(message);
     setErrorCode(code);
@@ -161,7 +187,13 @@ export function Chat({
     let mounted = true;
     async function load() {
       try {
-        const next = await api<Message[]>(messagesPath);
+        const snapshot = await api<{
+          messages: Message[];
+          lastEventId: string | null;
+        }>(
+          `chats/${conversation}?since=${encodeURIComponent(messages.at(-1)?.id ?? "")}`,
+        );
+        const next = snapshot.messages;
         if (mounted) setMessages(next);
       } catch (e) {
         if (mounted) fail((e as Error).message);
@@ -211,16 +243,27 @@ export function Chat({
   }
   /** Posts a turn and streams its events; false when the request was refused. */
   async function converse(path: string, payload: unknown) {
+    if (!navigator.onLine) {
+      fail("Offline. Reconnect before sending.");
+      return false;
+    }
     setBusy(true);
     fail("");
     setStream(null);
     let accepted = false;
     try {
+      const controller = new AbortController();
+      streamAbort.current = controller;
       const response = await fetch(`/api/${path}`, {
+        signal: controller.signal,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": requestKey(path, payload),
+        },
         body: JSON.stringify(payload),
       });
+      if (response.status !== 409) requestKnown(path, payload);
       if (!response.ok) {
         const result = await response.json();
         throw Object.assign(new Error(result.error), {
@@ -228,6 +271,13 @@ export function Chat({
         });
       }
       accepted = true;
+      if (response.headers.get("content-type")?.includes("application/json")) {
+        const saved = await response.json();
+        if (saved.taskId) setTaskId(saved.taskId);
+        setMessages(await api<Message[]>(messagesPath));
+        await onRefresh();
+        return true;
+      }
       setMessages(await api<Message[]>(messagesPath));
       const reader = response.body!.getReader(),
         decoder = new TextDecoder();
@@ -264,7 +314,14 @@ export function Chat({
       setMessages(await api<Message[]>(messagesPath));
       await onRefresh();
     } catch (e) {
-      fail((e as Error).message, (e as { code?: string }).code ?? "");
+      if ((e as Error).name === "AbortError" && accepted) {
+        try {
+          setMessages(await api<Message[]>(messagesPath));
+          await onRefresh();
+        } catch {
+          /* Connection banner explains offline recovery. */
+        }
+      } else fail((e as Error).message, (e as { code?: string }).code ?? "");
     } finally {
       setBusy(false);
       setTaskId("");
@@ -798,15 +855,16 @@ export function Chat({
             </button>
           </div>
         )}
-        <form className="composer" onSubmit={submit}>
-          <button
-            type="button"
-            className="icon round composer-plus"
-            aria-label="Attach a text document"
-            onClick={() => upload.current?.click()}
-          >
-            <Plus size={18} />
-          </button>
+        {dictation.error && (
+          <ErrorNote
+            error={dictation.error}
+            action={{ label: "Dismiss", onClick: dictation.clearError }}
+          />
+        )}
+        <form
+          className={`composer ${dictation.listening ? "listening" : ""}`}
+          onSubmit={submit}
+        >
           <input
             className="hidden"
             ref={upload}
@@ -820,7 +878,9 @@ export function Chat({
           <textarea
             ref={input}
             aria-label={`Message ${title}`}
-            placeholder={`Message ${title}`}
+            placeholder={
+              dictation.listening ? "Listening… speak now" : `Message ${title}`
+            }
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={1}
@@ -831,32 +891,92 @@ export function Chat({
                 !e.nativeEvent.isComposing
               ) {
                 e.preventDefault();
+                dictation.stop();
                 void submit();
               }
             }}
           />
-          {busy || running ? (
+          <div className="composer-tools">
             <button
               type="button"
-              className="send"
-              aria-label="Stop task"
+              className="icon round composer-plus"
+              aria-label="Attach a text document"
+              onClick={() => upload.current?.click()}
+            >
+              <Plus size={18} />
+            </button>
+            <Popover open={modelMenu} onOpenChange={setModelMenu}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="model-pill"
+                  aria-label={`Switch model, current ${model?.entry.label ?? "none"}`}
+                >
+                  {modelOwner && (
+                    <ProviderMark
+                      id={modelOwner.connection.provider}
+                      size={16}
+                    />
+                  )}
+                  <span>{model?.entry.label ?? "Choose a model"}</span>
+                  <ChevronDown size={14} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="start"
+                collisionPadding={12}
+                className="floating-panel model-switcher"
+              >
+                <BotModelMenu
+                  bot={bot}
+                  state={state}
+                  onRefresh={async () => {
+                    await onRefresh();
+                    setModelMenu(false);
+                  }}
+                  onSettings={onSettings}
+                  onError={(m) => fail(m)}
+                  onClose={() => setModelMenu(false)}
+                />
+              </PopoverContent>
+            </Popover>
+            <span className="composer-spacer" />
+            <button
+              type="button"
+              className={`icon round composer-mic ${dictation.listening ? "on" : ""}`}
+              aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
+              aria-pressed={dictation.listening}
               onClick={() =>
-                void api("tasks/cancel", { id: taskId || running?.id }).catch(
-                  (e) => fail(e.message),
-                )
+                dictation.listening ? dictation.stop() : dictation.start(text)
               }
             >
-              <Square size={12} fill="currentColor" />
+              <Mic size={17} />
             </button>
-          ) : (
-            <button
-              className="send"
-              aria-label="Send message"
-              disabled={!text.trim() || !model}
-            >
-              <ArrowUp size={18} strokeWidth={2.4} />
-            </button>
-          )}
+            {busy || running ? (
+              <button
+                type="button"
+                className="send"
+                aria-label="Stop task"
+                onClick={() =>
+                  void api("tasks/cancel", { id: taskId || running?.id }).catch(
+                    (e) => fail(e.message),
+                  )
+                }
+              >
+                <Square size={12} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                className="send"
+                aria-label="Send message"
+                disabled={!text.trim() || !model}
+                onClick={() => dictation.stop()}
+              >
+                <ArrowUp size={18} strokeWidth={2.4} />
+              </button>
+            )}
+          </div>
         </form>
       </div>
       {exporting && <ExportBot bot={bot} onClose={() => setExporting(false)} />}

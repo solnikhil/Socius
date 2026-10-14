@@ -156,6 +156,23 @@ const migrations: { version: number; up: (db: DatabaseSync) => void }[] = [
         CREATE INDEX routine_notifications_deliver ON routine_notifications(deliver_at);
         CREATE TABLE runtime_lease(id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, fence INTEGER NOT NULL, expires_at INTEGER NOT NULL);`),
   },
+  {
+    version: 7,
+    up: (db) =>
+      db.exec(`
+      CREATE TABLE devices(
+        id TEXT PRIMARY KEY, label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL, last_used_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+        revoked_at TEXT, origin_kind TEXT NOT NULL CHECK(origin_kind IN ('local','remote'))
+      );`),
+  },
+  {
+    version: 8,
+    up: (db) =>
+      db.exec(`CREATE TABLE remote_requests(
+      device_id TEXT NOT NULL REFERENCES devices(id), key TEXT NOT NULL, hash TEXT NOT NULL,
+      status INTEGER, result TEXT, created_at TEXT NOT NULL, PRIMARY KEY(device_id,key));`),
+  },
 ];
 
 /** Moves the v1 single-provider settings row into a provider connection. */
