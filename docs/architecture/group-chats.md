@@ -74,7 +74,7 @@ Stream events:
 
 ## Categories are not groups
 
-Sidebar **categories** (`Category` in `packages/contracts/src/app.ts`, stored as `folder` records) only organise the Bots list. Bots in a category share no context, memory or thread, and never talk to each other. A bot is in at most one category; the main bot is never in one. Category changes never touch group membership, and deleting a category returns its bots to the Bots list. Group chats always stay in the **Group chats** section.
+Sidebar **categories** (`Category` in `packages/contracts/src/app.ts`, stored as `folder` records) only organise the sidebar's bots. Bots in a category share no context, memory or thread, and never talk to each other. A bot is in at most one category; the main bot is never in one. Category changes never touch group membership, and deleting a category returns its bots to **Unassigned**. The sidebar lists **Group chats**, then **Categories**, then **Unassigned** (bots in no category); group chats always stay in their own section.
 
 ```
 POST   /api/categories         {"name", "botIds"?}               → 201 Category (filed bots leave any other category)
@@ -83,4 +83,4 @@ POST   /api/categories/move    {"botId", "categoryId" | null}    → 200 (null r
 DELETE /api/categories         {"id"}                            → 200 (bots are kept)
 ```
 
-Everything is created from the top **+** menu: New chat, New group chat, New bot and New category. Section headings only fold. Right-click a category to edit or delete it, and right-click a bot to move it.
+Everything is created from the top **+** menu: New chat, New group chat, New bot and New category. Section headings only fold; an empty Categories section also shows a **New category** link. Right-click a category to edit or delete it, and right-click a bot to move it.

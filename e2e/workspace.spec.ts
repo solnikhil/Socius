@@ -254,6 +254,21 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(
     page.getByRole("button", { name: "New group chat", exact: true }),
   ).toHaveCount(0);
+  // Bots outside a category are listed under Unassigned; there is no bot search.
+  const unassigned = page.getByRole("region", { name: "Unassigned" });
+  await expect(
+    unassigned.getByRole("button", { name: /Planner/ }),
+  ).toBeVisible();
+  await expect(page.getByPlaceholder("Search bots")).toHaveCount(0);
+  // With no categories yet, the Categories section offers to create one.
+  await page
+    .getByRole("region", { name: "Categories" })
+    .getByRole("button", { name: "New category" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "New category" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
   await page
     .getByRole("button", { name: "Create", exact: true })
     .first()
@@ -263,6 +278,9 @@ test("configure a model, create bots manually and through Socius, install skills
   await page.getByRole("checkbox", { name: /Planner/ }).click();
   await page.getByRole("button", { name: "Create category" }).click();
   const workCategory = page.getByRole("group", { name: "Work bots" });
+  await expect(unassigned.getByRole("button", { name: /Planner/ })).toHaveCount(
+    0,
+  );
   await expect(
     workCategory.getByRole("button", { name: /Planner/ }),
   ).toBeVisible();

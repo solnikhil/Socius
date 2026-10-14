@@ -87,7 +87,6 @@ export function App() {
       connectionId?: string | undefined;
     } | null>(null),
     [memoryBot, setMemoryBot] = useState<string | null>(null),
-    [botQuery, setBotQuery] = useState(""),
     [error, setError] = useState("");
   const [theme, setTheme] = useTheme();
   async function refresh() {
@@ -241,32 +240,14 @@ export function App() {
       </h3>
     );
   };
-  // Categories only group rows in the sidebar; bots outside one list directly under Bots.
+  // Categories only group rows in the sidebar; bots outside one are Unassigned.
   const filed = new Set(state.categories.flatMap((f) => f.botIds));
-  const loose = specialists.filter((b) => !filed.has(b.id));
-  const botQueryText = botQuery.trim().toLowerCase();
-  const botMatches = (b: BotInstance) =>
-    b.name.toLowerCase().includes(botQueryText) ||
-    b.role.toLowerCase().includes(botQueryText);
-  const visibleLoose = botQueryText ? loose.filter(botMatches) : loose;
-  const visibleCategories = botQueryText
-    ? state.categories.filter((f) => {
-        if (f.name.toLowerCase().includes(botQueryText)) return true;
-        return f.botIds.some((id) => {
-          const bot = specialists.find((b) => b.id === id);
-          return !!bot && botMatches(bot);
-        });
-      })
-    : state.categories;
+  const unassigned = specialists.filter((b) => !filed.has(b.id));
   const categoryRow = (f: Category) => {
-    const nameHit =
-      !!botQueryText && f.name.toLowerCase().includes(botQueryText);
-    const members = f.botIds
+    const bots = f.botIds
       .map((id) => specialists.find((b) => b.id === id))
       .filter((b): b is BotInstance => !!b);
-    const bots =
-      botQueryText && !nameHit ? members.filter(botMatches) : members;
-    const expanded = botQueryText ? true : !folded.has(`category:${f.id}`);
+    const expanded = !folded.has(`category:${f.id}`);
     return (
       <div key={f.id} className="category-group">
         <button
@@ -407,31 +388,39 @@ export function App() {
                 </button>
               ))}
           </section>
-          <section className="bot-group" aria-label="Specialist bots">
-            {sectionHeading("bots", "Bots", specialists.length)}
-            {!folded.has("section:bots") && (
+          <section className="bot-group" aria-label="Categories">
+            {sectionHeading(
+              "categories",
+              "Categories",
+              state.categories.length,
+            )}
+            {!folded.has("section:categories") && (
               <>
-                <label className="search sidebar-bot-search">
-                  <Search size={14} />
-                  <input
-                    aria-label="Filter bots"
-                    placeholder="Search bots"
-                    value={botQuery}
-                    onChange={(e) => setBotQuery(e.target.value)}
-                  />
-                </label>
-                {visibleCategories.map(categoryRow)}
-                {visibleLoose.map((b) => botRow(b, false))}
-                {!botQueryText && !specialists.length && (
+                {state.categories.map(categoryRow)}
+                {!state.categories.length && (
+                  <button
+                    className="group-link"
+                    onClick={() => setEditingCategory({})}
+                  >
+                    New category
+                    <Plus size={14} />
+                  </button>
+                )}
+              </>
+            )}
+          </section>
+          <section className="bot-group" aria-label="Unassigned">
+            {sectionHeading("unassigned", "Unassigned", unassigned.length)}
+            {!folded.has("section:unassigned") && (
+              <>
+                {unassigned.map((b) => botRow(b, false))}
+                {!unassigned.length && (
                   <small className="bots-empty">
-                    Create a bot or add one from Connect Apps.
+                    {specialists.length
+                      ? "Every bot is in a category. New bots land here."
+                      : "Create a bot or add one from Connect Apps."}
                   </small>
                 )}
-                {botQueryText &&
-                  !visibleCategories.length &&
-                  !visibleLoose.length && (
-                    <small className="bots-empty">No matching bots</small>
-                  )}
               </>
             )}
           </section>
