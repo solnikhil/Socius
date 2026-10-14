@@ -5,7 +5,6 @@ import {
   readFileSync,
   writeFileSync,
   renameSync,
-  unlinkSync,
   readdirSync,
   rmSync,
 } from "node:fs";
@@ -18,6 +17,9 @@ import type {
   Memory,
   Activity,
   Task,
+  Approval,
+  Category,
+  GroupChat,
 } from "@socius/contracts/app";
 import { migrate } from "./migrations.js";
 import { ProviderStore } from "./provider-store.js";
@@ -99,6 +101,8 @@ export class Store {
     }
     this.cleanPackages();
     this.reconcileMemory();
+    for (const deletion of this.all<{ id: string; botId: string }>("memory-delete")) this.finishMemoryDelete(deletion.id);
+    for (const deletion of this.all<{ id: string }>("bot-delete")) this.deleteBot(deletion.id);
   }
   /** Removes interrupted imports: staging leftovers and release files without a record. */
   cleanPackages() {
@@ -278,12 +282,41 @@ export class Store {
   }
   deleteMemory(id: string) {
     const memory = this.readMemoryFile(id);
-    // Persist the suppression before removing evidence; retries must not relearn it.
-    for (const sourceId of memory.dream?.sourceMessageIds ?? [])
-      this.put("dream-suppressed", sourceId, { botId: memory.botId });
-    unlinkSync(join(this.memoryDir, `${id}.md`));
-    this.db.prepare("DELETE FROM memory_search WHERE id=?").run(id);
-    this.event("memory.deleted", "A memory record was deleted.");
+    // Journal and suppression commit together BEFORE deleting the file.
+    this.transaction(() => {
+      this.put("memory-delete", id, { id, botId: memory.botId });
+      for (const sourceId of memory.dream?.sourceMessageIds ?? []) this.put("dream-suppressed", sourceId, { botId: memory.botId });
+    });
+    this.finishMemoryDelete(id);
+  }
+  private finishMemoryDelete(id: string) {
+    rmSync(join(this.memoryDir, `${id}.md`), { force: true });
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM memory_search WHERE id=?").run(id);
+      this.delete("memory-delete", id);
+      this.event("memory.deleted", "A memory record was deleted.");
+    });
+  }
+  /** Recoverable deletion: no filesystem mutations inside a rollbackable SQLite transaction. */
+  deleteBot(id: string) {
+    this.put("bot-delete", id, { id });
+    for (const memory of this.memory(id)) this.deleteMemory(memory.id);
+    this.transaction(() => {
+      for (const f of this.all<Category>("folder")) if (f.botIds.includes(id)) this.put("folder", f.id, { ...f, botIds: f.botIds.filter((b) => b !== id) });
+      for (const g of this.all<GroupChat>("group")) if (g.memberIds.includes(id)) this.put("group", g.id, { ...g, memberIds: g.memberIds.filter((b) => b !== id) });
+      for (const m of this.all<Message>("message")) if (m.botId === id && !m.groupId) this.delete("message", m.id);
+      for (const a of this.all<Approval>("approval")) if (a.botId === id && a.state === "pending") this.delete("approval", a.id);
+      for (const kind of ["dream-run", "dream-processed", "dream-suppressed", "dream-last"]) {
+        for (const row of this.db.prepare("SELECT id, data FROM records WHERE kind=?").all(kind)) {
+          if (JSON.parse(row.data as string).botId === id) this.delete(kind, row.id as string);
+        }
+      }
+      this.providers.select(`bot:${id}`, null);
+      this.delete("bot-layout", id);
+      this.delete("bot", id);
+      this.delete("bot-delete", id);
+      this.event("bot.deleted", "A specialist and its private data were deleted.");
+    });
   }
   close() {
     this.db.close();

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { DreamingStatus, Snapshot } from "@socius/contracts/app";
 import { provider } from "@socius/contracts/providers";
 import { api } from "../../api.js";
+import { DreamSources } from "../../components/DreamSources.js";
 import { ErrorNote } from "../../components/chrome.js";
 
 /** Uses the existing Settings layout; dreamer controls do not redesign chat. */
@@ -26,15 +27,17 @@ export function DreamingPane({
   const [botId, setBotId] = useState(state.bots[0]?.id ?? "");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [revision, setRevision] = useState(state.dreaming.settings.revision);
+  const [pollError, setPollError] = useState("");
   const [notice, setNotice] = useState("");
   useEffect(() => {
     let mounted = true;
     const timer = setInterval(() => {
       void api<DreamingStatus>("dreaming")
         .then((s) => {
-          if (mounted) setStatus(s);
+          if (mounted) { setStatus(s); setPollError(""); }
         })
-        .catch(() => {});
+        .catch(() => { if (mounted) setPollError("Dreaming status could not refresh. Reopen Settings to reconnect."); });
     }, 2000);
     return () => {
       mounted = false;
@@ -69,12 +72,14 @@ export function DreamingPane({
   function save(e: FormEvent) {
     e.preventDefault();
     void perform(async () => {
-      await api("dreaming/settings", {
+      const updated = await api<DreamingStatus>("dreaming/settings", {
+        expectedRevision: revision,
         enabled,
         model: model ? JSON.parse(model) : null,
         idleMinutes: idle,
         intervalMinutes: interval,
       });
+      setRevision(updated.settings.revision);
       setNotice("Dreaming settings saved.");
     });
   }
@@ -169,7 +174,8 @@ export function DreamingPane({
             pauses dreaming. Bots need memory access. Dreaming cannot use tools
             or take external actions.
           </p>
-          <ErrorNote error={error} />
+          <ErrorNote error={error || pollError} />
+          {status.settings.revision !== revision && <p role="alert">Settings changed elsewhere. Reopen Settings before saving.</p>}
           <p role="status">{notice}</p>
           <button className="primary" disabled={busy}>
             Save dreaming settings
@@ -242,16 +248,7 @@ export function DreamingPane({
             </p>
             {r.error && <p>{r.error}</p>}
             {r.sourceMessageIds.length > 0 && (
-              <details>
-                <summary>Source references</summary>
-                <ul>
-                  {r.sourceMessageIds.map((id) => (
-                    <li key={id}>
-                      <code>{id}</code>
-                    </li>
-                  ))}
-                </ul>
-              </details>
+              <DreamSources botId={r.botId} runId={r.id} />
             )}
           </article>
         ))}

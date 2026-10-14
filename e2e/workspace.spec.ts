@@ -254,7 +254,10 @@ test("configure a model, create bots manually and through Socius, install skills
   const plannerReply = page
     .locator(".message")
     .filter({ hasText: "Planner here. 1. Research" });
-  const reactTo = plannerReply.getByRole("button", { name: "React", exact: true });
+  const reactTo = plannerReply.getByRole("button", {
+    name: "React",
+    exact: true,
+  });
   await plannerReply.hover();
   await reactTo.click();
   await page.getByRole("menuitemradio", { name: /React ❤️/ }).click();
@@ -585,6 +588,241 @@ test("import a standard skill, connect Notion, read, approve one exact page and 
   await expect(
     page.getByText("Created Notion page “Q3 brief”.").first(),
   ).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+test("dream over a direct chat, read its evidence, recall it, correct and forget it", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    storageState: "test-results/paired-state.json",
+  });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://127.0.0.1:3137/");
+  // A dedicated bot keeps this direct chat apart from the earlier tests.
+  await page
+    .getByRole("button", { name: "Create", exact: true })
+    .first()
+    .click();
+  await page.getByRole("option", { name: /Create new bot/ }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Tutor");
+  await page.getByLabel("Role", { exact: true }).fill("Study planning");
+  await page
+    .getByLabel("Instructions", { exact: true })
+    .fill("Plan study sessions.");
+  await page.getByRole("button", { name: "Create bot", exact: true }).click();
+  await page.getByRole("button", { name: /Tutor Study planning/ }).click();
+  const tutor = page.getByRole("textbox", { name: "Message Tutor" });
+  // Waits for this reply to land and the task to finish, so dreaming is not blocked.
+  const say = async (text: string, reply: string | RegExp) => {
+    const before = await page.getByText(reply).count();
+    await tutor.fill(text);
+    await page.getByRole("button", { name: "Send message" }).click();
+    await expect(page.getByText(reply)).toHaveCount(before + 1);
+    await expect(page.getByRole("button", { name: "Stop task" })).toHaveCount(
+      0,
+    );
+  };
+  const memoryAccess = async (button: "Allow memory" | "Revoke access") => {
+    await page.getByRole("button", { name: "Tutor details" }).click();
+    await page
+      .locator(".bot-details")
+      .getByRole("button", { name: /Memory/ })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Memory permissions" })
+      .getByRole("button", { name: button })
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: "Memory permissions" }),
+    ).toHaveCount(0);
+  };
+  await memoryAccess("Allow memory");
+  await say(
+    "Remember: I study chemistry on Tuesday evenings.",
+    /summary of your supplied document/,
+  );
+
+  // Dreaming takes its own model and consent, separate from chat.
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const openSettings = async (tab: string) => {
+    await page.getByRole("button", { name: "Account and settings" }).click();
+    await page.getByRole("menuitem", { name: "Settings" }).click();
+    await settings.getByRole("tab", { name: tab }).click();
+  };
+  await openSettings("Models");
+  await settings
+    .getByRole("button", { name: "Add models from Ollama" })
+    .click();
+  await settings.getByLabel("Model ID").fill("dream-model");
+  await settings.getByRole("button", { name: "Add model" }).click();
+  await settings.getByRole("button", { name: "Models", exact: true }).click();
+  await expect(settings.getByLabel("Default model")).toHaveValue(
+    /fixture-model/,
+  );
+  await settings.getByRole("tab", { name: "Dreaming" }).click();
+  await expect(settings.getByText("Dreaming is off.")).toBeVisible();
+  await expect(
+    settings.getByRole("button", { name: "Dream now" }),
+  ).toBeDisabled();
+  await settings
+    .getByLabel("Dreaming model")
+    .selectOption({ label: "dream-model · Ollama" });
+  await expect(
+    settings.getByText(
+      "Direct-chat excerpts and private memories go to your configured Ollama endpoint. It is local only if hosted on this computer.",
+    ),
+  ).toBeVisible();
+  await settings.getByLabel("Enable background dreaming").check();
+  await settings
+    .getByRole("button", { name: "Save dreaming settings" })
+    .click();
+  await expect(settings.getByText("Dreaming settings saved.")).toBeVisible();
+  await page.reload();
+  await openSettings("Dreaming");
+  await expect(settings.getByLabel("Enable background dreaming")).toBeChecked();
+  await expect(settings.getByLabel("Dreaming model")).toHaveValue(
+    /dream-model/,
+  );
+  await settings.getByRole("tab", { name: "Models" }).click();
+  await expect(settings.getByLabel("Default model")).toHaveValue(
+    /fixture-model/,
+  );
+  await settings.getByRole("tab", { name: "Dreaming" }).click();
+
+  // Dream now saves a private note whose evidence reads as the original message.
+  await settings
+    .getByLabel("Bot to dream for")
+    .selectOption({ label: "Tutor" });
+  await settings.getByRole("button", { name: "Dream now" }).click();
+  const completed = settings
+    .locator("article")
+    .filter({ hasText: "Tutor · completed" });
+  await expect(completed).toBeVisible();
+  await expect(completed).toContainText("dream-model · 1 sources · 1 saved");
+  // Evidence disclosure works from the keyboard.
+  await completed.getByText("Source messages").focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    completed.getByText("Remember: I study chemistry on Tuesday evenings."),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/socius-dreaming.png",
+    animations: "disabled",
+  });
+  await page.keyboard.press("Escape");
+
+  const memory = page.getByRole("dialog", { name: "Memory" });
+  const openMemory = async () => {
+    await page.getByRole("button", { name: "Account and settings" }).click();
+    await page.getByRole("menuitem", { name: "Memory" }).click();
+    await memory.getByRole("tab", { name: "Tutor" }).click();
+  };
+  await openMemory();
+  const dreamed = memory.locator(".memory-card").filter({
+    hasText: "I study chemistry on Tuesday evenings.",
+  });
+  await expect(dreamed).toContainText("Dreaming ·");
+  await dreamed.getByText("Source messages").click();
+  await expect(
+    dreamed.getByText("Remember: I study chemistry on Tuesday evenings."),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(memory).toHaveCount(0);
+  // The reload above returned to Socius.
+  await page.getByRole("button", { name: /Tutor Study planning/ }).click();
+
+  // Later chats recall the note; a manual correction replaces what is recalled.
+  await say(
+    "What do you recall about chemistry?",
+    "I recall: I study chemistry on Tuesday evenings.",
+  );
+  await openMemory();
+  await memory.getByRole("button", { name: "Edit", exact: true }).click();
+  await memory
+    .getByRole("textbox", { name: "What should Tutor remember?" })
+    .fill("I study chemistry on Thursday evenings.");
+  await memory
+    .getByRole("button", { name: "Save memory", exact: true })
+    .click();
+  await expect(
+    memory.getByText("I study chemistry on Thursday evenings."),
+  ).toBeVisible();
+  await expect(memory.getByText(/User editor ·/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await say(
+    "What do you recall about chemistry?",
+    "I recall: I study chemistry on Thursday evenings.",
+  );
+
+  // Deleting the note stops recall.
+  await openMemory();
+  await memory.getByRole("button", { name: "Edit", exact: true }).click();
+  await memory.getByRole("button", { name: "Delete memory" }).click();
+  await expect(
+    memory.getByText("I study chemistry on Thursday evenings."),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await say(
+    "What do you recall about chemistry?",
+    "I have nothing recalled for that.",
+  );
+
+  // Stop ends a running dream without saving.
+  await say("Slow dream: take your time.", /summary of your supplied document/);
+  await openSettings("Dreaming");
+  await settings
+    .getByLabel("Bot to dream for")
+    .selectOption({ label: "Tutor" });
+  await settings.getByRole("button", { name: "Dream now" }).click();
+  await settings.getByRole("button", { name: "Stop dreaming" }).click();
+  await expect(
+    settings.locator("article").filter({ hasText: "Tutor · cancelled" }),
+  ).toBeVisible();
+  await expect(
+    settings.getByRole("button", { name: "Stop dreaming" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  // Revoked memory access blocks dreaming for that bot.
+  await memoryAccess("Revoke access");
+  await openSettings("Dreaming");
+  await settings
+    .getByLabel("Bot to dream for")
+    .selectOption({ label: "Tutor" });
+  await settings.getByRole("button", { name: "Dream now" }).click();
+  await expect(
+    settings.getByText(
+      "This bot needs memory read and write access for dreaming",
+    ),
+  ).toBeVisible();
+
+  // Removing the dreaming model leaves dreaming visibly unavailable, with no fallback.
+  await settings.getByRole("tab", { name: "Models" }).click();
+  await settings.getByRole("button", { name: "Remove dream-model" }).click();
+  await expect(
+    settings.getByRole("button", { name: "Remove dream-model" }),
+  ).toHaveCount(0);
+  await settings.getByRole("tab", { name: "Dreaming" }).click();
+  await expect(
+    settings.getByText(
+      "The saved dreaming model is unavailable. Choose another and save.",
+    ),
+  ).toBeVisible();
+  await expect(
+    settings.getByRole("option", {
+      name: "Selected model unavailable — choose another",
+    }),
+  ).toBeAttached();
+  await expect(
+    settings.getByRole("button", { name: "Dream now" }),
+  ).toBeDisabled();
+  await page.screenshot({
+    path: "test-results/socius-dreaming-unavailable.png",
+    animations: "disabled",
+  });
   expect(errors).toEqual([]);
   await context.close();
 });

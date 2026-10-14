@@ -105,6 +105,7 @@ export interface DreamRun {
   createdAt: string;
   finishedAt: string | null;
   sourceMessageIds: string[];
+  errorCode?: ProviderErrorCode | "invalid_output" | "state_changed" | "storage";
   saved: number;
   skipped: number;
   error: string | null;

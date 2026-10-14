@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { BookOpen, Plus, Search, Trash2, X } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
 import type { Memory } from "@socius/contracts/app";
+import { DreamSources } from "../components/DreamSources.js";
 import { api } from "../api.js";
 import {
   Avatar,
@@ -201,6 +202,7 @@ export function MemoryView({
                     <small>
                       {m.source} · {new Date(m.updatedAt).toLocaleDateString()}
                     </small>
+                    {m.dream && <DreamSources botId={bot.id} memoryId={m.id} />}
                   </div>
                   <button
                     className="text-button"

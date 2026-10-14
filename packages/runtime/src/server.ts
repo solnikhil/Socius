@@ -58,7 +58,7 @@ import { classify } from "./providers/errors.js";
 import { PackageError, PackageService } from "./packages.js";
 import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
-import { Dreamer, DreamingInput, type DreamRunner } from "./dreaming.js";
+import { Dreamer, DreamingInput, type DreamRunner, type DreamerOptions } from "./dreaming.js";
 
 export type { SecretBox };
 export interface RuntimeOptions {
@@ -69,6 +69,7 @@ export interface RuntimeOptions {
   runner?: ModelRunner;
   /** Test-only background synthesis boundary; production uses structured AI SDK output. */
   dreamRunner?: DreamRunner;
+  dreamingOptions?: DreamerOptions;
   /** Opens connector sign-in pages in the system browser (desktop). */
   openExternal?: (url: string) => void;
   /** Test-only: fixture endpoints and fetch for connectors and the registry. */
@@ -185,6 +186,7 @@ export async function startRuntime(options: RuntimeOptions) {
     providers,
     () => active.size > 0,
     options.dreamRunner,
+    options.dreamingOptions,
   );
   const dreaming = dreamer;
   const ModelRefSchema = z.strictObject({
@@ -446,6 +448,7 @@ export async function startRuntime(options: RuntimeOptions) {
     b: BotInstance,
     taskId: string,
     signal: AbortSignal,
+    query: string,
   ): Promise<Omit<ModelRequest, "messages">> {
     const selected = await providers.forChat(b.id);
     b = bot(b.id);
@@ -457,17 +460,7 @@ export async function startRuntime(options: RuntimeOptions) {
       tools: selected.entry.tools !== false,
       bot: b,
       dreamingEnabled: dreaming.settings().enabled,
-      recalledMemory: b.grantedCapabilities.includes("memory.read")
-        ? store
-            .searchMemory(
-              b.id,
-              store
-                .messages(b.id)
-                .filter((m) => m.role === "user")
-                .at(-1)?.content ?? "",
-            )
-            .slice(0, 8)
-        : [],
+      recalledMemory: b.grantedCapabilities.includes("memory.read") ? store.searchMemory(b.id, query) : [],
       ...(feedback ? { feedback } : {}),
       ...packageTools(b, { taskId }),
       signal,
@@ -642,7 +635,7 @@ export async function startRuntime(options: RuntimeOptions) {
         try {
           reply.content = await run(
             {
-              ...(await modelContext(m, task.id, signal)),
+              ...(await modelContext(m, task.id, signal, request)),
               briefing: [
                 DEFAULT_FRAMING,
                 `You are ${m.name}, a member of the group chat "${g.name}" with ${[lead, ...roster.filter((b) => b.id !== m.id)].map((b) => b.name).join(", ")} and the user. ${lead.name} coordinates the group and is asking you directly.`,
@@ -681,7 +674,7 @@ export async function startRuntime(options: RuntimeOptions) {
       };
       answer.content = await run(
         {
-          ...(await modelContext(lead, task.id, signal)),
+          ...(await modelContext(lead, task.id, signal, user.content)),
           ...(budget > 0 ? { askMember } : {}),
           briefing: [
             DEFAULT_FRAMING,
@@ -912,6 +905,22 @@ export async function startRuntime(options: RuntimeOptions) {
           json(res, 200, dreaming.status());
           return;
         }
+        if (req.method === "GET" && path === "/api/dreaming/sources") {
+          const b = bot(uuid.parse(url.searchParams.get("botId")));
+          const runId = url.searchParams.get("runId");
+          const memoryId = url.searchParams.get("memoryId");
+          if (!!runId === !!memoryId) fail(400, "Choose one dream or memory source");
+          const run = runId ? store.get<import("@socius/contracts/app").DreamRun>("dream-run", uuid.parse(runId)) : undefined;
+          const memory = memoryId ? store.memory(b.id).find((m) => m.id === uuid.parse(memoryId)) : undefined;
+          if (runId && (!run || run.botId !== b.id) || memoryId && !memory) fail(404, "Dreaming source not found");
+          const ids = run?.sourceMessageIds ?? memory?.dream?.sourceMessageIds ?? [];
+          json(res, 200, ids.map((id) => {
+            const m = store.get<Message>("message", id);
+            const available = m?.botId === b.id && !m.groupId && m.role === "user";
+            return { id, content: available ? clip(m.content, 4000) : null, createdAt: available ? m.createdAt : null };
+          }));
+          return;
+        }
         if (req.method === "POST" && path === "/api/dreaming/settings") {
           json(
             res,
@@ -1005,35 +1014,7 @@ export async function startRuntime(options: RuntimeOptions) {
             )
           )
             fail(409, "Wait until the group chat using this bot finishes.");
-          const memories = store.memory(b.id);
-          store.transaction(() => {
-            for (const f of store.all<Category>("folder")) {
-              if (!f.botIds.includes(b.id)) continue;
-              store.put("folder", f.id, {
-                ...f,
-                botIds: f.botIds.filter((id) => id !== b.id),
-              });
-            }
-            for (const g of groups) {
-              if (!g.memberIds.includes(b.id)) continue;
-              store.put("group", g.id, {
-                ...g,
-                memberIds: g.memberIds.filter((id) => id !== b.id),
-              });
-            }
-            for (const m of store.all<Message>("message")) {
-              if (m.botId === b.id && !m.groupId) store.delete("message", m.id);
-            }
-            for (const a of store.all<Approval>("approval")) {
-              if (a.botId === b.id && a.state === "pending")
-                store.delete("approval", a.id);
-            }
-            for (const mem of memories) store.deleteMemory(mem.id);
-            store.providers.select(`bot:${b.id}`, null);
-            store.delete("bot-layout", b.id);
-            store.delete("bot", b.id);
-            store.event("bot.deleted", `Deleted ${b.name}.`);
-          });
+          store.deleteBot(b.id);
           dreaming.permissionsChanged();
           json(res, 200, { ok: true });
           return;
@@ -1570,7 +1551,7 @@ export async function startRuntime(options: RuntimeOptions) {
               };
               assistant.content = await executeModel(
                 {
-                  ...(await modelContext(b, task.id, signal)),
+                  ...(await modelContext(b, task.id, signal, user.content)),
                   ...(b.template.id === "socius/main"
                     ? { briefing: workspaceBriefing() }
                     : {}),
