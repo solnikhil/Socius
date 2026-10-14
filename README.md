@@ -26,11 +26,12 @@ Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The 
 - Memory is private per bot: editable Markdown files plus SQLite FTS5 search. External file edits reconcile when memory is read.
 - Enable memory per bot explicitly; model-proposed saves require review and recheck permissions.
 - Messaging-style interface: bot sidebar with the main bot featured, a `To:` new-chat palette (⌘N/⌘K, ⌘1–9 to pick), chat bubbles with safe Markdown rendering, and a Connect Apps modal. Appearance (System/Light/Dark) is in Settings and the account menu; the choice is stored locally.
-- Group chats: pick two or more bots and Socius coordinates. It knows each member's role and instructions, asks members for help with an `askMember` tool, and replies last. Members answer under their own name with their own permissions. See [Group chats](docs/architecture/group-chats.md).
-- Approvals (proposed bots and memory saves) are reviewed inline in the proposing bot's chat; a blue dot marks that bot in the sidebar. There is no separate review screen.
+- Group chats: pick bots and Socius coordinates a conversation. It knows each member's role and instructions, asks members for help with an `askMember` tool, and replies last. Members answer under their own name with their own permissions. See [Group chats](docs/architecture/group-chats.md).
+- Boards: put any number of bots on a shared board with an objective and shared sources. The coordinator plans a bounded task graph, specialists contribute in parallel under configurable concurrency and budgets, and one consolidated result comes back. Stop, cancel and retry are explicit. See [Teams & Boards](docs/architecture/teams.md).
+- Approvals (proposed bots and memory saves) are reviewed inline in the proposing bot's chat, group chat or board; a blue dot marks it in the sidebar.
 - Activity keeps a local record of chats, reviews, memory changes, and installs. Provider keys and exception bodies are omitted. The Activity page and Settings show that record. Analytics and remote crash reporting are off.
 
-Pending approvals survive restart and cannot be approved twice. An interrupted running task is marked failed and requires explicit retry; model execution is not checkpoint-resumed. Socius delegates only inside group chats; direct chats with specialists stay independent.
+Pending approvals survive restart and cannot be approved twice. An interrupted running task is marked failed and requires explicit retry; model execution is not checkpoint-resumed. Delegation happens in group chats and on boards; direct chats do not delegate.
 
 ## Browser mode and packaging
 
@@ -47,7 +48,7 @@ The API binds loopback and uses one-time pairing, an HttpOnly same-site cookie, 
 
 ## Remaining workstreams
 
-Public publishing and signed releases, arbitrary executable skills, MCP/OAuth connector execution, browser automation, scheduling, delegation outside group chats, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
+Public publishing and signed releases, arbitrary executable skills, MCP/OAuth connector execution, browser automation, scheduling, connector actions in group chats or on boards, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
 
 Current skills are curated instruction manifests; standard Agent Skills directory import/export is a next deliverable. Digest checks bind review to bundled content, not publisher identity. The interface currently uses shared CSS tokens and native dialogs; Tailwind/shadcn adoption can occur inside the UI workstream without altering runtime contracts.
 
@@ -70,6 +71,7 @@ Browser end-to-end tests use a deterministic model fixture only in test code and
 - [Group chats](docs/architecture/group-chats.md): coordinator model, limits and API.
 - [Team handoff](docs/team-handoff.md): independent work packages and acceptance criteria.
 - [Local API](docs/architecture/local-api.md): transport, endpoints and extension boundaries.
+- [Teams & Boards](docs/architecture/teams.md): board model, budgets, cancellation, restart behaviour and API examples.
 - `packages/contracts`: strict manifest schemas and shared domain types.
 - `packages/marketplace`: validated catalog, dependency planning, and bundled Socius bot template.
 

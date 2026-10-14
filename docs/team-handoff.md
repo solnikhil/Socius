@@ -37,7 +37,7 @@ Reported checks: baseline full check passed with 19 tests; targeted runtime test
 
 ### Teammate: Teams & Boards
 
-> Direction change (2026-10-14): the user replaced boards with group chats coordinated by Socius, now on `main` ([Group chats](architecture/group-chats.md)). PR #4 (boards) is not merged. Coordinate before building further board work; reusable pieces such as budgets or recovery should extend group chats.
+> Update (2026-10-14): boards (PR #4) were merged alongside the user's group chats ([Group chats](architecture/group-chats.md)), where Socius coordinates a shared conversation. Both share the model adapter and runtime; coordinate changes to `model.ts` and `server.ts`.
 
 - [ ] Persistent boards, objectives, membership and coordinator.
 - [ ] Scoped delegation, attributed contributions, task graph and consolidated result.

@@ -42,7 +42,7 @@ async function paired(dataDir: string, runner?: ModelRunner) {
 const fake: ModelRunner = async (request, onText) => {
   const message = request.messages.at(-1)?.content;
   if (typeof message === "string" && message.includes("create bot"))
-    request.proposeBot({
+    request.proposeBot?.({
       name: "Planner",
       role: "Planning specialist",
       instructions: "Make clear plans from supplied context.",
@@ -513,9 +513,7 @@ test("group chats let the main bot ask members, who answer with their own instru
       onText("Combined plan built on the research.");
       return "Combined plan built on the research.";
     }
-    assert.throws(() =>
-      request.proposeBot({ name: "X", role: "Y", instructions: "Z" }),
-    );
+    assert.equal(request.proposeBot, undefined);
     onText("Risks: cost, time, scope.");
     return "Risks: cost, time, scope.";
   };

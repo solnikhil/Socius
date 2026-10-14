@@ -1938,6 +1938,423 @@ button.member-row:hover {
   }
 }
 
+/* ---------- Boards ---------- */
+.board-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  margin-bottom: 2px;
+}
+.board-row:hover {
+  background: var(--surface);
+}
+.board-row.active {
+  background: var(--surface-2);
+}
+.board-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.board-row.active .board-icon {
+  background: var(--surface-3);
+}
+.member-picker {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  margin: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.member-picker legend {
+  font-size: 13px;
+  color: var(--text-2);
+  padding: 0 6px;
+}
+.form .member-option {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  color: var(--text);
+}
+.form .member-option:hover {
+  background: var(--surface);
+}
+.member-option span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.member-option strong {
+  font-weight: 500;
+}
+.board-bar {
+  gap: 12px;
+}
+.board-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.board-title strong {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.run-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.run-chip.completed {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.run-chip.partial,
+.run-chip.failed,
+.run-chip.interrupted {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.dot-live {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.board-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--sidebar-line);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.board-tabs button {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+.board-tabs button:hover {
+  background: var(--surface);
+}
+.board-tabs button.selected {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 500;
+}
+.board-tabs button span {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.reconnecting {
+  padding: 8px 24px;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.board > .error {
+  margin: 10px 24px 0;
+}
+.board-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.board-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.board-thread {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.board-message {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.board-message > div {
+  min-width: 0;
+}
+.board-message.user {
+  grid-template-columns: 1fr;
+  justify-items: end;
+}
+.board-message header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.board-message.user header {
+  justify-content: flex-end;
+}
+.board-message .kind {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.board-message time {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.board-bubble {
+  font-size: 14.5px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.board-message.user .board-bubble {
+  background: var(--bubble-user);
+  border-radius: 18px;
+  padding: 8px 14px;
+}
+.board-message.user .board-bubble p {
+  margin: 0;
+}
+.board-message.decision .board-bubble,
+.board-message.blocker .board-bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+}
+.board-message.blocker .board-bubble {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+.board-message.synthesis .board-bubble {
+  background: var(--bubble);
+  border-radius: 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--border-strong);
+}
+.outcome {
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.outcome p {
+  white-space: pre-wrap;
+  font-size: 13.5px;
+  margin-bottom: 10px;
+}
+.board .composer-wrap > * {
+  max-width: 860px;
+}
+.task-summary {
+  padding: 16px 24px 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 16px 24px;
+  overflow-x: auto;
+}
+.kanban section,
+.task-history {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  min-height: 120px;
+}
+.task-history {
+  margin: 0 24px 24px;
+  min-height: 0;
+}
+.kanban h3,
+.task-history h3 {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin: 2px 4px 10px;
+}
+.kanban h3 span {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.task-card {
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 9px 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.task-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.task-card header strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.assignee {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.assignee em {
+  margin-left: auto;
+  font-style: normal;
+  color: var(--text-3);
+}
+.task-card.working {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.task-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+.task-card details {
+  margin-top: 6px;
+}
+.task-card summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.task-card .markdown {
+  font-size: 12.5px;
+  margin-top: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.board-page h2 {
+  margin-bottom: 6px;
+}
+.board-page .muted {
+  font-size: 13.5px;
+}
+.roster,
+.source-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.roster li,
+.source-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+}
+.roster-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.roster-name strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+.roster-name input {
+  padding: 5px 8px;
+  font-size: 13px;
+}
+.coordinator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.add-member {
+  display: flex;
+  gap: 8px;
+}
+.add-member select {
+  flex: 1;
+  min-width: 0;
+}
+.source-list span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+.budget-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.budget-grid input {
+  color: var(--text);
+}
+.budget-grid button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
 /* ---------- Narrow windows ---------- */
 @media (max-width: 1040px) {
   .shell {
@@ -1958,4 +2375,244 @@ button.member-row:hover {
   .page {
     padding: 32px 28px 48px;
   }
+}
+@media (max-width: 720px) {
+  .board-thread {
+    padding: 18px 16px;
+  }
+  .board-tabs {
+    padding: 8px 12px;
+  }
+  .kanban {
+    grid-template-columns: 1fr;
+    padding: 12px 16px;
+  }
+  .task-history {
+    margin: 0 16px 16px;
+  }
+  .roster li {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---------- Board menu and plan review ---------- */
+.board-menu {
+  position: fixed;
+  width: 260px;
+  max-height: min(420px, calc(100vh - 16px));
+  overflow-y: auto;
+}
+.board-menu > button {
+  justify-content: flex-start;
+}
+.board-menu .menu-trailing {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.menu-bot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+.menu-bot strong {
+  font-weight: 500;
+}
+.menu-bot small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-note {
+  margin: 4px 10px 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.menu-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.menu-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px;
+}
+.board-menu .error {
+  margin: 6px 4px 2px;
+}
+.toggle-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 8px;
+  cursor: pointer;
+}
+.toggle-row input {
+  margin-top: 3px;
+}
+.toggle-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.toggle-row strong {
+  font-weight: 500;
+  color: var(--text);
+}
+.plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: 40px;
+}
+.plan-actions small {
+  color: var(--text-3);
+}
+.board-intro {
+  padding: 32px 0 8px;
+}
+.board-intro h2 {
+  font-size: 19px;
+  margin-bottom: 8px;
+}
+.intro-roster {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.intro-roster li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.intro-roster span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.intro-roster strong {
+  font-weight: 500;
+}
+.board-group {
+  margin-bottom: 2px;
+}
+.board-group .board-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 4px 0 0;
+}
+.board-toggle {
+  width: 22px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.board-toggle:hover {
+  background: transparent;
+  color: var(--text);
+}
+.board-toggle svg {
+  transition: transform 0.12s;
+}
+.board-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.board-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 7px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 12px;
+}
+.board-open:hover {
+  background: transparent;
+}
+.board-members {
+  margin: 0 0 6px 22px;
+  padding-left: 8px;
+  border-left: 1px solid var(--sidebar-line);
+}
+.bot-row.nested {
+  grid-template-columns: 30px 1fr auto;
+  gap: 10px;
+  padding: 5px 8px;
+}
+.bot-row.nested .bot-text strong {
+  font-size: 13.5px;
+}
+.board-empty {
+  display: block;
+  padding: 4px 10px 8px;
+  color: var(--text-3);
+}
+.new-member {
+  margin-top: 10px;
+  gap: 6px;
+}
+.bot-group h3 .section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border-radius: 6px;
+}
+.bot-group h3 .section-toggle:hover {
+  background: transparent;
+  color: var(--text);
+}
+.section-toggle svg {
+  opacity: 0;
+  transform: rotate(90deg);
+  transition:
+    transform 0.12s,
+    opacity 0.12s;
+}
+.section-toggle[aria-expanded="false"] svg {
+  transform: none;
+  opacity: 1;
+}
+.bot-group:hover .section-toggle svg,
+.section-toggle:focus-visible svg {
+  opacity: 1;
+}
+.section-count {
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.create-menu {
+  width: 220px;
+}
+.create-menu kbd {
+  font-size: 11.5px;
+  color: var(--text-3);
 }

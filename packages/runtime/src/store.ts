@@ -33,6 +33,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, secret TEXT);
       CREATE VIRTUAL TABLE IF NOT EXISTS memory_search USING fts5(id UNINDEXED, botId UNINDEXED, content);
       INSERT OR IGNORE INTO migrations VALUES(1);`);
+    this.migrate();
     if (!this.all<BotInstance>("bot").length) {
       const bot = instantiateBot(mainBot);
       this.put("bot", bot.id, bot);
@@ -48,6 +49,26 @@ export class Store {
       }
     }
     this.reconcileMemory();
+  }
+  /** Ordered, versioned schema changes. Each runs once inside a transaction. */
+  private migrate() {
+    const steps: [number, string][] = [
+      [
+        2,
+        // Teams & Boards: boards, sources, runs, tasks and thread messages, keyed by board.
+        `CREATE TABLE team_records(kind TEXT NOT NULL, id TEXT NOT NULL, board_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id));
+         CREATE INDEX team_records_board ON team_records(board_id, kind);`,
+      ],
+    ];
+    const current = Number(
+      this.db.prepare("SELECT MAX(version) AS v FROM migrations").get()?.v ?? 0,
+    );
+    for (const [version, sql] of steps)
+      if (version > current)
+        this.transaction(() => {
+          this.db.exec(sql);
+          this.db.prepare("INSERT INTO migrations VALUES(?)").run(version);
+        });
   }
   all<T>(kind: string): T[] {
     return this.db
