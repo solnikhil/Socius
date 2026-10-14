@@ -2,6 +2,13 @@
 
 The runnable desktop base is on `main`. Use Node.js 24, `npm ci`, then `npm run desktop`. Configure a tool-capable model in Settings. Each teammate starts a `codex/<topic>` branch and opens a PR; ownership below is a workstream, not a named assignee.
 
+## Two major handoff issues
+
+1. [Teams & Boards — #2](https://github.com/solnikhil/Socius/issues/2): [self-contained specification](issues/teams-boards.md), board workspace and scoped bot collaboration. There is no hardcoded bot membership limit; execution concurrency and budgets are configurable separately.
+2. [Skills & Connectors Marketplace — #3](https://github.com/solnikhil/Socius/issues/3): [self-contained specification](issues/skills-connectors-marketplace.md), standard skills, verified lifecycle and a real reviewed MCP workflow.
+
+These are the primary assignments. The narrower workstreams below are implementation responsibilities within them. Agree the shared action-broker and DTO contracts before changing common files. The public issues/specifications are readable by teammates' agents without Notion access. Write access still uses each contributor's GitHub authentication; external contributors can use forks and PRs.
+
 ## Implemented base
 
 Electron shell and separate utility-process runtime; responsive React views; persistent main/custom/template bots; streamed AI SDK chat; user and model-proposed bot creation; reviewed curated installations; text attachments and Markdown response export; scoped Markdown/FTS memory; exact-content approvals; encrypted desktop model keys; activity log; tests and local packaging.
