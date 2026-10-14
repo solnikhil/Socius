@@ -2606,49 +2606,6 @@ h4.with-mark {
   padding: 4px 10px 8px;
   color: var(--text-3);
 }
-/* Sidebar categories: labels for bots, not collaboration. */
-.category-group {
-  margin-bottom: 2px;
-}
-.category-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px 6px 4px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  text-align: left;
-}
-.category-row:hover {
-  background: var(--surface);
-}
-.category-row strong {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.category-chevron,
-.category-icon {
-  flex-shrink: 0;
-  color: var(--text-3);
-}
-.category-chevron {
-  transition: transform 0.12s;
-}
-.category-row[aria-expanded="true"] .category-chevron {
-  transform: rotate(90deg);
-}
-.category-members {
-  margin: 0 0 6px 14px;
-  padding-left: 8px;
-  border-left: 1px solid var(--sidebar-line);
-}
 .new-member {
   margin-top: 10px;
   gap: 6px;

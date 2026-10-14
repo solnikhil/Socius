@@ -261,11 +261,8 @@ test("configure a model, create bots manually and through Socius, install skills
     unassigned.getByRole("button", { name: /Planner/ }),
   ).toBeVisible();
   await expect(page.getByPlaceholder("Search bots")).toHaveCount(0);
-  // With no categories yet, the Categories section offers to create one.
-  await page
-    .getByRole("region", { name: "Categories" })
-    .getByRole("button", { name: "New category" })
-    .click();
+  // Unassigned offers New category; the + palette does too.
+  await unassigned.getByRole("button", { name: "New category" }).click();
   await expect(
     page.getByRole("heading", { name: "New category" }),
   ).toBeVisible();
@@ -278,7 +275,8 @@ test("configure a model, create bots manually and through Socius, install skills
   await page.getByLabel("Name", { exact: true }).fill("Work");
   await page.getByRole("checkbox", { name: /Planner/ }).click();
   await page.getByRole("button", { name: "Create category" }).click();
-  const workCategory = page.getByRole("group", { name: "Work bots" });
+  // A category is a sidebar section like Unassigned.
+  const workCategory = page.getByRole("region", { name: "Work", exact: true });
   await expect(unassigned.getByRole("button", { name: /Planner/ })).toHaveCount(
     0,
   );
@@ -297,9 +295,9 @@ test("configure a model, create bots manually and through Socius, install skills
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Remove from Work" }).click();
   await expect(workCategory.getByText("Right-click a bot")).toBeVisible();
-  await page.getByRole("button", { name: /Work/, expanded: true }).click({
-    button: "right",
-  });
+  await workCategory
+    .getByRole("button", { name: "Work", expanded: true })
+    .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete category" }).click();
   await expect(workCategory).toBeHidden();
   await expect(

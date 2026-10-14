@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import {
   BookOpen,
   ChevronRight,
-  Folder,
   Monitor,
   Moon,
   PanelLeft,
@@ -220,7 +219,12 @@ export function App() {
     </button>
   );
   // Everything is created from the top + menu; headings only fold.
-  const sectionHeading = (key: string, label: string, count: number) => {
+  const sectionHeading = (
+    key: string,
+    label: string,
+    count: number,
+    onContextMenu?: (e: MouseEvent) => void,
+  ) => {
     const open = !folded.has(`section:${key}`);
     return (
       <h3>
@@ -228,6 +232,7 @@ export function App() {
           className="section-toggle"
           aria-expanded={open}
           onClick={() => toggleFold(`section:${key}`)}
+          onContextMenu={onContextMenu}
         >
           {label}
           {!open && count > 0 && <span className="section-count">{count}</span>}
@@ -239,43 +244,30 @@ export function App() {
   // Categories only group rows in the sidebar; bots outside one are Unassigned.
   const filed = new Set(state.categories.flatMap((f) => f.botIds));
   const unassigned = specialists.filter((b) => !filed.has(b.id));
-  const categoryRow = (f: Category) => {
+  // Each category is a sidebar section like Unassigned; right-click its heading to edit it.
+  const categorySection = (f: Category) => {
     const bots = f.botIds
       .map((id) => specialists.find((b) => b.id === id))
       .filter((b): b is BotInstance => !!b);
-    const expanded = !folded.has(`category:${f.id}`);
+    const key = `category:${f.id}`;
     return (
-      <div key={f.id} className="category-group">
-        <button
-          className="category-row"
-          aria-expanded={expanded}
-          onClick={() => toggleFold(`category:${f.id}`)}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setBotMenu(null);
-            setCategoryMenu({ id: f.id, x: e.clientX, y: e.clientY });
-          }}
-        >
-          <ChevronRight size={13} className="category-chevron" />
-          <Folder size={15} className="category-icon" />
-          <strong>{f.name}</strong>
-          <span className="section-count">{bots.length}</span>
-        </button>
-        {expanded && (
-          <div
-            className="category-members"
-            role="group"
-            aria-label={`${f.name} bots`}
-          >
-            {bots.map((b) => botRow(b, true))}
+      <section key={f.id} className="bot-group" aria-label={f.name}>
+        {sectionHeading(key, f.name, bots.length, (e) => {
+          e.preventDefault();
+          setBotMenu(null);
+          setCategoryMenu({ id: f.id, x: e.clientX, y: e.clientY });
+        })}
+        {!folded.has(`section:${key}`) && (
+          <>
+            {bots.map((b) => botRow(b, false))}
             {!bots.length && (
               <small className="bots-empty">
                 Right-click a bot to move it here.
               </small>
             )}
-          </div>
+          </>
         )}
-      </div>
+      </section>
     );
   };
   const menuCategory = categoryMenu
@@ -379,27 +371,7 @@ export function App() {
                 </button>
               ))}
           </section>
-          <section className="bot-group" aria-label="Categories">
-            {sectionHeading(
-              "categories",
-              "Categories",
-              state.categories.length,
-            )}
-            {!folded.has("section:categories") && (
-              <>
-                {state.categories.map(categoryRow)}
-                {!state.categories.length && (
-                  <button
-                    className="group-link"
-                    onClick={() => setEditingCategory({})}
-                  >
-                    New category
-                    <Plus size={14} />
-                  </button>
-                )}
-              </>
-            )}
-          </section>
+          {state.categories.map(categorySection)}
           <section className="bot-group" aria-label="Unassigned">
             {sectionHeading("unassigned", "Unassigned", unassigned.length)}
             {!folded.has("section:unassigned") && (
@@ -412,6 +384,13 @@ export function App() {
                       : "Create a bot or add one from Connect Apps."}
                   </small>
                 )}
+                <button
+                  className="group-link"
+                  onClick={() => setEditingCategory({})}
+                >
+                  New category
+                  <Plus size={14} />
+                </button>
               </>
             )}
           </section>
