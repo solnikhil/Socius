@@ -59,6 +59,8 @@ import { PackageError, PackageService } from "./packages.js";
 import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
 
+import { DeviceService } from "./devices.js";
+
 export type { SecretBox };
 export interface RuntimeOptions {
   dataDir: string;
@@ -161,7 +163,7 @@ export async function startRuntime(options: RuntimeOptions) {
   const store = new Store(options.dataDir);
   const packages = new PackageService(store);
   let pairingToken = randomBytes(32).toString("hex");
-  const session = randomBytes(32).toString("hex");
+  const devices = new DeviceService(store);
   // Running task id → its controller and the provider connection it uses.
   const active = new Map<
     string,
@@ -829,6 +831,7 @@ export async function startRuntime(options: RuntimeOptions) {
         if (!pairingToken || !same(token, pairingToken))
           fail(403, "Invalid or expired pairing token");
         pairingToken = "";
+        const { token: session } = devices.create("Desktop browser", "local");
         res.writeHead(303, {
           "Set-Cookie": `socius_session=${session}; HttpOnly; SameSite=Strict; Path=/`,
           Location: "/",
@@ -844,8 +847,9 @@ export async function startRuntime(options: RuntimeOptions) {
             .map((s) => s.trim())
             .find((s) => s.startsWith("socius_session="))
             ?.slice(15) ?? "";
-        if (!same(cookie, session))
-          fail(401, "Pair this browser with Socius first");
+        const device = devices.authenticate(cookie, "local");
+        const untrack = devices.track(device.id, () => res.destroy());
+        res.once("close", untrack);
         if (req.headers.origin && req.headers.origin !== origin)
           fail(403, "Invalid origin");
         if (req.headers["sec-fetch-site"] === "cross-site")
@@ -853,6 +857,30 @@ export async function startRuntime(options: RuntimeOptions) {
         if (req.method !== "GET" && req.headers.origin !== origin)
           fail(403, "Mutation requires the paired application origin");
         const path = url.pathname;
+        if (req.method === "GET" && path === "/api/devices") {
+          json(res, 200, {
+            currentDeviceId: device.id,
+            devices: devices.list(),
+          });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/devices/revoke-remote") {
+          devices.revokeRemote();
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (
+          req.method === "POST" &&
+          /^\/api\/devices\/[^/]+\/revoke$/.test(path)
+        ) {
+          devices.revoke(uuid.parse(path.split("/")[3]));
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/devices/pair") {
+          json(res, 201, devices.pairing());
+          return;
+        }
         if (req.method === "GET" && path === "/api/state") {
           json(res, 200, {
             bots: store.all("bot"),
@@ -1775,6 +1803,7 @@ export async function startRuntime(options: RuntimeOptions) {
     connections,
     broker,
     close: async () => {
+      devices.close();
       for (const t of active.values()) t.controller.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
       await new Promise<void>((resolve, reject) =>

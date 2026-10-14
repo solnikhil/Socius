@@ -100,6 +100,16 @@ const migrations: { version: number; up: (db: DatabaseSync) => void }[] = [
       }
     },
   },
+  {
+    version: 5,
+    up: (db) =>
+      db.exec(`
+      CREATE TABLE devices(
+        id TEXT PRIMARY KEY, label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL, last_used_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+        revoked_at TEXT, origin_kind TEXT NOT NULL CHECK(origin_kind IN ('local','remote'))
+      );`),
+  },
 ];
 
 /** Moves the v1 single-provider settings row into a provider connection. */

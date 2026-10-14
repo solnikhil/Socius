@@ -271,3 +271,19 @@ export interface RegistryPage {
   skipped: number;
   error: string | null;
 }
+
+/** Public device metadata; session hashes and challenge material are never in snapshots. */
+export interface PairedDevice {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  originKind: "local" | "remote";
+}
+export interface PhonePairing {
+  token: string;
+  code: string;
+  expiresAt: string;
+}
