@@ -2566,6 +2566,26 @@ export async function startRuntime(options: RuntimeOptions) {
                   done.push(current);
                   current = segment();
                 }
+                // A specialist with connected apps would read the user's
+                // accounts on Socius's say-so; the user approves that ask first.
+                const apps = [
+                  ...new Set(
+                    connectorTools(spec, { taskId: task.id }).map((t) => t.app),
+                  ),
+                ];
+                if (apps.length) {
+                  const outcome = (await proposeAndWait(
+                    b.id,
+                    task.id,
+                    "ask",
+                    { botId: spec.id, request, apps },
+                    `Let ${spec.name} use ${apps.join(", ")} to answer Socius`,
+                  )) as { status: string; userFeedback?: string };
+                  if (outcome.status !== "done")
+                    return outcome.userFeedback
+                      ? `The user did not let ${spec.name} use its apps for this and replied: ${outcome.userFeedback}`
+                      : `The user did not let ${spec.name} use its apps for this (${outcome.status}). Do not ask it again for this unless the user wants you to.`;
+                }
                 offset = latest.length;
                 const reply: Message = {
                   ...segment(),

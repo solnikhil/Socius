@@ -203,6 +203,13 @@ export interface BotUpdate {
   role?: string;
   instructions?: string;
 }
+/** Socius asking a specialist that would use its connected apps to answer. */
+export interface DelegatedAsk {
+  botId: string;
+  request: string;
+  /** Connected apps the specialist can use, shown to the user. */
+  apps: string[];
+}
 /** A proposed group chat. */
 export interface GroupDraft {
   name: string;
@@ -217,9 +224,15 @@ export interface Approval {
   id: string;
   botId: string;
   taskId: string;
-  kind: "memory" | "bot" | "bot-update" | "group" | "group-members";
+  kind: "memory" | "bot" | "bot-update" | "group" | "group-members" | "ask";
   content: string;
-  payload: string | BotDraft | BotUpdate | GroupDraft | GroupMembersChange;
+  payload:
+    | string
+    | BotDraft
+    | BotUpdate
+    | GroupDraft
+    | GroupMembersChange
+    | DelegatedAsk;
   digest: string;
   /** What the user typed instead of approving; returned to the proposing bot. */
   feedback?: string;

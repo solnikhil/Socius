@@ -4,6 +4,7 @@ import type { BotAppearance } from "@socius/contracts";
 import type {
   Approval,
   BotDraft,
+  DelegatedAsk,
   BotUpdate,
   GroupDraft,
   GroupMembersChange,
@@ -177,6 +178,13 @@ function describe(a: Approval, name: (id: string) => string) {
           prose(u.instructions),
         ],
       ],
+    };
+  }
+  if (a.kind === "ask") {
+    const q = a.payload as DelegatedAsk;
+    return {
+      question: `Let ${name(q.botId)} use ${q.apps.join(", ")} to answer ${name(a.botId)}?`,
+      body: [field("Request", ""), prose(q.request)],
     };
   }
   if (a.kind === "group") {

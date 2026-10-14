@@ -9,6 +9,7 @@ In Socius's direct chat, the model has `askBot(bot, request)`. Asking runs immed
 - **What the specialist receives:** only Socius's request, with its own framing (Socius is asking on the user's behalf, and the request is a task, not the user's words). It answers with its own model, memory recall, skills and connected apps. It never sees Socius's history.
 - **How the thread reads:** Socius's text so far, then the specialist's reply, then the rest of Socius's reply. The specialist's reply is stored in Socius's chat with `delegated: { botId, request }`, and the UI labels it with the specialist's name and the request. It never appears in the specialist's own chat.
 - **Limits:** at most 6 asks per user message. A repeated request is answered from the first reply. An unknown name returns the roster.
+- **Specialists with connected apps:** if the specialist has connected apps it could use (for example Notion or Gmail), the ask first shows an `ask` approval card naming those apps and the exact request. Otherwise Socius could borrow another bot's access to the user's accounts because of content it had read. If the user declines, the specialist never runs, and Socius is told why, including any typed reply. Bots without connected apps are asked immediately.
 - **App changes:** a change the specialist proposes in a connected app still needs the user's approval. Its review card appears in Socius's chat, and the specialist's reply waits for it.
 
 ## Changing the workspace (approved each time)
