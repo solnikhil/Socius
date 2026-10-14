@@ -369,23 +369,6 @@ export function Chat({
       a.actor.taskId === (taskId || running?.id) &&
       Date.parse(a.expiresAt) > Date.now(),
   );
-  const waitingCard = useRef<string>("");
-  useEffect(() => {
-    if (!waiting || waitingCard.current === waiting.id) return;
-    waitingCard.current = waiting.id;
-    // Hand the keyboard to the card unless the user is typing something.
-    const active = document.activeElement;
-    if (
-      active instanceof HTMLTextAreaElement
-        ? !active.value.trim()
-        : !(active instanceof HTMLInputElement)
-    )
-      requestAnimationFrame(() =>
-        document
-          .querySelector<HTMLElement>(`[data-action="${waiting.id}"]`)
-          ?.focus({ preventScroll: true }),
-      );
-  }, [waiting]);
   // In a group, each run of replies from one bot is labelled with its name.
   const speaker = (m: Pick<Message, "role" | "botId">) =>
     m.role === "user" ? "user" : m.botId;

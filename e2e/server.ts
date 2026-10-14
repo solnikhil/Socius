@@ -66,8 +66,34 @@ const runtime = await startRuntime({
     fetch: (async () =>
       new Response(JSON.stringify(registryPage))) as unknown as typeof fetch,
   },
+  // Dreaming: "Remember: X" becomes the note X. "Slow dream" waits until it is stopped.
+  dreamRunner: async ({ sources, signal }) => {
+    if (sources.some((s) => /slow dream/i.test(s.content)))
+      await new Promise((_, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        }),
+      );
+    return {
+      changes: sources.flatMap((s) => {
+        const note = /^Remember: (.+)$/i.exec(s.content)?.[1];
+        return note
+          ? [{ memoryId: null, content: note, sourceMessageIds: [s.id] }]
+          : [];
+      }),
+    };
+  },
   runner: async (request, onText) => {
     const content = String(request.messages.at(-1)?.content);
+    // Recall: report exactly which private notes the runtime supplied.
+    if (content.toLowerCase().includes("what do you recall")) {
+      const recalled = request.recalledMemory?.map((m) => m.content) ?? [];
+      const text = recalled.length
+        ? `I recall: ${recalled.join(" | ")}`
+        : "I have nothing recalled for that.";
+      onText(text);
+      return text;
+    }
     // Group chats: the coordinator asks its first member, then sums up.
     if (request.askMember) {
       // "flaky" fails the first attempt so the UI can offer a retry.

@@ -59,8 +59,12 @@ export function PrivacyPane({ state }: { state: Snapshot }) {
             <strong>Unavailable</strong>
           </div>
           <div>
-            <span>Bot and memory proposals</span>
-            <strong>Review before applying</strong>
+            <span>Private memory updates</span>
+            <strong>
+              {state.dreaming.settings.enabled
+                ? "Automatic dreaming enabled"
+                : "Manual edits and reviewed proposals"}
+            </strong>
           </div>
         </div>
       </div>

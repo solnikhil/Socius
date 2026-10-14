@@ -26,6 +26,7 @@ const label = (key: string) =>
   key
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
+    .toLowerCase()
     .replace(/^./, (c) => c.toUpperCase());
 
 /** What happened, in one line, once the user has decided. */
@@ -92,22 +93,38 @@ export function ActionCard({
     e.preventDefault();
     if (reply.trim()) decide(false, reply.trim());
   }
+  // Letter keys answer only once the user has focused the card themselves;
+  // repeats and modified keys never count, so stray typing cannot approve.
   function keys(e: KeyboardEvent<HTMLDivElement>) {
-    if (!open || busy || e.target instanceof HTMLInputElement) return;
+    if (
+      !open ||
+      busy ||
+      e.target !== e.currentTarget ||
+      e.repeat ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.altKey
+    )
+      return;
     const key = e.key.toLowerCase();
     if (key === "a") decide(true);
     else if (key === "b") decide(false);
   }
-  // Show what matters: titles are already in the question, IDs are noise.
-  const entries = Object.entries(a.arguments)
-    .map(([key, value]) => [key, String(value ?? "")] as const)
-    .filter(([, value]) => value && !OPAQUE.test(value.trim()));
+  // Show what matters up front; IDs appear as a short reference, and the
+  // exact arguments being approved are always one click away.
+  const all = Object.entries(a.arguments).map(
+    ([key, value]) => [key, String(value ?? "")] as const,
+  );
+  const opaque = all.filter(([, value]) => OPAQUE.test(value.trim()));
+  const entries = all.filter(
+    ([, value]) => value && !OPAQUE.test(value.trim()),
+  );
   const prose = entries.filter(
     ([key, value]) => PROSE.test(key) || value.length > 160,
   );
   const details = entries.filter(
     ([key, value]) =>
-      !prose.some(([k]) => k === key) && !a.summary.includes(value),
+      !prose.some(([k]) => k === key) && !summary.includes(value),
   );
   const long = prose.some(
     ([, v]) => v.length > 360 || v.split("\n").length > 6,
@@ -127,11 +144,16 @@ export function ActionCard({
         />
         <strong>{open ? `${summary}?` : summary}</strong>
       </div>
-      {(details.length > 0 || prose.length > 0) && (
+      {(details.length > 0 || prose.length > 0 || opaque.length > 0) && (
         <div className="decision-details">
           {details.map(([key, value]) => (
             <p key={key} className="decision-field">
               <span>{label(key)}</span> {value}
+            </p>
+          ))}
+          {opaque.map(([key, value]) => (
+            <p key={key} className="decision-field">
+              <span>{label(key)}</span> …{value.replace(/-/g, "").slice(-6)}
             </p>
           ))}
           {prose.map(([key, value]) => (
@@ -153,6 +175,17 @@ export function ActionCard({
           )}
         </div>
       )}
+      <details className="decision-exact">
+        <summary>Exact details</summary>
+        <dl>
+          {all.map(([key, value]) => (
+            <div key={key}>
+              <dt>{key}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
       {open ? (
         <>
           <div className="decision-options" role="group" aria-label="Answer">
