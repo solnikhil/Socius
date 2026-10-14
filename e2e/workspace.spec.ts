@@ -12,11 +12,17 @@ test("configure a model, create bots manually and through Socius, install skills
   await page.getByRole("button", { name: "Hide sidebar" }).click();
   await expect(page.locator(".sidebar")).toBeHidden();
   await expect(
-    page.getByRole("button", { name: "New bot", exact: true }),
+    page
+      .locator(".sidebar")
+      .getByRole("button", { name: "Create", exact: true })
+      .first(),
   ).toBeHidden();
   await page.getByRole("button", { name: "Show sidebar" }).click();
   await expect(
-    page.getByRole("button", { name: "New bot", exact: true }),
+    page
+      .locator(".sidebar")
+      .getByRole("button", { name: "Create", exact: true })
+      .first(),
   ).toBeVisible();
   await page.screenshot({
     path: "test-results/socius-chat.png",
@@ -53,7 +59,8 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(
     page.getByRole("button", { name: "Model: fixture-model" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "New bot", exact: true }).click();
+  await page.getByRole("button", { name: "Create" }).first().click();
+  await page.getByRole("menuitem", { name: "New bot" }).click();
   await page.getByLabel("Name", { exact: true }).fill("College assistant");
   await page.getByLabel("Role", { exact: true }).fill("College planning");
   await page
@@ -80,7 +87,8 @@ test("configure a model, create bots manually and through Socius, install skills
     path: "test-results/socius-chat-dark.png",
     animations: "disabled",
   });
-  await page.getByRole("button", { name: "New chat" }).click();
+  await page.getByRole("button", { name: "Create" }).first().click();
+  await page.getByRole("menuitem", { name: "New chat" }).click();
   await expect(
     page.getByRole("option", { name: /Create new bot/ }),
   ).toBeVisible();
@@ -151,8 +159,11 @@ test("configure a model, create bots manually and through Socius, install skills
     path: "test-results/socius-memory.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "New chat" }).click();
-  await page.keyboard.press("ControlOrMeta+2");
+  await page
+    .getByRole("button", { name: "Create", exact: true })
+    .first()
+    .click();
+  await page.getByRole("menuitem", { name: "New group chat" }).click();
   await expect(
     page.getByRole("heading", { name: "New group chat" }),
   ).toBeVisible();

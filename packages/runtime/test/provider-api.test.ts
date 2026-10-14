@@ -532,7 +532,7 @@ test("tool rejection after a proposal never replays the task", () =>
     let attempts = 0;
     const r = await paired(dir, async (request) => {
       attempts++;
-      request.proposeBot({
+      request.proposeBot!({
         name: "Planner",
         role: "Planning",
         instructions: "Plan",
@@ -627,6 +627,116 @@ test("connection edits reset tool capability and cannot commit after work starts
     } finally {
       releaseEncryption();
       releaseWork();
+      await r.close();
+    }
+  }));
+
+for (const legacy of ["teams-v2", "providers-v2"] as const)
+  test(`migration preserves existing ${legacy} workspaces`, () =>
+    workspace(legacy, async (dir) => {
+      let store = new Store(dir);
+      const id = "saved-record";
+      store.put("test", id, { retained: true });
+      if (legacy === "teams-v2") {
+        store.db.exec(
+          "DROP TABLE model_selection; DROP TABLE model_discovery; DROP TABLE provider_models; DROP TABLE provider_connections;",
+        );
+        store.db
+          .prepare("INSERT INTO team_records VALUES('board',?,'board',?)")
+          .run(id, JSON.stringify({ retained: true }));
+        store.db.prepare("INSERT INTO settings VALUES(1,?,NULL)").run(
+          JSON.stringify({
+            provider: "ollama",
+            model: "legacy-model",
+            baseURL: "http://127.0.0.1:11434/v1",
+          }),
+        );
+      } else {
+        store.db.exec("DROP TABLE team_records;");
+      }
+      store.db.exec("DELETE FROM migrations WHERE version=3;");
+      store.close();
+      store = new Store(dir);
+      try {
+        assert.deepEqual(store.get("test", id), { retained: true });
+        assert.ok(
+          store.db
+            .prepare("SELECT name FROM sqlite_master WHERE name='team_records'")
+            .get(),
+        );
+        assert.ok(
+          store.db
+            .prepare(
+              "SELECT name FROM sqlite_master WHERE name='provider_connections'",
+            )
+            .get(),
+        );
+        if (legacy === "teams-v2") {
+          assert.equal(store.providers.models()[0]!.modelId, "legacy-model");
+          assert.ok(
+            store.db.prepare("SELECT id FROM team_records WHERE id=?").get(id),
+          );
+        }
+      } finally {
+        store.close();
+      }
+    }));
+
+test("board model calls protect their selected connection until the call ends", () =>
+  workspace("board-connection-lock", async (dir) => {
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const r = await paired(dir, async (request) => {
+      assert.equal(request.modelRef.modelId, "board-model");
+      assert.ok(request.team);
+      entered();
+      await gate;
+      return "Direct board answer";
+    });
+    try {
+      const c = await (
+        await r.request("providers", { provider: "ollama" })
+      ).json();
+      await r.request("models", { connectionId: c.id, modelId: "board-model" });
+      const botId = (await state(r)).bots[0]!.id;
+      const board = await (
+        await r.request("boards", {
+          name: "Research",
+          objective: "Review",
+          completionCriteria: "Answer",
+          coordinatorId: botId,
+          memberIds: [botId],
+        })
+      ).json();
+      assert.equal(
+        (
+          await r.request("boards/runs", {
+            boardId: board.id,
+            content: "Answer directly",
+          })
+        ).status,
+        202,
+      );
+      await started;
+      assert.equal(
+        (await r.request("providers", { id: c.id }, "DELETE")).status,
+        409,
+      );
+      assert.equal(
+        (await r.request("providers/update", { id: c.id, label: "New" }))
+          .status,
+        409,
+      );
+      release();
+      await r.engine.idle();
+      assert.equal(
+        (await r.request("providers", { id: c.id }, "DELETE")).status,
+        200,
+      );
+    } finally {
+      release();
       await r.close();
     }
   }));

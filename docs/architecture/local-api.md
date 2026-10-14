@@ -25,6 +25,17 @@ Electron supervises a Node utility process that binds `127.0.0.1` on an ephemera
 | DELETE | `/api/models` | Remove a model; selections using it are cleared |
 | POST | `/api/models/test` | Real text call plus tool-call check; records tool support |
 | POST | `/api/models/select` | `{botId|null, model|null}`: set workspace default or a per-bot override |
+| POST | `/api/boards` | Create a board with any number of members and a coordinator |
+| GET | `/api/boards/detail?id=` | Board, sources, runs, tasks and thread |
+| POST | `/api/boards/update` | Edit brief, coordinator, budgets; archive or restore |
+| POST/DELETE | `/api/boards/members` | Add a member or edit its board role / remove a non-coordinator |
+| POST/DELETE | `/api/boards/sources` | Share or remove a text source |
+| POST | `/api/boards/runs` | Start a background team run (202) |
+| POST | `/api/boards/runs/approve` | Run a plan awaiting review (a new message revises it instead) |
+| POST | `/api/boards/runs/cancel`, `/runs/retry` | Stop a run or discard a pending plan; retry outstanding work |
+| POST | `/api/boards/tasks/cancel`, `/api/boards/stop` | Cancel one task; stop every active run on a board |
+
+Board semantics, budgets, restart behaviour and examples: [Teams & Boards](teams.md).
 
 Chat input: `{botId,content,attachment?:{name,text}}`. The bot's override, else the default model, is resolved before the task is recorded. Events: `started` with task ID, `text` with cumulative text, `done`, or `error` with a safe message and stable `code` (`unauthorized`, `model_not_found`, `unreachable`, `rate_limited`, `quota_exceeded`, `tools_unsupported`, `context_too_long`, …). Provider bodies are used for classification only and never returned, logged or persisted. If a model rejects tools before producing output, the task retries once without tools and the model is marked tool-less. Disconnecting does not cancel work; saved progress can be read again. One task per bot runs at a time, with six model steps and a three-minute timeout.
 
@@ -38,7 +49,8 @@ Chat input: `{botId,content,attachment?:{name,text}}`. The bot's override, else 
 - `packages/runtime/src/providers`: one AI SDK factory per provider, model discovery, model checks, error classification and the connection service.
 - `packages/runtime/src/model.ts`: streaming tool loop and capability-gated tools.
 - `packages/runtime/src/server.ts`: auth, validation, installation/approval orchestration and streaming.
-- `packages/runtime/src/store.ts`, `migrations.ts`, `provider-store.ts`: versioned SQLite schema, records, provider tables, Markdown memory and derived FTS index. Migration 2 imports v1 single-provider settings.
+- `packages/runtime/src/store.ts`, `migrations.ts`, `provider-store.ts`: versioned SQLite schema, records, provider tables, Markdown memory and derived FTS index. Migration 3 imports v1 single-provider settings.
+- `packages/teams`: board schemas, plan validation and the team run engine (no IO); `packages/runtime/src/boards.ts` and `team-store.ts` adapt it to HTTP and SQLite.
 
 ## Extending actions
 
@@ -46,4 +58,4 @@ Register connector actions in reviewed runtime code. Proposal creation must be s
 
 Memory files contain a JSON metadata comment followed by Markdown. FTS is derived and rebuilt when read, recovering external edits and removing missing records. Atomic file replacement precedes indexing; interrupted writes reconcile on the next read. Approval IDs are deterministic memory IDs, so a repeated interrupted save writes the same record. Private memory never becomes template metadata automatically.
 
-On restart, pending approvals remain; active tasks become explicitly interrupted instead of being replayed. Crash-proof model checkpoint/resumption, durable external-action reconciliation and delegation remain future runtime deliverables.
+On restart, pending approvals remain; active tasks become explicitly interrupted instead of being replayed. Board runs follow the same rule: active runs become interrupted and resume only by explicit retry. Crash-proof model checkpoint/resumption and durable external-action reconciliation remain future runtime deliverables.

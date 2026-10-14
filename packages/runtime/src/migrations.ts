@@ -17,6 +17,25 @@ const migrations: { version: number; up: (db: DatabaseSync) => void }[] = [
   {
     version: 2,
     up: (db) => {
+      db.exec(
+        `CREATE TABLE IF NOT EXISTS team_records(kind TEXT NOT NULL, id TEXT NOT NULL, board_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS team_records_board ON team_records(board_id,kind);`,
+      );
+    },
+  },
+  {
+    version: 3,
+    up: (db) => {
+      db.exec(
+        `CREATE TABLE IF NOT EXISTS team_records(kind TEXT NOT NULL, id TEXT NOT NULL, board_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS team_records_board ON team_records(board_id,kind);`,
+      );
+      if (
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='provider_connections'",
+          )
+          .get()
+      )
+        return;
       db.exec(`
         CREATE TABLE provider_connections(
           id TEXT PRIMARY KEY,
