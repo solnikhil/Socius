@@ -125,7 +125,12 @@ export function SettingsDialog({
               backRef={back}
             />
           )}
-          {tab === "providers" && (
+          {tab === "providers" && location.protocol === "https:" && (
+            <p>
+              Do this on your laptop. Provider credentials stay on the host.
+            </p>
+          )}
+          {tab === "providers" && location.protocol !== "https:" && (
             <ProvidersPane
               state={state}
               onRefresh={onRefresh}

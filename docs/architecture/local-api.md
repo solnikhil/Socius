@@ -1,6 +1,6 @@
 # Local API and extension boundaries
 
-Electron supervises a Node utility process that binds `127.0.0.1` on an ephemeral port. Browser mode uses a configured port. A one-time pairing URL sets an HttpOnly/SameSite=Strict cookie and redirects to remove the token. All API requests require the session. Mutations also require the exact local Origin. Unexpected Host and cross-site requests are rejected; CORS access is not granted.
+Electron supervises a Node utility process that binds `127.0.0.1` on an ephemeral port. Browser mode uses a configured port. A one-time local bootstrap URL creates an independent hashed device session and redirects to remove the token. The optional private phone milestone adds local-owner-enabled Tailscale HTTPS origin validation, separate Secure remote cookies and durable revocable sessions. All API requests require a session matching its local/remote origin kind; mutations require that exact Origin. Unexpected Host, inconsistent forwarded headers and cross-site requests are rejected; CORS access is not granted. See [remote access](remote-access.md) for setup, threat model and unverified real-device acceptance.
 
 | Method | Endpoint                                         | Behavior                                                                                                                                                           |
 | ------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -68,3 +68,23 @@ Register connector actions in reviewed runtime code (`packages/connectors`) and 
 Memory files contain a JSON metadata comment followed by Markdown. FTS is derived and rebuilt when read, recovering external edits and removing missing records. Atomic file replacement precedes indexing; interrupted writes reconcile on the next read. Approval IDs are deterministic memory IDs, so a repeated interrupted save writes the same record. Private memory never becomes template metadata automatically.
 
 On restart, pending approvals remain; active tasks become explicitly interrupted instead of being replayed. Historical board records are retained; board execution and routes have been removed. An external write that was executing becomes `unknown` and is reconciled, never replayed. Crash-proof model checkpoint/resumption remains a future runtime deliverable.
+
+## Private phone milestone endpoints
+
+| Method | Endpoint | Behaviour |
+| --- | --- | --- |
+| GET | `/api/remote/status` | Authenticated enabled/origin/localOwner. Only local sessions receive target, port, CLI presence, Serve commands and changed-target status. Presence is not network readiness. |
+| POST | `/api/remote/settings` | Local owner only: `{enabled,origin}`; one exact HTTPS machine.tailnet.ts.net origin. Disabling or changing origin revokes all remote sessions. Saving acknowledges the current target. |
+| POST | `/api/devices/pair` | Local owner only, remote enabled: five-minute single-use `{token,code,expiresAt}`. Link/QR generated on the local UI. |
+| POST | `/api/remote/pair` | Configured enabled remote origin only; unauthenticated exchange `{challenge,label}` with bounded attempts. Sets Secure cookie and redirects to `/`. |
+| GET | `/api/devices` | `{currentDeviceId,devices}`; local owner sees latest 200 records, phone sees only itself; no token/hash. |
+| POST | `/api/devices/:id/revoke` | Local owner revokes one device and closes its responses. |
+| POST | `/api/devices/revoke-remote` | Local owner revokes every remote session and pending challenge, including records beyond the list page. |
+| POST | `/api/devices/signout` | Authenticated device revokes itself. |
+| GET | `/api/chats/:id?since=<lastEventId>` | Authenticated authoritative snapshot: messages (last 500), tasks (last 100), lastEventId. Supports bot or group IDs. Includes mutable partial replies; since is a hint, not an append-only replay cursor. |
+
+Phone POSTs to chat, groups/chat, tasks/cancel, approvals and actions/resolve require `Idempotency-Key` (16–128 letters/digits/underscore/hyphen). Local callers can opt in too. Equal device/key/payload replays the receipt, changed payload returns 409, an uncertain reservation never blindly executes again. Chat replay returns JSON `{taskId,replayed:true}` instead of a new stream. Recover saved state using the chat endpoint. Generic group retry also supports keys locally but is deliberately not exposed to the phone in this milestone.
+
+Remote reads are limited to state, messages, group messages, memory, chat snapshots, own device and remote status. Remote writes additionally permit reactions, sidebar bot layout and model selection. Provider/connector setup, grants, package lifecycle/import/export and new unreviewed routes remain local-only and return “Do this on your laptop.” Provider secrets remain behind the Electron credential bridge. Phone text attachments use the existing bounded text payload; no arbitrary host path is accepted.
+
+Revoking a device closes its stream but does not cancel accepted host work or undo external effects. Explicit cancellation uses the same runtime controller. On process restart, existing interrupted-task and unknown-write policies still apply; remote access adds no checkpoint engine or task replay.

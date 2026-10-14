@@ -1191,3 +1191,54 @@ test("review fixes: the persisted registry cache keeps only recent pages", async
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("phone action approval shares the exact broker, concurrent denial cannot repeat a write, secrets stay on host", async () => {
+  const { proxyRequest } = await import("./helpers.js");
+  const fixture = await startNotionFixture();
+  const dir = await mkdtemp(join(tmpdir(), "socius-phone-action-"));
+  const r = await boot(dir, fixture);
+  try {
+    const { action } = await proposed(r, fixture);
+    const origin = "https://laptop.tailtest.ts.net";
+    await r.ok("remote/settings", { enabled: true, origin });
+    const challenge = (await (await r.request("devices/pair", {})).json()) as {
+      token: string;
+    };
+    const p = await proxyRequest(r.origin, "/api/remote/pair", origin, {
+      challenge: challenge.token,
+      label: "Phone",
+    });
+    const Cookie = p.headers.get("set-cookie")!.split(";")[0]!;
+    const input = { id: action.id, digest: action.digest, approve: true };
+    const headers = { Cookie, "Idempotency-Key": "phone-broker-approve-1234" };
+    const outcomes = await Promise.all([
+      proxyRequest(r.origin, "/api/actions/resolve", origin, input, headers),
+      r.request("actions/resolve", { ...input, approve: false }),
+    ]);
+    assert.deepEqual(outcomes.map((x) => x.status).sort(), [200, 409]);
+    assert.equal(
+      (
+        await proxyRequest(
+          r.origin,
+          "/api/actions/resolve",
+          origin,
+          input,
+          headers,
+        )
+      ).status,
+      outcomes[0]!.status,
+    );
+    assert.equal(
+      fixture.calls.filter((c) => c.tool === "notion-create-pages").length,
+      outcomes[0]!.status === 200 ? 1 : 0,
+    );
+    const state = await (
+      await proxyRequest(r.origin, "/api/state", origin, undefined, { Cookie })
+    ).text();
+    assert.doesNotMatch(state, /access_token|refresh_token|sealed:|token_hash/);
+  } finally {
+    await r.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

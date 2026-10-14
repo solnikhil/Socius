@@ -42,6 +42,10 @@ export async function api<T>(
     connectionState(
       "Session expired or revoked. Pair this browser again from your laptop.",
     );
+  else if (response.status === 403 && path === "state")
+    connectionState(
+      "Remote access is disabled or this address is no longer configured. Check your laptop.",
+    );
   else if (response.ok) connectionState("");
   const data = await response.json().catch(() => ({}));
   if (!response.ok)

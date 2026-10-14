@@ -178,9 +178,9 @@ export function Chat({
         if (mounted) fail((e as Error).message);
       }
     }
-    void load();
+    if (!busy) void load();
     const timer = setInterval(() => {
-      void load();
+      if (!busy) void load();
     }, 2500);
     return () => {
       mounted = false;
@@ -291,7 +291,14 @@ export function Chat({
       setMessages(await api<Message[]>(messagesPath));
       await onRefresh();
     } catch (e) {
-      fail((e as Error).message, (e as { code?: string }).code ?? "");
+      if ((e as Error).name === "AbortError" && accepted) {
+        try {
+          setMessages(await api<Message[]>(messagesPath));
+          await onRefresh();
+        } catch {
+          /* Connection banner explains offline recovery. */
+        }
+      } else fail((e as Error).message, (e as { code?: string }).code ?? "");
     } finally {
       setBusy(false);
       setTaskId("");

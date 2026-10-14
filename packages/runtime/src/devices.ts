@@ -136,6 +136,7 @@ export class DeviceService {
   }
   track(id: string, close: () => void) {
     const set = this.streams.get(id) ?? new Set();
+    if (set.size >= 20) fail(429, "Too many open requests for this device");
     set.add(close);
     this.streams.set(id, set);
     return () => {

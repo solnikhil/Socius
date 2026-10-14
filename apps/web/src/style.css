@@ -3562,3 +3562,6 @@ dialog.create-bot,
   .device-row { flex-wrap: wrap; }
   .thread,.composer-wrap { padding-left: 12px; padding-right: 12px; }
 }
+@media (max-width: 600px) {
+  .sidebar-reveal,.chat-head button { min-width: 44px; min-height: 44px; }
+}

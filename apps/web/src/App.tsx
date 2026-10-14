@@ -107,6 +107,12 @@ export function App() {
         setNeedsPairing(true);
         setState(null);
       }
+      if (
+        e instanceof ApiError &&
+        e.status === 403 &&
+        location.protocol === "https:"
+      )
+        setState(null);
       setError((e as Error).message);
     }
   }
@@ -193,6 +199,7 @@ export function App() {
   const waiting = (b: BotInstance) => pending.some((a) => a.botId === b.id);
   const layoutOf = (id: string) => state.layouts.find((l) => l.botId === id);
   const open = (b: BotInstance) => {
+    if (matchMedia("(max-width: 600px)").matches) setCollapsed(true);
     setSelected(b.id);
     setGroupId("");
     setPage("chat");
@@ -202,6 +209,7 @@ export function App() {
       );
   };
   const openGroup = (g: GroupChat) => {
+    if (matchMedia("(max-width: 600px)").matches) setCollapsed(true);
     setGroupId(g.id);
     setPage("chat");
   };

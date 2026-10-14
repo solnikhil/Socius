@@ -968,7 +968,8 @@ export async function startRuntime(options: RuntimeOptions) {
 
         if (req.method === "GET" && path === "/api/remote/status") {
           json(res, 200, {
-            ...remoteSettings(store),
+            enabled: remoteSettings(store).enabled,
+            origin: remoteSettings(store).origin,
             localOwner: context.kind === "local",
             ...(context.kind === "local"
               ? {
@@ -1948,6 +1949,9 @@ export async function startRuntime(options: RuntimeOptions) {
       else errorResponse(res, error);
     }
   });
+  server.headersTimeout = 10000;
+  server.requestTimeout = 15000;
+  server.maxHeadersCount = 50;
   const savedPort = store.get<{ port: number }>(
     "runtime-port",
     "electron",
