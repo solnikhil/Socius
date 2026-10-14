@@ -573,6 +573,194 @@ main > .error {
   display: block;
   overflow: visible;
 }
+/* Living avatars. avatarMotion.ts sets --mx/--my (gaze, -1…1) and --pull (magnet,
+   0…1); everything else is CSS so idle motion runs off the main thread. */
+.avatar-lean,
+.avatar-breathe {
+  display: block;
+  transform-origin: 50% 80%;
+}
+.avatar-lean {
+  transform: translate(
+      calc(var(--mx, 0) * var(--pull, 0) * 14%),
+      calc(var(--my, 0) * var(--pull, 0) * 12%)
+    )
+    rotate(calc(var(--mx, 0) * var(--pull, 0) * 8deg))
+    scale(calc(1 + var(--pull, 0) * 0.07));
+}
+.avatar-breathe {
+  animation: avatar-breathe 4.4s ease-in-out var(--breathe-delay, 0s) infinite;
+}
+.avatar-eyes {
+  transform: translate(calc(var(--mx, 0) * 2.8px), calc(var(--my, 0) * 2.4px));
+}
+.avatar-pupils {
+  transform: translate(calc(var(--mx, 0) * 1.4px), calc(var(--my, 0) * 1.4px));
+}
+.avatar-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: avatar-blink var(--blink-time, 5s) var(--blink-delay, 0s) infinite;
+}
+.avatar[data-eyes="sleepy"] .avatar-blink {
+  animation-name: avatar-doze;
+}
+.avatar[data-idle="orbit"] .avatar-idle {
+  animation: avatar-orbit 9s ease-in-out var(--idle-delay, 0s) infinite;
+}
+.avatar[data-idle="glance"] .avatar-idle {
+  animation: avatar-glance 8s ease-in-out var(--idle-delay, 0s) infinite;
+}
+.avatar[data-idle="wander"] .avatar-idle {
+  animation: avatar-wander 11s ease-in-out var(--idle-delay, 0s) infinite;
+}
+/* While the eyes follow the pointer, idle glances wait. */
+.avatars-watching .avatar:not(.busy) .avatar-idle {
+  animation: none;
+}
+/* Working on a reply: a quicker bob and eyes that keep circling. */
+.avatar.busy .avatar-breathe {
+  animation: avatar-bob 0.9s ease-in-out infinite;
+}
+.avatar.busy .avatar-idle {
+  animation: avatar-spin 1.4s linear infinite;
+}
+@keyframes avatar-breathe {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translateY(-2.5%) scale(0.985, 1.025);
+  }
+}
+@keyframes avatar-bob {
+  0%,
+  100% {
+    transform: none;
+  }
+  35% {
+    transform: translateY(-7%) scale(0.97, 1.04);
+  }
+  70% {
+    transform: translateY(1%) scale(1.03, 0.97);
+  }
+}
+@keyframes avatar-blink {
+  0%,
+  92%,
+  100% {
+    transform: none;
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes avatar-doze {
+  0%,
+  70%,
+  100% {
+    transform: none;
+  }
+  80%,
+  88% {
+    transform: scaleY(0.35) translateY(1px);
+  }
+}
+/* Rest, then one slow loop around the face. */
+@keyframes avatar-orbit {
+  0%,
+  52%,
+  100% {
+    transform: none;
+  }
+  58% {
+    transform: translate(2.2px, 0);
+  }
+  63% {
+    transform: translate(1.6px, 1.6px);
+  }
+  68% {
+    transform: translate(0, 2.2px);
+  }
+  73% {
+    transform: translate(-1.6px, 1.6px);
+  }
+  78% {
+    transform: translate(-2.2px, 0);
+  }
+  83% {
+    transform: translate(-1.6px, -1.6px);
+  }
+  88% {
+    transform: translate(0, -2.2px);
+  }
+  93% {
+    transform: translate(1.6px, -1.6px);
+  }
+}
+@keyframes avatar-glance {
+  0%,
+  30%,
+  100% {
+    transform: none;
+  }
+  36%,
+  52% {
+    transform: translate(-2.4px, 0.4px);
+  }
+  58%,
+  74% {
+    transform: translate(2.4px, -0.4px);
+  }
+  80% {
+    transform: none;
+  }
+}
+@keyframes avatar-wander {
+  0%,
+  100% {
+    transform: none;
+  }
+  20%,
+  32% {
+    transform: translate(1.8px, -1.6px);
+  }
+  45%,
+  55% {
+    transform: translate(-1.4px, 1.2px);
+  }
+  70%,
+  80% {
+    transform: translate(0.6px, 2px);
+  }
+}
+@keyframes avatar-spin {
+  0%,
+  100% {
+    transform: translate(2px, 0);
+  }
+  25% {
+    transform: translate(0, 2px);
+  }
+  50% {
+    transform: translate(-2px, 0);
+  }
+  75% {
+    transform: translate(0, -2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-lean,
+  .avatar-breathe,
+  .avatar-eyes,
+  .avatar-pupils,
+  .avatar-idle,
+  .avatar-blink {
+    animation: none !important;
+    transform: none !important;
+  }
+}
 .avatar-badge {
   position: absolute;
   right: -1px;
@@ -1727,6 +1915,13 @@ html[data-theme="dark"] .connect-apps-dialog {
 .form label textarea {
   color: var(--text);
   font-size: 14px;
+}
+.form .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-2);
 }
 .form label.checkbox {
   flex-direction: row;
@@ -3088,6 +3283,41 @@ h4.with-mark {
 .grant-row input {
   justify-self: start;
 }
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+.skill-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.skill-row:last-child {
+  border-bottom: none;
+}
+.skill-row small {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.skill-head,
+.skill-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.skill-head > button {
+  margin-left: auto;
+}
+.skill-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 .findings {
   margin: 12px 0;
   padding: 12px 14px;
@@ -3276,6 +3506,80 @@ dialog.create-bot,
 }
 .template-card.selected {
   border-color: var(--text);
+}
+/* Shape and eye picker with a live preview */
+.avatar-picker {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.look-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  flex-shrink: 0;
+  border-radius: 20px;
+  background: var(--bg);
+}
+.look-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.look-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.look-row > span {
+  width: 44px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.look-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg);
+}
+.look-option.selected {
+  border-color: var(--text);
+}
+.avatar-picker.compact {
+  gap: 12px;
+  padding: 10px 12px;
+  margin: 10px 0 4px;
+  background: var(--bg);
+}
+.avatar-picker.compact .look-preview {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  background: var(--surface);
+}
+.avatar-picker.compact .look-option {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+@media (max-width: 520px) {
+  .avatar-picker {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 /* ---------- Reactions ---------- */

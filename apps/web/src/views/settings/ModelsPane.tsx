@@ -26,7 +26,11 @@ import {
   type ProviderConnection,
 } from "@socius/contracts/providers";
 import { api } from "../../api.js";
-import { Avatar, ErrorNote, MAIN_BOT_TEMPLATE } from "../../components/chrome.js";
+import {
+  Avatar,
+  ErrorNote,
+  MAIN_BOT_TEMPLATE,
+} from "../../components/chrome.js";
 import { ProviderMark } from "../../components/ProviderMark.js";
 import { modelKey, sameModel, type OpenSettings } from "../../models.js";
 
@@ -195,6 +199,7 @@ function BotModels({
                 name={b.name}
                 main={b.template.id === MAIN_BOT_TEMPLATE}
                 size={28}
+                appearance={b.appearance}
               />
               <span className="bot-model-name">
                 <strong>{b.name}</strong>

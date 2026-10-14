@@ -16,6 +16,7 @@ import {
   FileText,
   Pencil,
   Plus,
+  Puzzle,
   Settings,
   Square,
   Trash2,
@@ -50,6 +51,7 @@ import {
 import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
+import { BotSkills } from "./BotSkills.js";
 import { BotModelMenu } from "../components/ModelPicker.js";
 import { resolvedModel, SETUP_CODES, type OpenSettings } from "../models.js";
 
@@ -108,6 +110,7 @@ export function Chat({
     [consent, setConsent] = useState(false),
     [details, setDetails] = useState(false),
     [exporting, setExporting] = useState(false),
+    [skillsOpen, setSkillsOpen] = useState(false),
     [copied, setCopied] = useState("");
   const scroller = useRef<HTMLDivElement>(null),
     thread = useRef<HTMLDivElement>(null),
@@ -376,7 +379,13 @@ export function Chat({
     const b = author(botId);
     return (
       <div className="speaker">
-        <Avatar name={b?.name ?? "Bot"} main={botId === bot.id} size={18} />
+        <Avatar
+          name={b?.name ?? "Bot"}
+          main={botId === bot.id}
+          size={18}
+          appearance={b?.appearance}
+          busy={busy && stream?.botId === botId}
+        />
         {b?.name ?? "A former member"}
       </div>
     );
@@ -385,6 +394,7 @@ export function Chat({
     ? speaker(messages[messages.length - 1]!)
     : "";
   const empty = messages.length === 0 && !busy;
+  const working = busy || !!running;
   return (
     <div className="chat">
       <header className="chat-head drag">
@@ -399,9 +409,15 @@ export function Chat({
             <PopoverTrigger asChild>
               <button className="bot-pill" aria-label={`${title} details`}>
                 {group ? (
-                  <GroupAvatar names={faces} size={24} />
+                  <GroupAvatar names={faces} size={24} busy={working} />
                 ) : (
-                  <Avatar name={bot.name} main={main} size={24} />
+                  <Avatar
+                    name={bot.name}
+                    main={main}
+                    size={24}
+                    appearance={bot.appearance}
+                    busy={working}
+                  />
                 )}
                 {title}
               </button>
@@ -424,7 +440,12 @@ export function Chat({
                 <div className="group-members">
                   {[bot, ...members].map((b) => (
                     <div key={b.id} className="group-member">
-                      <Avatar name={b.name} main={b.id === bot.id} size={26} />
+                      <Avatar
+                        name={b.name}
+                        main={b.id === bot.id}
+                        size={26}
+                        appearance={b.appearance}
+                      />
                       <span className="bot-text">
                         <strong>{b.name}</strong>
                         <small>
@@ -476,7 +497,13 @@ export function Chat({
                 className="floating-panel bot-details"
               >
                 <div className="bot-details-head">
-                  <Avatar name={bot.name} main={main} size={40} />
+                  <Avatar
+                    name={bot.name}
+                    main={main}
+                    size={40}
+                    appearance={bot.appearance}
+                    busy={working}
+                  />
                   <div>
                     <strong>{bot.name}</strong>
                     <small>{bot.role}</small>
@@ -503,6 +530,21 @@ export function Chat({
                 <button
                   onClick={() => {
                     setDetails(false);
+                    setSkillsOpen(true);
+                  }}
+                >
+                  <Puzzle size={15} />
+                  <span>Skills</span>
+                  <em>
+                    {state.skillReviews.some((r) => r.botId === bot.id)
+                      ? "Review"
+                      : state.skillAssignments.filter((a) => a.botId === bot.id)
+                          .length}
+                  </em>
+                </button>
+                <button
+                  onClick={() => {
+                    setDetails(false);
                     setExporting(true);
                   }}
                 >
@@ -521,7 +563,13 @@ export function Chat({
               {group ? (
                 <GroupAvatar names={faces} size={72} />
               ) : (
-                <Avatar name={bot.name} main={main} size={72} badge={main} />
+                <Avatar
+                  name={bot.name}
+                  main={main}
+                  size={72}
+                  badge={main}
+                  appearance={bot.appearance}
+                />
               )}
               <h1>
                 {group
@@ -784,6 +832,14 @@ export function Chat({
         </form>
       </div>
       {exporting && <ExportBot bot={bot} onClose={() => setExporting(false)} />}
+      {skillsOpen && (
+        <BotSkills
+          bot={bot}
+          state={state}
+          onRefresh={onRefresh}
+          onClose={() => setSkillsOpen(false)}
+        />
+      )}
       {consent && (
         <Modal title="Memory permissions" onClose={() => setConsent(false)}>
           <p className="muted">
