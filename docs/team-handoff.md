@@ -33,6 +33,8 @@ Coordinate shared contracts/runtime/provider-budget/cancellation hooks with Drea
 
 ## Additional product roadmap — planned
 
+Use the [complete feature specification](specs/product-expansion.md) for the ten-item coverage matrix, scope boundaries, shared-contract decisions and per-feature acceptance tests. This is an assignment/review contract; the features remain unimplemented.
+
 The [roadmap additions](roadmap.md) track A07 approved delegation from Socius's direct chat (the user's highest-priority orchestrator gap), A08 permissioned web search, U07 cross-chat/memory search, U08 edit/resend and branching, U09 pinned replies, U10 on-device dictation, U11 image/PDF attachments, O01 per-bot token/cost usage and a runtime-enforced monthly cap, and O02 inspectable bot health from reactions, failures and usage.
 
 A03 routines (for example, Planner's weekly draft, off until enabled, with run history in Activity) remain in Issue #10 rather than a duplicate workstream. These new entries are unassigned plans, not implemented behavior. Coordinate UI with the user and shared persistence, policy and usage hooks with ongoing workstreams; see the roadmap for scope and dependencies.
