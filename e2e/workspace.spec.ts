@@ -15,15 +15,35 @@ test("configure a model, create bots manually and through Socius, install skills
   });
   await page.getByRole("button", { name: "Account and settings" }).click();
   await page.getByRole("menuitem", { name: "Settings" }).click();
-  await page.getByLabel("Model ID").fill("fixture-model");
-  await page.getByRole("button", { name: "Save connection" }).click();
-  await expect(page.getByRole("status")).toHaveText("Connection saved");
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings).toBeVisible();
+  // Settings float over the workspace; the sidebar stays rendered behind them.
+  await expect(
+    page.getByRole("complementary", { name: "Bots" }),
+  ).toBeAttached();
+  await settings.getByRole("tab", { name: "Providers" }).click();
+  await settings.getByRole("button", { name: "Add Ollama" }).click();
+  await settings.getByRole("button", { name: "Save connection" }).click();
+  await expect(
+    settings.getByRole("heading", { name: "Add models from Ollama" }),
+  ).toBeVisible();
+  await settings.getByLabel("Model ID").fill("fixture-model");
+  await settings.getByRole("button", { name: "Add model" }).click();
+  await settings.getByRole("button", { name: "Models", exact: true }).click();
+  await expect(settings.getByLabel("Default model")).toHaveValue(
+    /fixture-model/,
+  );
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({
     path: "test-results/socius-settings-dark.png",
     animations: "disabled",
   });
   await page.emulateMedia({ colorScheme: "light" });
+  await page.keyboard.press("Escape");
+  await expect(settings).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Model: fixture-model" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "New bot", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("College assistant");
   await page.getByLabel("Role", { exact: true }).fill("College planning");

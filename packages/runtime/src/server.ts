@@ -1,8 +1,4 @@
-import {
-  createServer,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
+import { createServer } from "node:http";
 import {
   createHash,
   randomBytes,
@@ -22,19 +18,30 @@ import type {
   Message,
   Task,
 } from "@socius/contracts/app";
+import type { ModelRef } from "@socius/contracts/providers";
 import { Store } from "./store.js";
-import { runModel, type ModelRunner } from "./model.js";
+import { runModel, type ModelRequest, type ModelRunner } from "./model.js";
+import { body, errorResponse, fail, json } from "./http.js";
+import {
+  CreateConnection,
+  ModelId,
+  ProviderService,
+  UpdateConnection,
+  type SecretBox,
+} from "./providers/service.js";
+import { classify, ProviderFailure } from "./providers/errors.js";
 
-export interface SecretBox {
-  encrypt: (value: string) => Promise<string>;
-  decrypt: (value: string) => Promise<string>;
-}
+export type { SecretBox };
 export interface RuntimeOptions {
   dataDir: string;
   webDir?: string;
   port?: number;
   secretBox?: SecretBox;
   runner?: ModelRunner;
+  /** Network transport for provider calls. Tests inject a controlled fetch. */
+  fetch?: typeof globalThis.fetch;
+  /** Environment used for provider credential fallbacks. */
+  env?: NodeJS.ProcessEnv;
 }
 const BotDraftSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
@@ -46,47 +53,28 @@ const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const same = (a: string, b: string) =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-const fail = (status: number, message: string): never => {
-  throw new HttpError(status, message);
-};
-async function body(req: IncomingMessage): Promise<unknown> {
-  if (!req.headers["content-type"]?.startsWith("application/json"))
-    fail(415, "Expected JSON");
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > 1024 * 1024) fail(413, "Request too large");
-    chunks.push(chunk);
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString());
-  } catch {
-    return fail(400, "Invalid JSON");
-  }
-}
-function json(res: ServerResponse, status: number, value: unknown) {
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Cache-Control": "no-store",
-  });
-  res.end(JSON.stringify(value));
-}
-
 export async function startRuntime(options: RuntimeOptions) {
   const store = new Store(options.dataDir),
     catalog = new Catalog(curatedCatalog);
   let pairingToken = randomBytes(32).toString("hex");
   const session = randomBytes(32).toString("hex");
-  const active = new Map<string, AbortController>();
+  // Running task id → its controller and the provider connection it uses.
+  const active = new Map<
+    string,
+    { controller: AbortController; connectionId: string }
+  >();
+  const providers = new ProviderService(
+    store,
+    options.secretBox,
+    options.fetch,
+    (connectionId) =>
+      [...active.values()].some((t) => t.connectionId === connectionId),
+    options.env ?? process.env,
+  );
+  const ModelRefSchema = z.strictObject({
+    connectionId: uuid,
+    modelId: ModelId,
+  });
   let origin = "";
   function bot(id: string): BotInstance {
     return (
@@ -203,7 +191,10 @@ export async function startRuntime(options: RuntimeOptions) {
             activity: store.all("activity").slice(-100).reverse(),
             approvals: store.all("approval"),
             tasks: store.all("task"),
-            settings: store.settings(),
+            connections: providers.list(),
+            models: store.providers.models(),
+            selection: store.providers.selection(),
+            environment: providers.environment(),
             secretStorage: !!options.secretBox,
           });
           return;
@@ -388,58 +379,101 @@ export async function startRuntime(options: RuntimeOptions) {
           json(res, 200, { ok: true });
           return;
         }
-        if (req.method === "POST" && path === "/api/settings") {
+        if (req.method === "POST" && path === "/api/providers") {
+          json(
+            res,
+            201,
+            await providers.create(CreateConnection.parse(await body(req))),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/providers/update") {
+          json(
+            res,
+            200,
+            await providers.update(UpdateConnection.parse(await body(req))),
+          );
+          return;
+        }
+        if (req.method === "DELETE" && path === "/api/providers") {
+          const input = z.strictObject({ id: uuid }).parse(await body(req));
+          providers.remove(input.id);
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/providers/test") {
+          const input = z
+            .strictObject({ id: uuid, modelId: ModelId.optional() })
+            .parse(await body(req));
+          json(
+            res,
+            200,
+            await providers.testConnection(input.id, input.modelId),
+          );
+          return;
+        }
+        if (req.method === "GET" && path === "/api/providers/models") {
+          json(
+            res,
+            200,
+            await providers.discover(
+              url.searchParams.get("id") ?? "",
+              url.searchParams.get("refresh") === "1",
+            ),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/models") {
+          const input = ModelRefSchema.extend({
+            label: z.string().trim().max(120).optional(),
+          }).parse(await body(req));
+          json(res, 201, providers.addModel(input, input.label));
+          return;
+        }
+        if (req.method === "DELETE" && path === "/api/models") {
+          providers.removeModel(ModelRefSchema.parse(await body(req)));
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/models/test") {
+          json(
+            res,
+            200,
+            await providers.testModel(ModelRefSchema.parse(await body(req))),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/models/select") {
           const input = z
             .strictObject({
-              provider: z.enum(["ollama", "compatible", "openai", "anthropic"]),
-              model: z.string().trim().min(1).max(200),
-              baseURL: z.string().url(),
-              apiKey: z.string().max(1000).optional(),
-              clearApiKey: z.boolean().optional(),
+              botId: uuid.nullable(),
+              model: ModelRefSchema.nullable(),
             })
             .parse(await body(req));
-          const endpoint = new URL(input.baseURL);
-          if (
-            !["http:", "https:"].includes(endpoint.protocol) ||
-            endpoint.username ||
-            endpoint.password
-          )
-            fail(400, "Use an HTTP(S) endpoint without embedded credentials");
-          if (
-            endpoint.protocol === "http:" &&
-            !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
-          )
-            fail(400, "Remote endpoints require HTTPS");
-          if (active.size)
-            fail(409, "Wait for running tasks before changing providers");
-          let secret: string | null | undefined = undefined;
-          if (input.clearApiKey) secret = null;
-          if (input.apiKey) {
-            const box = options.secretBox;
-            if (!box)
-              return fail(
-                409,
-                "This web runtime does not persist keys. Use the desktop app or environment variables.",
-              );
-            secret = await box.encrypt(input.apiKey);
-          }
-          const { provider, model, baseURL } = input;
-          // A provider switch cannot silently send the previous provider's key to a new endpoint.
-          if (
-            secret === undefined &&
-            (provider !== store.settings().provider ||
-              baseURL !== store.settings().baseURL)
-          )
-            secret = null;
-          store.saveSettings({ provider, model, baseURL }, secret);
-          json(res, 200, store.settings());
+          if (input.botId) bot(input.botId);
+          const ref: ModelRef | null = input.model
+            ? providers.entry(input.model)
+            : null;
+          store.providers.select(
+            input.botId ? `bot:${input.botId}` : "default",
+            ref && { connectionId: ref.connectionId, modelId: ref.modelId },
+          );
+          store.event(
+            "model.selected",
+            ref
+              ? `${input.botId ? `${bot(input.botId).name} now uses` : "Default model set to"} ${ref.modelId}.`
+              : input.botId
+                ? `${bot(input.botId).name} now uses the default model.`
+                : "Default model cleared.",
+          );
+          json(res, 200, store.providers.selection());
           return;
         }
         if (req.method === "POST" && path === "/api/tasks/cancel") {
           const input = z.strictObject({ id: uuid }).parse(await body(req));
-          const controller =
+          const running =
             active.get(input.id) ?? fail(409, "Task is not running");
-          controller.abort();
+          running.controller.abort();
           json(res, 200, { ok: true });
           return;
         }
@@ -463,13 +497,14 @@ export async function startRuntime(options: RuntimeOptions) {
               .some((t) => t.botId === b.id && t.state === "running")
           )
             fail(409, "This bot already has a running task");
-          if (!store.settings().model)
-            fail(409, "Choose a model in Settings first");
+          // Resolve the model before recording anything, so setup errors are immediate.
+          const selected = await providers.forChat(b.id);
           const task: Task = {
             id: randomUUID(),
             botId: b.id,
             state: "running",
             error: null,
+            model: selected.ref,
             createdAt: new Date().toISOString(),
           };
           const content = input.attachment
@@ -489,7 +524,10 @@ export async function startRuntime(options: RuntimeOptions) {
             store.event("task.started", `Task started for ${b.name}.`);
           });
           const controller = new AbortController();
-          active.set(task.id, controller);
+          active.set(task.id, {
+            controller,
+            connectionId: selected.ref.connectionId,
+          });
           const assistant: Message = {
             id: randomUUID(),
             botId: b.id,
@@ -506,14 +544,13 @@ export async function startRuntime(options: RuntimeOptions) {
             if (!res.destroyed) res.write(JSON.stringify(event) + "\n");
           };
           send({ type: "started", taskId: task.id });
-          const timeout = setTimeout(() => controller.abort(), 180000);
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, 180000);
           // Browser disconnect does not stop work; it remains visible after reload.
           try {
-            const secret = store.secret(),
-              apiKey =
-                secret && options.secretBox
-                  ? await options.secretBox.decrypt(secret)
-                  : undefined;
             const installations = store.all<Installation>("installation");
             const skills = catalog
               .list()
@@ -525,46 +562,60 @@ export async function startRuntime(options: RuntimeOptions) {
                   ),
               )
               .map((p) => p.instructions);
-            const result = await (options.runner ?? runModel)(
-              {
-                settings: store.settings(),
-                apiKey,
-                bot: b,
-                messages: store
-                  .messages(b.id)
-                  .slice(-40)
-                  .map((m) => ({ role: m.role, content: m.content })),
-                skills,
-                signal: controller.signal,
-                searchMemory: (q) => {
-                  if (!bot(b.id).grantedCapabilities.includes("memory.read"))
-                    fail(403, "Memory access revoked");
-                  return store.searchMemory(b.id, q);
-                },
-                proposeMemory: (c) => {
-                  if (!bot(b.id).grantedCapabilities.includes("memory.write"))
-                    fail(403, "Memory access revoked");
-                  return proposal(b.id, task.id, "memory", c);
-                },
-                proposeBot: (d) => {
-                  if (b.template.id !== "socius/main")
-                    fail(403, "Only Socius can create bot proposals");
-                  return proposal(
-                    b.id,
-                    task.id,
-                    "bot",
-                    BotDraftSchema.parse(d),
-                  );
-                },
+            let streamed = false;
+            const request: ModelRequest = {
+              model: selected.model,
+              modelRef: selected.ref,
+              tools: selected.entry.tools !== false,
+              bot: b,
+              messages: store
+                .messages(b.id)
+                .slice(-40)
+                .map((m) => ({ role: m.role, content: m.content })),
+              skills,
+              signal: controller.signal,
+              searchMemory: (q) => {
+                if (!bot(b.id).grantedCapabilities.includes("memory.read"))
+                  fail(403, "Memory access revoked");
+                return store.searchMemory(b.id, q);
               },
-              (text) => {
-                assistant.content = text;
-                store.put("message", assistant.id, assistant);
-                send({ type: "text", content: text });
+              proposeMemory: (c) => {
+                if (!bot(b.id).grantedCapabilities.includes("memory.write"))
+                  fail(403, "Memory access revoked");
+                return proposal(b.id, task.id, "memory", c);
               },
-            );
+              proposeBot: (d) => {
+                if (b.template.id !== "socius/main")
+                  fail(403, "Only Socius can create bot proposals");
+                return proposal(b.id, task.id, "bot", BotDraftSchema.parse(d));
+              },
+            };
+            const onText = (text: string) => {
+              streamed = true;
+              assistant.content = text;
+              store.put("message", assistant.id, assistant);
+              send({ type: "text", content: text });
+            };
+            const runner = options.runner ?? runModel;
+            let result: string;
+            try {
+              result = await runner(request, onText);
+            } catch (error) {
+              const failure = classify(error, selected.providerName);
+              // A model that rejects tools fails before producing output, so
+              // retrying once without tools cannot repeat any side effect.
+              if (
+                failure.code !== "tools_unsupported" ||
+                !request.tools ||
+                streamed ||
+                controller.signal.aborted
+              )
+                throw failure;
+              store.providers.setModelTools(selected.ref, false);
+              result = await runner({ ...request, tools: false }, onText);
+            }
             if (controller.signal.aborted)
-              throw new Error("Task cancelled or timed out");
+              throw new ProviderFailure("cancelled", "Task cancelled.");
             assistant.content = result;
             task.state = "completed";
             store.transaction(() => {
@@ -573,15 +624,18 @@ export async function startRuntime(options: RuntimeOptions) {
               store.event("task.completed", `Task completed for ${b.name}.`);
             });
             send({ type: "done", taskId: task.id });
-          } catch {
-            task.state = controller.signal.aborted ? "cancelled" : "failed";
+          } catch (error) {
             // Never return provider exception bodies, which can contain secrets or request context.
-            task.error = controller.signal.aborted
-              ? "Task cancelled or timed out."
-              : "Model request failed. Check provider credentials, endpoint, model availability and tool support in Settings.";
+            const failure = classify(error, selected.providerName, {
+              aborted: controller.signal.aborted,
+              timedOut,
+            });
+            task.state = failure.code === "cancelled" ? "cancelled" : "failed";
+            task.error = failure.message;
+            task.errorCode = failure.code;
             store.put("task", task.id, task);
             store.event(`task.${task.state}`, task.error);
-            send({ type: "error", error: task.error });
+            send({ type: "error", error: task.error, code: failure.code });
           } finally {
             clearTimeout(timeout);
             active.delete(task.id);
@@ -617,26 +671,7 @@ export async function startRuntime(options: RuntimeOptions) {
       });
       res.end(await readFile(file));
     } catch (error) {
-      if (res.headersSent) {
-        res.end();
-        return;
-      }
-      json(
-        res,
-        error instanceof HttpError
-          ? error.status
-          : error instanceof z.ZodError
-            ? 400
-            : 500,
-        {
-          error:
-            error instanceof HttpError
-              ? error.message
-              : error instanceof z.ZodError
-                ? "Invalid request fields"
-                : "Operation failed",
-        },
-      );
+      errorResponse(res, error);
     }
   });
   await new Promise<void>((resolve, reject) => {
@@ -652,7 +687,7 @@ export async function startRuntime(options: RuntimeOptions) {
     pairingURL: `${origin}/pair?token=${pairingToken}`,
     store,
     close: async () => {
-      for (const c of active.values()) c.abort();
+      for (const t of active.values()) t.controller.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
       await new Promise<void>((resolve, reject) =>
         server.close((e) => (e ? reject(e) : resolve())),

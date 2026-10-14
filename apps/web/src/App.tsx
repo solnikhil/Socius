@@ -27,10 +27,11 @@ import { Chat } from "./views/Chat.js";
 import { NewChat } from "./views/NewChat.js";
 import { ConnectApps } from "./views/ConnectApps.js";
 import { MemoryView } from "./views/MemoryView.js";
-import { SettingsView } from "./views/SettingsView.js";
+import { SettingsDialog } from "./views/settings/SettingsDialog.js";
+import type { OpenSettings, SettingsTab } from "./models.js";
 import { CreateBot } from "./views/CreateBot.js";
 
-type Page = "chat" | "new" | "memory" | "settings";
+type Page = "chat" | "new" | "memory";
 const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
@@ -42,6 +43,10 @@ export function App() {
     [apps, setApps] = useState(false),
     [collapsed, setCollapsed] = useState(false),
     [menu, setMenu] = useState(false),
+    [settings, setSettings] = useState<{
+      tab: SettingsTab;
+      connectionId?: string | undefined;
+    } | null>(null),
     [error, setError] = useState("");
   const [theme, setTheme] = useTheme();
   async function refresh() {
@@ -76,6 +81,20 @@ export function App() {
   }, []);
   useEffect(() => {
     document.documentElement.classList.toggle("mac-desktop", isMacDesktop);
+  }, []);
+  const openSettings: OpenSettings = useCallback(
+    (tab, connectionId) => setSettings({ tab, connectionId }),
+    [],
+  );
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setSettings((s) => s ?? { tab: "general" });
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
   }, []);
   const closeMenu = useCallback(() => setMenu(false), []);
   const menuRef = useDismiss(menu, closeMenu);
@@ -215,7 +234,7 @@ export function App() {
                 <button
                   role="menuitem"
                   onClick={() => {
-                    setPage("settings");
+                    setSettings({ tab: "general" });
                     setMenu(false);
                   }}
                 >
@@ -273,7 +292,7 @@ export function App() {
             main={current.id === main.id}
             state={state}
             onRefresh={refresh}
-            onSettings={() => setPage("settings")}
+            onSettings={openSettings}
           />
         )}
         {page === "new" && (
@@ -288,10 +307,10 @@ export function App() {
             }}
           />
         )}
-        {(page === "memory" || page === "settings") && (
+        {page === "memory" && (
           <div className="page-frame">
             <header className="page-bar drag">
-              <span>{page[0]!.toUpperCase() + page.slice(1)}</span>
+              <span>Memory</span>
               <button
                 className="icon ghost"
                 aria-label="Close"
@@ -300,25 +319,26 @@ export function App() {
                 <X size={17} />
               </button>
             </header>
-            {page === "memory" && (
-              <MemoryView
-                key={current.id}
-                bot={current}
-                bots={state.bots}
-                onSelect={setSelected}
-              />
-            )}
-            {page === "settings" && (
-              <SettingsView
-                state={state}
-                onRefresh={refresh}
-                theme={theme}
-                onTheme={setTheme}
-              />
-            )}
+            <MemoryView
+              key={current.id}
+              bot={current}
+              bots={state.bots}
+              onSelect={setSelected}
+            />
           </div>
         )}
       </main>
+      {settings && (
+        <SettingsDialog
+          state={state}
+          onRefresh={refresh}
+          onClose={() => setSettings(null)}
+          initialTab={settings.tab}
+          initialConnection={settings.connectionId}
+          theme={theme}
+          onTheme={setTheme}
+        />
+      )}
       {apps && (
         <ConnectApps
           state={state}

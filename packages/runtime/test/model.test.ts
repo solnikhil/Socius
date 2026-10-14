@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { instantiateBot, mainBot } from "@socius/marketplace";
 import { runModel } from "../src/model.js";
+import { languageModel } from "../src/providers/factory.js";
 
 test("real AI SDK adapter streams text and routes a model tool call into a reviewed bot proposal", async () => {
   let calls = 0,
@@ -58,12 +59,13 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
     let streamed = "";
     const text = await runModel(
       {
-        settings: {
-          provider: "compatible",
-          model: "fixture-model",
-          baseURL: `http://127.0.0.1:${address.port}/v1`,
-          hasApiKey: false,
-        },
+        model: languageModel(
+          "openai-compatible",
+          { baseURL: `http://127.0.0.1:${address.port}/v1` },
+          "fixture-model",
+        ),
+        modelRef: { connectionId: "fixture", modelId: "fixture-model" },
+        tools: true,
         bot: instantiateBot(mainBot),
         messages: [{ role: "user", content: "Create a planning bot." }],
         skills: [],

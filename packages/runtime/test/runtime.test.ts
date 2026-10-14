@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startRuntime } from "../src/server.js";
 import { Store } from "../src/store.js";
 import type {
   Snapshot,
@@ -12,32 +11,8 @@ import type {
   Memory,
 } from "@socius/contracts/app";
 import type { ModelRunner } from "../src/model.js";
+import { paired, connectModel } from "./helpers.js";
 
-async function paired(dataDir: string, runner?: ModelRunner) {
-  const runtime = await startRuntime({
-    dataDir,
-    ...(runner ? { runner } : {}),
-  });
-  const pairing = await fetch(runtime.pairingURL, { redirect: "manual" });
-  const cookie = pairing.headers.get("set-cookie")!.split(";")[0]!;
-  async function request(
-    path: string,
-    data?: unknown,
-    method = data === undefined ? "GET" : "POST",
-    origin = runtime.origin,
-  ) {
-    return fetch(`${runtime.origin}/api/${path}`, {
-      method,
-      headers: {
-        Cookie: cookie,
-        Origin: origin,
-        ...(data === undefined ? {} : { "Content-Type": "application/json" }),
-      },
-      ...(data === undefined ? {} : { body: JSON.stringify(data) }),
-    });
-  }
-  return { ...runtime, request };
-}
 const fake: ModelRunner = async (request, onText) => {
   const message = request.messages.at(-1)?.content;
   if (typeof message === "string" && message.includes("create bot"))
@@ -148,11 +123,7 @@ test("main bot proposals survive restart and create exactly one fresh specialist
   try {
     let state = (await (await r.request("state")).json()) as Snapshot;
     const main = state.bots[0]!;
-    await r.request("settings", {
-      provider: "ollama",
-      model: "test-model",
-      baseURL: "http://127.0.0.1:11434/v1",
-    });
+    await connectModel(r);
     const chat = await r.request("chat", {
       botId: main.id,
       content: "create bot",
@@ -242,11 +213,7 @@ test("revoking memory authority blocks pending model proposals", async () => {
   try {
     const state = (await (await r.request("state")).json()) as Snapshot,
       botId = state.bots[0]!.id;
-    await r.request("settings", {
-      provider: "ollama",
-      model: "test-model",
-      baseURL: "http://127.0.0.1:11434/v1",
-    });
+    await connectModel(r);
     await r.request("grants", { botId, memory: true });
     await (await r.request("chat", { botId, content: "remember" })).text();
     const approval = ((await (await r.request("state")).json()) as Snapshot)

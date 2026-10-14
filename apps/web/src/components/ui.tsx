@@ -166,10 +166,22 @@ export function closeOnBackdrop(
     close();
 }
 
-export function ErrorNote({ error }: { error: string }) {
+export function ErrorNote({
+  error,
+  action,
+}: {
+  error: string;
+  /** Optional recovery step shown beside the message. */
+  action?: { label: string; onClick: () => void } | undefined;
+}) {
   return error ? (
     <div className="error" role="alert">
-      {error}
+      <span>{error}</span>
+      {action && (
+        <button type="button" className="error-action" onClick={action.onClick}>
+          {action.label}
+        </button>
+      )}
     </div>
   ) : null;
 }

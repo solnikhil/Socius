@@ -11,7 +11,7 @@ npm ci
 npm run desktop
 ```
 
-In Settings, choose a provider and enter a model ID available on it. For local inference, start Ollama and download your chosen tool-capable model first. The default endpoint is `http://127.0.0.1:11434/v1`. LM Studio and llama.cpp use the OpenAI-compatible option. OpenAI and Anthropic have direct adapters. Users supply model access; no subscription or key is bundled.
+Open Settings (account menu or ⌘,). It floats over the workspace. Under **Providers**, connect one or more of 29 AI SDK providers: Ollama, LM Studio, llama.cpp and any OpenAI-compatible server; OpenAI, Anthropic, Google Gemini, Mistral, xAI, Groq, DeepSeek, Cerebras, Fireworks, Together AI, Perplexity, Cohere, DeepInfra, Baseten, Hugging Face, Moonshot AI, Alibaba Qwen, MiniMax and Z.ai; Azure OpenAI, Amazon Bedrock, Google Vertex AI and Claude on Vertex; and the Vercel AI Gateway and OpenRouter. Several accounts per provider are allowed. Under **Models**, add models from each connection's live model list (where the provider publishes one) or by ID, test them, and set the default. Pick a different model for a single bot from the composer. Users supply model access; no subscription or key is bundled.
 
 Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The renderer receives no stored key. Storage refuses unavailable encryption and Linux's insecure `basic_text` fallback.
 
@@ -38,7 +38,7 @@ npm run web        # build; start localhost:3030; print a one-time pairing link
 npm run package    # build an unsigned application directory for this platform
 ```
 
-Browser mode uses `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` environment variables and does not persist keys entered through a browser. Desktop mode also accepts these environment variables. Never store credentials in URLs or repository files.
+Browser mode does not persist keys entered through a browser; it uses each provider's standard environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENROUTER_API_KEY`, `AWS_*`, …), which Settings reports by name only. Desktop mode also accepts these environment variables. Never store credentials in URLs or repository files.
 
 Desktop data is under Electron's per-user app-data directory in `workspace/`. Browser mode uses `.socius/`. `SOCIUS_DATA_DIR` and `SOCIUS_PORT` configure browser mode; `SOCIUS_USER_DATA` selects a separate desktop profile. Shut down Socius before backing up the whole workspace, including SQLite/WAL files.
 

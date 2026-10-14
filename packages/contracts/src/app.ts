@@ -1,4 +1,12 @@
 import type { BotInstance, Capability, Manifest } from "./index.js";
+import type {
+  ModelEntry,
+  ModelRef,
+  ModelSelection,
+  ProviderConnection,
+  ProviderErrorCode,
+  ProviderId,
+} from "./providers.js";
 export interface Message {
   id: string;
   botId: string;
@@ -12,6 +20,10 @@ export interface Task {
   botId: string;
   state: "running" | "completed" | "failed" | "cancelled";
   error: string | null;
+  /** Stable error category for failed model calls. */
+  errorCode?: ProviderErrorCode;
+  /** The model that ran this task. */
+  model?: ModelRef;
   createdAt: string;
 }
 export interface Memory {
@@ -50,12 +62,6 @@ export interface Installation {
   digest: string;
   installedAt: string;
 }
-export interface ModelSettings {
-  provider: "ollama" | "compatible" | "openai" | "anthropic";
-  model: string;
-  baseURL: string;
-  hasApiKey: boolean;
-}
 export interface Snapshot {
   bots: BotInstance[];
   catalog: Manifest[];
@@ -63,7 +69,12 @@ export interface Snapshot {
   activity: Activity[];
   approvals: Approval[];
   tasks: Task[];
-  settings: ModelSettings;
+  connections: ProviderConnection[];
+  models: ModelEntry[];
+  selection: ModelSelection;
+  /** Per provider, fields an environment variable already supplies. Never values. */
+  environment: Partial<Record<ProviderId, string[]>>;
+  /** Whether credentials entered in the interface can be stored encrypted. */
   secretStorage: boolean;
 }
 export interface InstallPreview {

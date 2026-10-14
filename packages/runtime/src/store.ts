@@ -11,28 +11,22 @@ import {
 import { join } from "node:path";
 import { instantiateBot, mainBot } from "@socius/marketplace";
 import type { BotInstance } from "@socius/contracts";
-import type {
-  Message,
-  Memory,
-  Activity,
-  Task,
-  ModelSettings,
-} from "@socius/contracts/app";
+import type { Message, Memory, Activity, Task } from "@socius/contracts/app";
+import { migrate } from "./migrations.js";
+import { ProviderStore } from "./provider-store.js";
 
 export class Store {
   readonly db: DatabaseSync;
   readonly memoryDir: string;
+  readonly providers: ProviderStore;
   constructor(readonly dir: string) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     this.memoryDir = join(dir, "memory");
     mkdirSync(this.memoryDir, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(join(dir, "socius.sqlite"));
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
-      CREATE TABLE IF NOT EXISTS migrations(version INTEGER PRIMARY KEY);
-      CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id));
-      CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, secret TEXT);
-      CREATE VIRTUAL TABLE IF NOT EXISTS memory_search USING fts5(id UNINDEXED, botId UNINDEXED, content);
-      INSERT OR IGNORE INTO migrations VALUES(1);`);
+    this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
+    migrate(this.db);
+    this.providers = new ProviderStore(this.db);
     if (!this.all<BotInstance>("bot").length) {
       const bot = instantiateBot(mainBot);
       this.put("bot", bot.id, bot);
@@ -90,42 +84,6 @@ export class Store {
   }
   messages(botId: string): Message[] {
     return this.all<Message>("message").filter((m) => m.botId === botId);
-  }
-  settings(): ModelSettings {
-    const row = this.db
-      .prepare("SELECT data, secret FROM settings WHERE id=1")
-      .get();
-    return {
-      ...(row
-        ? JSON.parse(row.data as string)
-        : {
-            provider: "ollama",
-            model: "",
-            baseURL: "http://127.0.0.1:11434/v1",
-          }),
-      hasApiKey: !!row?.secret,
-    };
-  }
-  secret(): string | undefined {
-    return this.db.prepare("SELECT secret FROM settings WHERE id=1").get()
-      ?.secret as string | undefined;
-  }
-  saveSettings(
-    settings: Omit<ModelSettings, "hasApiKey">,
-    secret?: string | null,
-  ) {
-    this.db
-      .prepare(
-        "INSERT INTO settings VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data, secret=excluded.secret",
-      )
-      .run(
-        JSON.stringify(settings),
-        secret === undefined ? (this.secret() ?? null) : secret,
-      );
-    this.event(
-      "settings.updated",
-      `Model provider changed to ${settings.provider}.`,
-    );
   }
   private indexMemory(memory: Memory) {
     this.db.prepare("DELETE FROM memory_search WHERE id=?").run(memory.id);
