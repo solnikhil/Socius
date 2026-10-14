@@ -41,7 +41,7 @@ Approvals from group work, such as a member's memory proposal or Socius proposin
 Group chats use the same chat view as direct chats: floating name pill, bubbles and composer. The differences:
 
 - A small avatar and name label marks each run of replies from one bot.
-- The pill opens the roster, **Edit members** and **Delete group chat**.
+- The pill opens the roster, the coordinator's model, **Edit members** and **Delete group chat**.
 - Create a group with **Create group chat** in the `To:` palette (the top **+**, ⌘N), or press ⌘2 there. Groups are listed under **Group chats** in the sidebar.
 
 ## API

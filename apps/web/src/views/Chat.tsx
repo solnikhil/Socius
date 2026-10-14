@@ -46,14 +46,8 @@ import { useSmoothText, useStickToBottom } from "../components/streaming.js";
 import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
-import { ModelPicker } from "../components/ModelPicker.js";
-import {
-  connectionOf,
-  destinationNote,
-  resolvedModel,
-  SETUP_CODES,
-  type OpenSettings,
-} from "../models.js";
+import { BotModelMenu } from "../components/ModelPicker.js";
+import { resolvedModel, SETUP_CODES, type OpenSettings } from "../models.js";
 
 const suggestions = [
   "Create a research bot that turns my supplied sources into evidence-based briefs.",
@@ -150,7 +144,6 @@ export function Chat({
             (t.state === "failed" || t.state === "cancelled"),
         );
   const model = resolvedModel(state, bot.id);
-  const owner = model && connectionOf(state, model.entry.connectionId);
   const fail = (message: string, code = "") => {
     setError(message);
     setErrorCode(code);
@@ -428,6 +421,14 @@ export function Chat({
                     </div>
                   ))}
                 </div>
+                <BotModelMenu
+                  bot={bot}
+                  state={state}
+                  onRefresh={onRefresh}
+                  onSettings={onSettings}
+                  onError={(m) => fail(m)}
+                  onClose={closeDetails}
+                />
                 <button
                   onClick={() => {
                     closeDetails();
@@ -468,16 +469,14 @@ export function Chat({
                     <small>{bot.role}</small>
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    setDetails(false);
-                    onSettings("models");
-                  }}
-                >
-                  <Settings size={15} />
-                  <span>Model</span>
-                  <em>{model?.entry.label ?? "Not set"}</em>
-                </button>
+                <BotModelMenu
+                  bot={bot}
+                  state={state}
+                  onRefresh={onRefresh}
+                  onSettings={onSettings}
+                  onError={(m) => fail(m)}
+                  onClose={() => setDetails(false)}
+                />
                 <button
                   onClick={() => {
                     setDetails(false);
@@ -497,11 +496,6 @@ export function Chat({
                   <Download size={15} />
                   <span>Export as template</span>
                 </button>
-                <p>
-                  {owner
-                    ? destinationNote(owner.descriptor, owner.connection.label)
-                    : "No model is selected yet."}
-                </p>
               </PopoverContent>
             )}
           </Popover>
@@ -750,13 +744,6 @@ export function Chat({
                 void submit();
               }
             }}
-          />
-          <ModelPicker
-            bot={bot}
-            state={state}
-            onRefresh={onRefresh}
-            onSettings={onSettings}
-            onError={(m) => fail(m)}
           />
           {busy || running ? (
             <button

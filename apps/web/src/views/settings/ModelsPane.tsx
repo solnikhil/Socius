@@ -103,7 +103,7 @@ export function ModelsPane({
         <h3>Models</h3>
         <p>
           Add models from your providers. Every bot uses the default unless you
-          give it its own model below or from its chat.
+          give it its own model below or from the name menu in its chat.
         </p>
       </header>
       <div className="pane-section">
