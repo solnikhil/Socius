@@ -121,6 +121,18 @@ export function Chat({
       (group ? t.groupId === group.id : t.botId === bot.id && !t.groupId),
   );
   const memory = bot.grantedCapabilities.includes("memory.read");
+  // A group reply that failed or was cut off by a restart can be run again.
+  const lastAsk = group
+    ? messages.filter((m) => m.role === "user").at(-1)
+    : undefined;
+  const unfinished =
+    busy || running
+      ? undefined
+      : state.tasks.find(
+          (t) =>
+            t.id === lastAsk?.taskId &&
+            (t.state === "failed" || t.state === "cancelled"),
+        );
   const model = resolvedModel(state, bot.id);
   const owner = model && connectionOf(state, model.entry.connectionId);
   const fail = (message: string, code = "") => {
@@ -161,20 +173,32 @@ export function Chat({
   async function submit(e?: FormEvent) {
     e?.preventDefault();
     if (!text.trim() || busy || running) return;
+    const content = text;
+    setText("");
+    const sent = await converse(group ? "groups/chat" : "chat", {
+      ...(group ? { groupId: group.id } : { botId: bot.id }),
+      content,
+      ...(attachment ? { attachment } : {}),
+    });
+    if (sent) setAttachment(null);
+    else setText(content);
+  }
+  /** Re-runs the group's last message after its reply failed or was cut off. */
+  async function retry() {
+    if (!group || busy || running) return;
+    await converse("groups/retry", { groupId: group.id });
+  }
+  /** Posts a turn and streams its events; false when the request was refused. */
+  async function converse(path: string, payload: unknown) {
     setBusy(true);
     fail("");
     setStream(null);
-    const content = text;
-    setText("");
+    let accepted = false;
     try {
-      const response = await fetch(group ? "/api/groups/chat" : "/api/chat", {
+      const response = await fetch(`/api/${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(group ? { groupId: group.id } : { botId: bot.id }),
-          content,
-          ...(attachment ? { attachment } : {}),
-        }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
         const result = await response.json();
@@ -182,7 +206,7 @@ export function Chat({
           code: result.code ?? "",
         });
       }
-      setAttachment(null);
+      accepted = true;
       setMessages(await api<Message[]>(messagesPath));
       const reader = response.body!.getReader(),
         decoder = new TextDecoder();
@@ -218,11 +242,11 @@ export function Chat({
       await onRefresh();
     } catch (e) {
       fail((e as Error).message, (e as { code?: string }).code ?? "");
-      setText(content);
     } finally {
       setBusy(false);
       setTaskId("");
     }
+    return accepted;
   }
   async function loadAttachment(file: File | undefined) {
     if (!file) return;
@@ -556,22 +580,28 @@ export function Chat({
       </div>
       <div className="composer-wrap">
         <ErrorNote
-          error={error}
+          // After a reload the failure comes from the task, not this session.
+          error={error || (unfinished?.error ?? "")}
           action={
-            SETUP_CODES.has(errorCode) || (!errorCode && /Settings/.test(error))
-              ? {
-                  label: "Open Settings",
-                  onClick: () =>
-                    // Wrong model or missing tools are fixed in Models; credentials
-                    // and endpoints on the connection itself.
-                    ["model_not_found", "tools_unsupported"].includes(
-                      errorCode,
-                    ) ||
-                    (!errorCode && state.connections.length > 0)
-                      ? onSettings("models")
-                      : onSettings("providers", model?.entry.connectionId),
-                }
-              : undefined
+            !error && unfinished
+              ? { label: "Retry reply", onClick: () => void retry() }
+              : SETUP_CODES.has(errorCode) ||
+                  (!errorCode && /Settings/.test(error))
+                ? {
+                    label: "Open Settings",
+                    onClick: () =>
+                      // Wrong model or missing tools are fixed in Models; credentials
+                      // and endpoints on the connection itself.
+                      ["model_not_found", "tools_unsupported"].includes(
+                        errorCode,
+                      ) ||
+                      (!errorCode && state.connections.length > 0)
+                        ? onSettings("models")
+                        : onSettings("providers", model?.entry.connectionId),
+                  }
+                : unfinished
+                  ? { label: "Retry reply", onClick: () => void retry() }
+                  : undefined
           }
         />
         {attachment && (

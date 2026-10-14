@@ -702,3 +702,171 @@ test("folders file each bot in at most one place and never touch group chats", a
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("group replies can be retried after a failure or restart without duplicating the message", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-group-retry-"));
+  let attempt = 0;
+  const briefings: string[] = [];
+  const runner: ModelRunner = async (request, onText) => {
+    if (!request.askMember) {
+      onText("Risks: cost.");
+      return "Risks: cost.";
+    }
+    briefings.push(request.briefing ?? "");
+    attempt++;
+    if (attempt === 1) {
+      await request.askMember("Researcher", "Find risks.");
+      throw new Error("socket hang up");
+    }
+    onText("Done, building on the research.");
+    return "Done, building on the research.";
+  };
+  let r = await paired(dir, runner);
+  try {
+    await connectModel(r);
+    const researcher = await (
+      await r.request("bots", {
+        name: "Researcher",
+        role: "Risks",
+        instructions: "Find risks.",
+      })
+    ).json();
+    const g = (await (
+      await r.request("groups", { memberIds: [researcher.id] })
+    ).json()) as GroupChat;
+    assert.equal(
+      (await r.request("groups/retry", { groupId: g.id })).status,
+      409,
+    );
+    const first = await (
+      await r.request("groups/chat", { groupId: g.id, content: "Plan it." })
+    ).text();
+    assert.match(first, /"type":"error"/);
+    const retried = await (
+      await r.request("groups/retry", { groupId: g.id })
+    ).text();
+    assert.match(retried, /"type":"done"/);
+    assert.match(briefings[1]!, /did not finish/);
+    const thread = async () =>
+      (await (
+        await r.request(`groups/messages?groupId=${g.id}`)
+      ).json()) as Message[];
+    // One user message, the member reply from the failed attempt, then the answer.
+    assert.deepEqual(
+      (await thread()).map((m) => m.content),
+      ["Plan it.", "Risks: cost.", "Done, building on the research."],
+    );
+    assert.equal(
+      (await r.request("groups/retry", { groupId: g.id })).status,
+      409,
+    );
+
+    // A reply cut off by a restart is marked failed and can be retried.
+    const user = (await thread())[0]!;
+    const stuck = {
+      id: "00000000-0000-4000-8000-000000000001",
+      botId: user.botId,
+      groupId: g.id,
+      state: "running",
+      error: null,
+      createdAt: new Date().toISOString(),
+    };
+    r.store.put("task", stuck.id, stuck);
+    r.store.put("message", "00000000-0000-4000-8000-000000000002", {
+      ...user,
+      id: "00000000-0000-4000-8000-000000000002",
+      content: "And the budget?",
+      taskId: stuck.id,
+      createdAt: new Date().toISOString(),
+    });
+    await r.close();
+    r = await paired(dir, runner);
+    const state = (await (await r.request("state")).json()) as Snapshot;
+    assert.equal(state.tasks.find((t) => t.id === stuck.id)?.state, "failed");
+    assert.match(
+      await (await r.request("groups/retry", { groupId: g.id })).text(),
+      /"type":"done"/,
+    );
+    assert.equal(
+      (await thread()).filter((m) => m.content === "And the budget?").length,
+      1,
+    );
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("group budgets, @mentions and repeated requests steer coordination", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-group-budget-"));
+  const seen: { briefing: string; asks: boolean }[] = [];
+  let memberCalls = 0;
+  const runner: ModelRunner = async (request, onText) => {
+    if (request.bot.name !== "Socius") {
+      memberCalls++;
+      onText("Draft ready.");
+      return "Draft ready.";
+    }
+    seen.push({
+      briefing: request.briefing ?? "",
+      asks: !!request.askMember,
+    });
+    if (request.askMember) {
+      await request.askMember("Writer", "Draft it.");
+      assert.match(
+        await request.askMember("writer", " draft it. "),
+        /already answered this request:\nDraft ready\./,
+      );
+      assert.match(
+        await request.askMember("Writer", "Shorter."),
+        /asked members enough times/,
+      );
+    }
+    onText("Ok.");
+    return "Ok.";
+  };
+  const r = await paired(dir, runner);
+  try {
+    await connectModel(r);
+    const writer = await (
+      await r.request("bots", {
+        name: "Writer",
+        role: "Drafts",
+        instructions: "Write.",
+      })
+    ).json();
+    assert.equal(
+      (
+        await r.request("groups", {
+          memberIds: [writer.id],
+          maxAsks: 21,
+        })
+      ).status,
+      400,
+    );
+    const g = (await (
+      await r.request("groups", { memberIds: [writer.id], maxAsks: 1 })
+    ).json()) as GroupChat;
+    assert.equal(g.maxAsks, 1);
+    await (
+      await r.request("groups/chat", {
+        groupId: g.id,
+        content: "@writer please draft the note",
+      })
+    ).text();
+    assert.equal(memberCalls, 1);
+    assert.match(seen[0]!.briefing, /up to 1 member request for this message/);
+    assert.match(seen[0]!.briefing, /addressed Writer directly/);
+
+    await r.request("groups/update", { id: g.id, maxAsks: 0 });
+    await (
+      await r.request("groups/chat", { groupId: g.id, content: "Thanks" })
+    ).text();
+    assert.equal(seen[1]!.asks, false);
+    assert.match(seen[1]!.briefing, /not taking requests/);
+    assert.doesNotMatch(seen[1]!.briefing, /addressed/);
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

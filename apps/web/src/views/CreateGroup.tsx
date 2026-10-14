@@ -23,6 +23,7 @@ export function CreateGroup({
 }) {
   const [picked, setPicked] = useState<string[]>(group?.memberIds ?? []),
     [name, setName] = useState(group?.name ?? ""),
+    [maxAsks, setMaxAsks] = useState(group?.maxAsks ?? 6),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const toggle = (id: string) =>
@@ -38,9 +39,10 @@ export function CreateGroup({
           ? {
               id: group.id,
               memberIds: picked,
+              maxAsks,
               ...(name.trim() ? { name } : {}),
             }
-          : { memberIds: picked, ...(name.trim() ? { name } : {}) },
+          : { memberIds: picked, maxAsks, ...(name.trim() ? { name } : {}) },
       );
       onSaved(saved);
       onClose();
@@ -122,6 +124,24 @@ export function CreateGroup({
               }
               maxLength={100}
             />
+          </label>
+          <label>
+            Member requests per message
+            <input
+              type="number"
+              min={0}
+              max={20}
+              value={maxAsks}
+              onChange={(e) =>
+                setMaxAsks(
+                  Math.max(0, Math.min(20, Math.round(+e.target.value || 0))),
+                )
+              }
+            />
+            <small>
+              How many times {lead.name} may ask members for help on one
+              message. 0 means {lead.name} answers alone.
+            </small>
           </label>
           <ErrorNote error={error} />
           <button className="primary" disabled={busy || picked.length === 0}>

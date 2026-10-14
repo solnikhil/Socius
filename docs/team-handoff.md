@@ -6,7 +6,7 @@ Use Node.js 24, `npm ci`, then `npm run desktop`. The user owns UI/refinement. T
 
 | Owner                                               | Assignment                                               | Code boundary                                                                                                  | Current status                                                                                                                      |
 | --------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Teammate working on Group chats                  | [Issue #2](https://github.com/solnikhil/Socius/issues/2) | Group-chat contracts, orchestration, persistence and tests                          | Assigned workstream; acceptance evidence still pending                                                                              |
+| Teammate working on Group chats                     | [Issue #2](https://github.com/solnikhil/Socius/issues/2) | Group-chat contracts, orchestration, persistence and tests                                                     | Assigned workstream; acceptance evidence still pending                                                                              |
 | Teammate working on Skills & Connectors Marketplace | [Issue #3](https://github.com/solnikhil/Socius/issues/3) | packages/marketplace, new packages/skills and packages/connectors, installation/auth/action services and tests | Assigned workstream; acceptance evidence still pending                                                                              |
 | You                                                 | [UI and refinement checklist](ui-refinement.md)          | apps/web/src plus desktop visual/presentation changes                                                          | UI refinement ongoing; new backend integration follows contracts                                                                    |
 | Luna testing handoff                                | API-provider and chat reliability                        | Runtime adapter/test changes; Settings hint handed to you                                                      | Superseded by branch `model-enhancements` (multi-provider connections); the uncommitted drafts on main need no separate integration |
@@ -43,7 +43,10 @@ Boards were retired on 2026-10-14. Group chats are the single collaboration surf
 - [x] Shared threads, editable membership and attributed specialist replies.
 - [x] Per-bot model selection and scoped skills, connectors and memory.
 - [x] Group action approvals and cancellation.
-- [ ] Refine group coordination, execution budgets and restart recovery as needed.
+- [x] Per-group member-request budgets, @mention steering and repeat-request reuse.
+- [x] Retry for failed, stopped or restart-interrupted group replies.
+- [x] Sidebar folders for organising bots, separate from group chats.
+- [ ] Record a live-model group run (only deterministic fixtures so far).
 
 ### Teammate: Skills & Connectors Marketplace
 

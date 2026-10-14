@@ -54,6 +54,12 @@ const runtime = await startRuntime({
     const content = String(request.messages.at(-1)?.content);
     // Group chats: the coordinator asks its first member, then sums up.
     if (request.askMember) {
+      // "flaky" fails the first attempt so the UI can offer a retry.
+      if (
+        content.includes("flaky") &&
+        !request.briefing?.includes("did not finish")
+      )
+        throw new Error("fetch failed");
       const member = /^- ([^:]+):/m.exec(request.briefing ?? "")?.[1] ?? "";
       await request.askMember(member, "Outline the three launch steps.");
       const text = `Thanks, ${member}. Start with step one this week; I'll check in after.`;

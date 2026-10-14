@@ -33,6 +33,8 @@ export interface GroupChat {
   name: string;
   /** Specialists in the group. The main bot always coordinates and is not listed. */
   memberIds: string[];
+  /** Member requests Socius may make per user message; defaults to 6. 0 means Socius answers alone. */
+  maxAsks?: number;
   createdAt: string;
 }
 /**

@@ -223,6 +223,17 @@ test("configure a model, create bots manually and through Socius, install skills
     path: "test-results/socius-group-chat-light.png",
     animations: "disabled",
   });
+  // A failed group reply can be retried without resending the message.
+  await page
+    .getByRole("textbox", { name: "Message Launch crew" })
+    .fill("flaky follow-up");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await page.getByRole("button", { name: "Retry reply" }).click();
+  await expect(page.getByText("Thanks, Planner.")).toHaveCount(2);
+  await expect(page.getByText("flaky follow-up")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Retry reply" })).toHaveCount(
+    0,
+  );
   await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "Launch crew details" }).click();
   await expect(page.getByText("3 bots · Socius coordinates")).toBeVisible();
@@ -232,6 +243,8 @@ test("configure a model, create bots manually and through Socius, install skills
   });
   await page.getByRole("button", { name: "Edit members" }).click();
   await page.getByRole("checkbox", { name: /College assistant/ }).click();
+  await expect(page.getByLabel("Member requests per message")).toHaveValue("6");
+  await page.getByLabel("Member requests per message").fill("3");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(
     page.getByRole("button", { name: /Launch crew Socius, Planner$/ }),

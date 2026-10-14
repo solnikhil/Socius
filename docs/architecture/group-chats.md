@@ -22,10 +22,15 @@ When the user sends a message (`POST /api/groups/chat`):
 
 Limits:
 
-- Up to 6 member requests per user message; further requests are refused with a message telling Socius to answer.
+- A per-group budget of member requests per user message (`maxAsks`, default 6, 0–20). Further requests are refused with a message telling Socius to answer. With 0, Socius gets no `askMember` tool and answers alone. The budget is stated in Socius's briefing.
+- Asking the same member the same request again in one turn returns the earlier reply instead of running the member again; it does not use budget.
 - 10 tool-loop steps for the coordinator.
 - A 5-minute wall-clock limit for the whole turn.
 - One running reply per group at a time.
+
+Writing `@Name` for a member in a message tells Socius the user addressed that member directly, and to ask them before answering. Mentions are steering, not routing: Socius still makes the call, within the budget.
+
+**Retry.** If a reply fails, is stopped, or is cut off because Socius quit (startup marks running tasks failed), `POST /api/groups/retry` runs the group's last user message again. It reuses that message rather than posting a copy. Member replies that finished before the failure stay in the thread, and Socius is told to build on them instead of asking again. The UI offers **Retry reply** beside the failure.
 
 Stopping the task (`/api/tasks/cancel`) aborts the coordinator and any member call in progress. Membership edits apply to the next member request.
 
@@ -42,11 +47,12 @@ Group chats use the same chat view as direct chats: floating name pill, bubbles 
 ## API
 
 ```http
-POST   /api/groups          {"name"?, "memberIds": ["<bot>", …]}   → 201 GroupChat (name defaults to member names)
-POST   /api/groups/update   {"id", "name"?, "memberIds"?}           → 200 GroupChat
+POST   /api/groups          {"name"?, "memberIds": ["<bot>", …], "maxAsks"?} → 201 GroupChat (name defaults to member names)
+POST   /api/groups/update   {"id", "name"?, "memberIds"?, "maxAsks"?}       → 200 GroupChat
 DELETE /api/groups          {"id"}                                  → 200 (409 while a reply is running; deletes its messages)
 GET    /api/groups/messages?groupId=…                               → Message[]
 POST   /api/groups/chat     {"groupId", "content", "attachment"?}   → NDJSON stream
+POST   /api/groups/retry    {"groupId"}                             → NDJSON stream (409 unless the last message's reply failed or was cancelled)
 ```
 
 Stream events:
@@ -60,10 +66,10 @@ Stream events:
 
 ## Limitations
 
-- Members answer only when Socius asks them. Users cannot address a member directly with an @mention yet.
+- Members answer only when Socius asks them. An @mention steers Socius but does not bypass it.
 - Member calls run one at a time, never in parallel.
 - No shared group files beyond chat attachments.
-- Model calls are not checkpointed. An interrupted reply is marked failed and must be resent.
+- Model calls are not checkpointed. A retry re-runs Socius from the start of the turn; only finished member replies carry over, and a member cut off mid-reply is asked again.
 - Deterministic fixtures exercise the API and UI. No live-model group run has been recorded yet.
 
 ## Folders are not groups
