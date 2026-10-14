@@ -32,6 +32,11 @@ export interface BrokerOptions {
   approvalTtlMs?: number;
   now?: () => number;
 }
+/**
+ * Extra actor check supplied by the runtime, for example a cancelled routine
+ * run. Returns why the actor may no longer act, or null. It can only block.
+ */
+export type ActorGuard = (actor: ActionRequestType["actor"]) => string | null;
 export type BrokerResult =
   | { status: "completed"; summary: string; data: string | null }
   | { status: "awaiting-approval"; actionId: string; summary: string };
@@ -62,6 +67,7 @@ type ReconcileResult = "found" | "absent" | "unknown";
 
 export class ActionBroker {
   private readonly reads = new Map<string, number>();
+  private guard: ActorGuard | null = null;
   constructor(
     private readonly store: Store,
     private readonly packages: PackageService,
@@ -70,6 +76,21 @@ export class ActionBroker {
   ) {}
   private now() {
     return this.options.now?.() ?? Date.now();
+  }
+  /** Installs the runtime's actor guard. Rechecked at request, approval and retry. */
+  setActorGuard(guard: ActorGuard) {
+    this.guard = guard;
+  }
+  /** Blocks every pending proposal from actors matching `match`, e.g. a cancelled run. */
+  blockPending(
+    match: (actor: ActionRecord["actor"]) => boolean,
+    reason: string,
+  ) {
+    for (const record of this.store.all<ActionRecord>("action"))
+      if (record.state === "pending" && match(record.actor)) {
+        this.save(record, { state: "blocked", error: reason });
+        this.store.event("action.blocked", `Blocked: ${record.summary}`);
+      }
   }
   /** Releases per-task bookkeeping once a task ends. */
   forgetTask(taskId: string) {
@@ -90,6 +111,8 @@ export class ActionBroker {
     const bot =
       this.store.get<BotInstance>("bot", request.actor.botId) ??
       fail(404, "Bot not found");
+    const blocked = this.guard?.(request.actor);
+    if (blocked) fail(409, blocked);
     const { connector, action } = this.find(request.action);
     if (request.release.id !== connector.id)
       fail(403, "The action does not belong to that release");

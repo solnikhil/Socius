@@ -78,6 +78,8 @@ export interface Task {
   errorCode?: ProviderErrorCode;
   /** The model that ran this task. */
   model?: ModelRef;
+  /** Set when this task is one attempt of a scheduled or manual routine run. */
+  routineRunId?: string;
   createdAt: string;
 }
 export interface Memory {

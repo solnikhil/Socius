@@ -166,7 +166,11 @@ export function App() {
   const specialists = state.bots.filter((b) => b.id !== main.id);
   const running = (b: BotInstance) =>
     state.tasks.some(
-      (t) => t.botId === b.id && !t.groupId && t.state === "running",
+      (t) =>
+        t.botId === b.id &&
+        !t.groupId &&
+        !t.routineRunId &&
+        t.state === "running",
     );
   const waiting = (b: BotInstance) => pending.some((a) => a.botId === b.id);
   const layoutOf = (id: string) => state.layouts.find((l) => l.botId === id);

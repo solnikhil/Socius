@@ -2,7 +2,7 @@
 
 Tracking: [Issue #10](https://github.com/solnikhil/Socius/issues/10).
 
-Status: specification and assignment handoff only. Owner: unassigned; the user will assign this work. No implementation is claimed by this document.
+Status: implementation of runtime, persistence, DTOs, API and deterministic tests on branch `codex/scheduling-durability-proactivity`, pending review and integration; see [Routines](../architecture/routines.md). Boxes stay unchecked until verified integration. Routine UI, browser acceptance and live checks remain open.
 
 ## Outcome
 

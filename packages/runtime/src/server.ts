@@ -8,7 +8,7 @@ import {
 import { readFile, stat } from "node:fs/promises";
 import { resolve, extname, sep } from "node:path";
 import { z } from "zod";
-import { instantiateBot } from "@socius/marketplace";
+import { canonicalJson, instantiateBot } from "@socius/marketplace";
 import {
   RegistryClient,
   type RegistryClientOptions,
@@ -22,6 +22,7 @@ import {
   type SkillManifest,
 } from "@socius/contracts";
 import type {
+  ActionRecord,
   Approval,
   BotDraft,
   BotLayout,
@@ -58,6 +59,7 @@ import { classify } from "./providers/errors.js";
 import { PackageError, PackageService } from "./packages.js";
 import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
+import { RoutineEngine, type RoutineEngineOptions } from "./routines/engine.js";
 
 export type { SecretBox };
 export interface RuntimeOptions {
@@ -73,6 +75,8 @@ export interface RuntimeOptions {
   connectorFetch?: typeof fetch;
   registry?: RegistryClientOptions;
   broker?: BrokerOptions;
+  /** Routine engine settings; tests inject a clock and drive ticks themselves. */
+  routines?: RoutineEngineOptions;
   /** Network transport for provider calls. Tests inject a controlled fetch. */
   fetch?: typeof globalThis.fetch;
   /** Environment used for provider credential fallbacks. */
@@ -211,6 +215,84 @@ export async function startRuntime(options: RuntimeOptions) {
     },
     ...options.registry,
   });
+  const routines = new RoutineEngine(
+    store,
+    {
+      model: async (botId) => (await providers.forChat(botId)).ref,
+      generate: async ({
+        bot: b,
+        taskId,
+        runRef,
+        briefing,
+        prompt,
+        signal,
+      }) => {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) controller.abort();
+        active.set(taskId, { controller, connections: new Set() });
+        try {
+          // Routines never propose bots; everything else follows the bot's own grants.
+          const { proposeBot: _proposeBot, ...context } = await modelContext(
+            b,
+            taskId,
+            controller.signal,
+            runRef,
+          );
+          return await executeModel(
+            {
+              ...context,
+              briefing: [DEFAULT_FRAMING, briefing].join("\n\n"),
+              messages: [{ role: "user", content: prompt }],
+            },
+            () => undefined,
+          );
+        } finally {
+          signal.removeEventListener("abort", abort);
+          active.delete(taskId);
+          broker.forgetTask(taskId);
+        }
+      },
+      read: async ({ botId, taskId, runRef, action, arguments: args }) => {
+        const connector =
+          reviewedConnectors.find((c) =>
+            c.actions.some((a) => a.id === action),
+          ) ?? fail(404, `Unknown action ${action}`);
+        const current =
+          store.get<Installation>("installation", connector.id) ??
+          fail(409, `${connector.id} is not installed`);
+        const result = await broker.request({
+          actor: { botId, taskId, runId: runRef },
+          release: {
+            id: current.id,
+            version: current.version,
+            digest: current.digest,
+          },
+          action,
+          arguments: args,
+        });
+        if (result.status !== "completed")
+          return fail(409, "Watchers can only use read actions");
+        return { summary: result.summary, data: result.data };
+      },
+      foregroundBusy: (botId) => {
+        const groups = store.all<GroupChat>("group");
+        return running(
+          (t) =>
+            (t.botId === botId && !t.groupId) ||
+            (!!t.groupId &&
+              (t.botId === botId ||
+                !!groups
+                  .find((g) => g.id === t.groupId)
+                  ?.memberIds.includes(botId))),
+        );
+      },
+      foregroundActive: () => running(() => true),
+    },
+    broker,
+    options.routines,
+  );
   function skillRelease(id: string) {
     return (
       packages.active("skill").find((r) => r.manifest.id === id) ??
@@ -240,6 +322,30 @@ export async function startRuntime(options: RuntimeOptions) {
               connector.id,
             );
             if (!current) return { error: "The connector was uninstalled" };
+            // A resumed routine attempt can repeat its model step. The same exact
+            // change from the same run is reported, never proposed or run twice.
+            const parsed = actor.runId ? action.input.safeParse(args) : null;
+            const earlier = parsed?.success
+              ? store
+                  .all<ActionRecord>("action")
+                  .find(
+                    (a) =>
+                      a.actor.runId === actor.runId &&
+                      a.action === action.id &&
+                      canonicalJson(a.arguments) === canonicalJson(parsed.data),
+                  )
+              : undefined;
+            if (earlier)
+              return earlier.state === "succeeded"
+                ? {
+                    summary: earlier.result?.summary ?? earlier.summary,
+                    note: "Already done earlier in this run; not repeated.",
+                  }
+                : {
+                    status: earlier.state,
+                    summary: earlier.summary,
+                    note: "This exact change was already proposed in this run and is not proposed again.",
+                  };
             const result = await broker.request({
               actor: { ...actor, botId: b.id },
               release: {
@@ -347,10 +453,11 @@ export async function startRuntime(options: RuntimeOptions) {
       return bot(id);
     });
   }
+  /** Running foreground tasks. Routine attempts never block chat. */
   function running(match: (t: Task) => boolean) {
     return store
       .all<Task>("task")
-      .some((t) => t.state === "running" && match(t));
+      .some((t) => t.state === "running" && !t.routineRunId && match(t));
   }
   /**
    * What Socius sees in its own chat so it can route work: the specialists
@@ -434,6 +541,7 @@ export async function startRuntime(options: RuntimeOptions) {
     b: BotInstance,
     taskId: string,
     signal: AbortSignal,
+    runId?: string,
   ): Promise<Omit<ModelRequest, "messages">> {
     const selected = await providers.forChat(b.id);
     active.get(taskId)?.connections.add(selected.ref.connectionId);
@@ -444,7 +552,7 @@ export async function startRuntime(options: RuntimeOptions) {
       tools: selected.entry.tools !== false,
       bot: b,
       ...(feedback ? { feedback } : {}),
-      ...packageTools(b, { taskId }),
+      ...packageTools(b, runId ? { taskId, runId } : { taskId }),
       signal,
       searchMemory: (q) => {
         if (!bot(b.id).grantedCapabilities.includes("memory.read"))
@@ -973,6 +1081,7 @@ export async function startRuntime(options: RuntimeOptions) {
             }
             for (const mem of memories) store.deleteMemory(mem.id);
             store.providers.select(`bot:${b.id}`, null);
+            routines.deleteForBot(b.id);
             store.delete("bot-layout", b.id);
             store.delete("bot", b.id);
             store.event("bot.deleted", `Deleted ${b.name}.`);
@@ -1451,8 +1560,102 @@ export async function startRuntime(options: RuntimeOptions) {
           json(res, 200, store.providers.selection());
           return;
         }
+        if (path === "/api/routines" || path.startsWith("/api/routines/")) {
+          const id = z.strictObject({ id: uuid });
+          if (req.method === "GET" && path === "/api/routines") {
+            const botId = url.searchParams.get("botId");
+            json(
+              res,
+              200,
+              routines.snapshot(botId ? bot(botId).id : undefined),
+            );
+            return;
+          }
+          if (req.method === "GET" && path === "/api/routines/history") {
+            json(res, 200, routines.history(url.searchParams.get("id") ?? ""));
+            return;
+          }
+          if (req.method === "GET" && path === "/api/routines/run") {
+            json(
+              res,
+              200,
+              routines.runDetail(url.searchParams.get("id") ?? ""),
+            );
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines") {
+            json(res, 201, routines.create(await body(req)));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines/preview") {
+            json(res, 200, routines.preview(await body(req)));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines/update") {
+            const { id: routineId, ...patch } = z
+              .looseObject({ id: uuid })
+              .parse(await body(req));
+            json(res, 200, routines.edit(routineId, patch));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines/enable") {
+            const input = z
+              .strictObject({ id: uuid, enabled: z.boolean() })
+              .parse(await body(req));
+            json(res, 200, routines.setEnabled(input.id, input.enabled));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines/run") {
+            json(res, 202, routines.runNow(id.parse(await body(req)).id));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines/cancel") {
+            const input = z
+              .strictObject({ runId: uuid })
+              .parse(await body(req));
+            json(res, 200, routines.cancelRun(input.runId));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines/finish") {
+            json(res, 200, routines.finish(id.parse(await body(req)).id));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines/snooze") {
+            const input = z
+              .strictObject({ id: uuid, until: z.iso.datetime().nullable() })
+              .parse(await body(req));
+            json(res, 200, routines.snooze(input.id, input.until));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/routines/mute") {
+            const input = z
+              .strictObject({ id: uuid, muted: z.boolean() })
+              .parse(await body(req));
+            json(res, 200, routines.mute(input.id, input.muted));
+            return;
+          }
+          if (req.method === "DELETE" && path === "/api/routines") {
+            routines.delete(id.parse(await body(req)).id);
+            json(res, 200, { ok: true });
+            return;
+          }
+          if (
+            req.method === "POST" &&
+            path === "/api/routines/notifications/read"
+          ) {
+            json(res, 200, routines.markRead(id.parse(await body(req)).id));
+            return;
+          }
+          fail(404, "Not found");
+        }
         if (req.method === "POST" && path === "/api/tasks/cancel") {
           const input = z.strictObject({ id: uuid }).parse(await body(req));
+          const routineRunId = store.get<Task>("task", input.id)?.routineRunId;
+          if (routineRunId) {
+            routines.cancelRun(routineRunId);
+            json(res, 200, { ok: true });
+            return;
+          }
           const running =
             active.get(input.id) ?? fail(409, "Task is not running");
           running.controller.abort();
@@ -1774,7 +1977,10 @@ export async function startRuntime(options: RuntimeOptions) {
     packages,
     connections,
     broker,
+    routines,
     close: async () => {
+      // Routine attempts are interrupted first so they can resume on next start.
+      await routines.stop();
       for (const t of active.values()) t.controller.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
       await new Promise<void>((resolve, reject) =>

@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./app": "./src/app.ts",
-    "./providers": "./src/providers.ts"
+    "./providers": "./src/providers.ts",
+    "./routines": "./src/routines.ts"
   },
   "dependencies": {
     "zod": "4.6.7"
