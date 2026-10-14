@@ -31,6 +31,12 @@ Deliver disabled-by-default private routines with persisted schedules, explicit 
 
 Coordinate shared contracts/runtime/provider-budget/cancellation hooks with Dreaming #8 and the group/connector workstreams. Dreaming remains a separate issue and is not a dependency on an unmerged draft. The user owns UI/visual refinement. Cloud hosting, OS wake, new delivery channels, new connector adapters and board execution remain out of scope. Keep Notion A03/A04/A05 and scheduled-workflow I05 unchecked until verified integration.
 
+## Additional product roadmap — planned
+
+The [roadmap additions](roadmap.md) track A07 approved delegation from Socius's direct chat (the user's highest-priority orchestrator gap), A08 permissioned web search, U07 cross-chat/memory search, U08 edit/resend and branching, U09 pinned replies, U10 on-device dictation, U11 image/PDF attachments, O01 per-bot token/cost usage and a runtime-enforced monthly cap, and O02 inspectable bot health from reactions, failures and usage.
+
+A03 routines (for example, Planner's weekly draft, off until enabled, with run history in Activity) remain in Issue #10 rather than a duplicate workstream. These new entries are unassigned plans, not implemented behavior. Coordinate UI with the user and shared persistence, policy and usage hooks with ongoing workstreams; see the roadmap for scope and dependencies.
+
 ## Completed and integrated
 
 - Runnable Electron desktop shell and separate local runtime.
