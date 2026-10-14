@@ -450,10 +450,24 @@ button.icon.ghost.sidebar-reveal:hover {
   background: var(--accent);
 }
 .bot-group h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-3);
   margin: 14px 12px 4px;
+}
+button.icon.section-add {
+  width: 22px;
+  height: 22px;
+  margin-right: -4px;
+  color: var(--text-3);
+}
+button.icon.section-add:hover {
+  color: var(--text);
+  background: var(--surface);
 }
 .bot-row {
   width: 100%;

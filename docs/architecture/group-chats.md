@@ -37,7 +37,7 @@ Group chats use the same chat view as direct chats: floating name pill, bubbles 
 
 - A small avatar and name label marks each run of replies from one bot.
 - The pill opens the roster, **Edit members** and **Delete group chat**.
-- Create a group from **New group chat** in the sidebar, or press ⌘2 in the `To:` palette. Groups are listed under **Group chats** in the sidebar.
+- Create a group from the **+** on the **Group chats** heading, or press ⌘2 in the `To:` palette. Groups are listed under **Group chats** in the sidebar.
 
 ## API
 

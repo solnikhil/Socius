@@ -211,7 +211,12 @@ export function App() {
       )}
     </button>
   );
-  const sectionHeading = (key: string, label: string, count: number) => {
+  const sectionHeading = (
+    key: string,
+    label: string,
+    count: number,
+    action?: { label: string; onClick: () => void },
+  ) => {
     const open = !folded.has(`section:${key}`);
     return (
       <h3>
@@ -224,6 +229,16 @@ export function App() {
           {!open && count > 0 && <span className="section-count">{count}</span>}
           <ChevronRight size={12} />
         </button>
+        {action && (
+          <button
+            className="icon ghost section-add"
+            aria-label={action.label}
+            title={action.label}
+            onClick={action.onClick}
+          >
+            <Plus size={14} />
+          </button>
+        )}
       </h3>
     );
   };
@@ -299,45 +314,36 @@ export function App() {
             </button>
           </div>
           <section className="bot-group" aria-label="Group chats">
-            {sectionHeading("groups", "Group chats", state.groups.length)}
-            {!folded.has("section:groups") && (
-              <>
-                {state.groups.map((g) => (
-                  <button
-                    key={g.id}
-                    className={`bot-row ${page === "chat" && group?.id === g.id ? "active" : ""}`}
-                    onClick={() => openGroup(g)}
-                  >
-                    <GroupAvatar names={faces(g)} size={34} />
-                    <span className="bot-text">
-                      <strong>{g.name}</strong>
-                      <small>
-                        {groupRunning(g)
-                          ? "Working…"
-                          : faces(g)
-                              .map((b) => b.name)
-                              .join(", ")}
-                      </small>
-                    </span>
-                    {(groupWaiting(g) || groupRunning(g)) && (
-                      <span
-                        className={`unread ${groupRunning(g) ? "pulse" : ""}`}
-                        aria-label={
-                          groupRunning(g) ? "Working" : "Needs review"
-                        }
-                      />
-                    )}
-                  </button>
-                ))}
+            {sectionHeading("groups", "Group chats", state.groups.length, {
+              label: "New group chat",
+              onClick: () => setGrouping("new"),
+            })}
+            {!folded.has("section:groups") &&
+              state.groups.map((g) => (
                 <button
-                  className="group-link"
-                  onClick={() => setGrouping("new")}
+                  key={g.id}
+                  className={`bot-row ${page === "chat" && group?.id === g.id ? "active" : ""}`}
+                  onClick={() => openGroup(g)}
                 >
-                  New group chat
-                  <Plus size={14} />
+                  <GroupAvatar names={faces(g)} size={34} />
+                  <span className="bot-text">
+                    <strong>{g.name}</strong>
+                    <small>
+                      {groupRunning(g)
+                        ? "Working…"
+                        : faces(g)
+                            .map((b) => b.name)
+                            .join(", ")}
+                    </small>
+                  </span>
+                  {(groupWaiting(g) || groupRunning(g)) && (
+                    <span
+                      className={`unread ${groupRunning(g) ? "pulse" : ""}`}
+                      aria-label={groupRunning(g) ? "Working" : "Needs review"}
+                    />
+                  )}
                 </button>
-              </>
-            )}
+              ))}
           </section>
           <section className="bot-group" aria-label="Specialist bots">
             {sectionHeading("bots", "Bots", specialists.length)}
