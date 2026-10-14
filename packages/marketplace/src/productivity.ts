@@ -104,3 +104,24 @@ export const gmailManifest = productivityConnector(
     },
   ],
 );
+
+export const calendarManifest = productivityConnector(
+  "google-calendar",
+  "Google Calendar",
+  "https://calendarmcp.googleapis.com/mcp/v1",
+  "Requires Google Workspace MCP Developer Preview, enabled Calendar and Calendar MCP APIs, and a Web OAuth AI-agent client. Configure SOCIUS_CALENDAR_CLIENT_ID and SOCIUS_CALENDAR_CLIENT_SECRET with callback http://127.0.0.1:37377/oauth/callback. Creates timed events only, with explicit offsets normalized to UTC; no attendees, invitations or recurrence.",
+  [
+    {
+      id: "calendar.list-events",
+      access: "read",
+      capability: "calendar.read",
+      description: "Read events in a time window.",
+    },
+    {
+      id: "calendar.create-event",
+      access: "write",
+      capability: "calendar.write",
+      description: "Create a timed event after approval.",
+    },
+  ],
+);
