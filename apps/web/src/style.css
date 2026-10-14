@@ -994,6 +994,7 @@ main > .error {
   background: var(--surface);
 }
 .composer-wrap {
+  position: relative;
   padding: 8px 48px 22px;
   flex-shrink: 0;
 }
@@ -1914,6 +1915,138 @@ button.member-row:hover {
   from {
     opacity: 0;
     transform: translate(-50%, 4px);
+  }
+}
+/* ---------- Streaming replies ---------- */
+.bubble.streaming {
+  animation: stream-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* The newest line materialises: the trailing edge fades in as text arrives. */
+.bubble.streaming:not(.waiting) .markdown {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 1.7em),
+    rgb(0 0 0 / 0.55) 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 1.7em),
+    rgb(0 0 0 / 0.55) 100%
+  );
+}
+/* A soft glowing caret rides the end of the reply. */
+.bubble.streaming .markdown > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.3em;
+  border-radius: 50%;
+  vertical-align: 0.05em;
+  background: radial-gradient(circle, var(--accent) 0 38%, transparent 72%);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: caret-glow 1.1s ease-in-out infinite;
+}
+.bubble.streaming .markdown > pre:last-child::after,
+.bubble.streaming .markdown > ul:last-child::after,
+.bubble.streaming .markdown > ol:last-child::after {
+  display: none;
+}
+.bubble.streaming .markdown > ul:last-child > li:last-child::after,
+.bubble.streaming .markdown > ol:last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.3em;
+  border-radius: 50%;
+  vertical-align: 0.05em;
+  background: radial-gradient(circle, var(--accent) 0 38%, transparent 72%);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: caret-glow 1.1s ease-in-out infinite;
+}
+/* Before the first words: a shimmer sweeps across "Thinking". */
+.thinking {
+  display: inline-block;
+  padding: 1px 0;
+  font-weight: 500;
+  color: transparent;
+  background: linear-gradient(
+      100deg,
+      var(--text-3) 0%,
+      var(--text-3) 35%,
+      var(--text) 50%,
+      var(--text-3) 65%,
+      var(--text-3) 100%
+    )
+    0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shimmer 1.8s linear infinite;
+}
+.thinking::after {
+  content: "…";
+}
+.jump-latest {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: none;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+  font-size: 12.5px;
+  color: var(--text-2);
+  animation: jump-in 0.2s ease-out;
+}
+.jump-latest:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+@keyframes stream-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+    filter: blur(3px);
+  }
+}
+@keyframes caret-glow {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+@keyframes shimmer {
+  to {
+    background-position: -250% 0;
+  }
+}
+@keyframes jump-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble.streaming .markdown {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .thinking {
+    color: var(--text-3);
+    background: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

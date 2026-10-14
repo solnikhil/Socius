@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from "react";
 import {
+  ArrowDown,
   ArrowUp,
   BookOpen,
   Check,
@@ -32,6 +33,7 @@ import {
   useDismiss,
 } from "../components/ui.js";
 import { ApprovalCard } from "../components/ApprovalCard.js";
+import { useSmoothText, useStickToBottom } from "../components/streaming.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
 import { ModelPicker } from "../components/ModelPicker.js";
@@ -95,7 +97,8 @@ export function Chat({
     [details, setDetails] = useState(false),
     [exporting, setExporting] = useState(false),
     [copied, setCopied] = useState("");
-  const bottom = useRef<HTMLDivElement>(null),
+  const scroller = useRef<HTMLDivElement>(null),
+    thread = useRef<HTMLDivElement>(null),
     upload = useRef<HTMLInputElement>(null),
     input = useRef<HTMLTextAreaElement>(null);
   const closeDetails = useCallback(() => {
@@ -158,9 +161,10 @@ export function Chat({
       clearInterval(timer);
     };
   }, [messagesPath, busy]);
-  useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, stream]);
+  // Follows new output only while the reader is at the bottom.
+  const { atBottom, pin } = useStickToBottom(scroller, thread);
+  const streamed = useSmoothText(stream?.content ?? "");
+  useEffect(() => pin(), [conversation, pin]);
   useEffect(() => {
     input.current?.focus();
   }, [conversation]);
@@ -175,6 +179,7 @@ export function Chat({
     if (!text.trim() || busy || running) return;
     const content = text;
     setText("");
+    pin(true);
     const sent = await converse(group ? "groups/chat" : "chat", {
       ...(group ? { groupId: group.id } : { botId: bot.id }),
       content,
@@ -186,6 +191,7 @@ export function Chat({
   /** Re-runs the group's last message after its reply failed or was cut off. */
   async function retry() {
     if (!group || busy || running) return;
+    pin(true);
     await converse("groups/retry", { groupId: group.id });
   }
   /** Posts a turn and streams its events; false when the request was refused. */
@@ -442,8 +448,8 @@ export function Chat({
           )}
         </div>
       </header>
-      <div className="chat-scroll">
-        <div className="thread">
+      <div className="chat-scroll" ref={scroller} tabIndex={-1}>
+        <div className="thread" ref={thread}>
           {empty ? (
             <div className="welcome">
               {group ? (
@@ -551,14 +557,16 @@ export function Chat({
                 stream &&
                 stream.botId !== lastSpeaker &&
                 label(stream.botId)}
-              <div className="bubble" aria-live="polite">
-                {stream?.content ? (
-                  <Markdown text={stream.content} />
+              <div
+                className={`bubble streaming ${streamed ? "" : "waiting"}`}
+                aria-live="polite"
+                aria-busy="true"
+              >
+                {streamed ? (
+                  <Markdown text={streamed} />
                 ) : (
-                  <span className="typing" aria-label="Working on it">
-                    <i />
-                    <i />
-                    <i />
+                  <span className="thinking" aria-label="Working on it">
+                    Thinking
                   </span>
                 )}
               </div>
@@ -575,10 +583,19 @@ export function Chat({
               onRefresh={onRefresh}
             />
           ))}
-          <div ref={bottom} />
         </div>
       </div>
       <div className="composer-wrap">
+        {!atBottom && (
+          <button
+            type="button"
+            className="jump-latest"
+            onClick={() => pin(true)}
+          >
+            <ArrowDown size={14} />
+            {busy ? "New reply below" : "Jump to latest"}
+          </button>
+        )}
         <ErrorNote
           // After a reload the failure comes from the task, not this session.
           error={error || (unfinished?.error ?? "")}
