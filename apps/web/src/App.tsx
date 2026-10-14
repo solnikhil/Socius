@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity as ActivityIcon,
   BookOpen,
   Monitor,
   Moon,
@@ -28,11 +27,10 @@ import { Chat } from "./views/Chat.js";
 import { NewChat } from "./views/NewChat.js";
 import { ConnectApps } from "./views/ConnectApps.js";
 import { MemoryView } from "./views/MemoryView.js";
-import { ActivityView } from "./views/ActivityView.js";
 import { SettingsView } from "./views/SettingsView.js";
 import { CreateBot } from "./views/CreateBot.js";
 
-type Page = "chat" | "new" | "memory" | "activity" | "settings";
+type Page = "chat" | "new" | "memory" | "settings";
 const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
@@ -157,7 +155,12 @@ export function App() {
             >
               <Avatar name={main.name} main size={66} badge />
               <span>{main.name}</span>
-              {running(main) && <span className="pulse" />}
+              {(running(main) || waiting(main)) && (
+                <span
+                  className={`review-dot ${running(main) ? "pulse" : ""}`}
+                  aria-label={running(main) ? "Working" : "Needs review"}
+                />
+              )}
             </button>
           </div>
           {specialists.length > 0 && (
@@ -190,13 +193,6 @@ export function App() {
               <Plus size={14} />
             </button>
             <button
-              className={`group-link ${page === "activity" ? "active" : ""}`}
-              onClick={() => setPage("activity")}
-            >
-              Activity
-              <span>{pending.length || ""}</span>
-            </button>
-            <button
               className={`group-link ${page === "memory" ? "active" : ""}`}
               onClick={() => setPage("memory")}
             >
@@ -213,7 +209,6 @@ export function App() {
               onClick={() => setMenu((m) => !m)}
             >
               <User size={16} />
-              {pending.length > 0 && <span className="dot" />}
             </button>
             {menu && (
               <div className="popover account-menu" role="menu">
@@ -236,19 +231,6 @@ export function App() {
                 >
                   <BookOpen size={15} />
                   Memory
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setPage("activity");
-                    setMenu(false);
-                  }}
-                >
-                  <ActivityIcon size={15} />
-                  Activity
-                  {pending.length > 0 && (
-                    <span className="count">{pending.length}</span>
-                  )}
                 </button>
                 <div className="menu-divider" />
                 <div className="menu-label">Appearance</div>
@@ -306,7 +288,7 @@ export function App() {
             }}
           />
         )}
-        {(page === "memory" || page === "activity" || page === "settings") && (
+        {(page === "memory" || page === "settings") && (
           <div className="page-frame">
             <header className="page-bar drag">
               <span>{page[0]!.toUpperCase() + page.slice(1)}</span>
@@ -325,9 +307,6 @@ export function App() {
                 bots={state.bots}
                 onSelect={setSelected}
               />
-            )}
-            {page === "activity" && (
-              <ActivityView state={state} onRefresh={refresh} />
             )}
             {page === "settings" && (
               <SettingsView

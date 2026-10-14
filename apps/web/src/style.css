@@ -376,7 +376,7 @@ button.pill:hover {
 .featured-bot.active {
   background: var(--surface-2);
 }
-.featured-bot > .pulse {
+.featured-bot > .review-dot {
   position: absolute;
   top: 10px;
   right: 12px;
@@ -478,16 +478,6 @@ button.pill:hover {
   background: transparent;
   border: 1px solid var(--border-strong);
   color: var(--text-2);
-}
-.account-button .dot {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--sidebar);
 }
 .connect-apps {
   height: 40px;
@@ -1054,9 +1044,6 @@ main > .error {
   padding: 0 12px 12px;
   color: var(--text-2);
 }
-.approval-list .approval-card {
-  width: 100%;
-}
 
 /* ---------- New chat ---------- */
 .new-chat {
@@ -1591,9 +1578,7 @@ dialog::backdrop {
 .theme-option.system .theme-preview b {
   background: #333;
 }
-.memory-list,
-.activity-list,
-.approval-list {
+.memory-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1642,39 +1627,6 @@ dialog::backdrop {
 .scope select {
   padding: 8px 10px;
   border-radius: 999px;
-}
-.activity-list article {
-  display: grid;
-  grid-template-columns: 26px 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
-.activity-list article div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.activity-list strong {
-  font-weight: 500;
-  font-size: 14px;
-}
-.activity-list time {
-  color: var(--text-3);
-  font-size: 12px;
-}
-.activity-dot {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-3);
-  color: var(--success);
 }
 .empty {
   display: flex;
