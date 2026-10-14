@@ -50,3 +50,30 @@ export const linearManifest = productivityConnector(
     },
   ],
 );
+
+export const githubManifest = productivityConnector(
+  "github",
+  "GitHub",
+  "https://api.githubcopilot.com/mcp/",
+  "Host setup requires SOCIUS_GITHUB_CLIENT_ID and SOCIUS_GITHUB_CLIENT_SECRET for a dedicated OAuth app, with callback http://127.0.0.1:37377/oauth/callback. Organization approval may be required. Initial scope is repo (broad private repository access).",
+  [
+    {
+      id: "github.search",
+      access: "read",
+      capability: "documents.read",
+      description: "Search issues.",
+    },
+    {
+      id: "github.fetch",
+      access: "read",
+      capability: "documents.read",
+      description: "Read one issue.",
+    },
+    {
+      id: "github.create-issue",
+      access: "write",
+      capability: "documents.write",
+      description: "Create an issue after approval.",
+    },
+  ],
+);
