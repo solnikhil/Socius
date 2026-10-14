@@ -117,3 +117,28 @@ test("observations hide every form-field value, including block values", () => {
   assert.ok(out.includes('searchbox "Search" [ref=e12]'));
   assert.ok(redactSnapshot("x".repeat(50), 10).includes("page truncated"));
 });
+
+test("rich-text editors, odd names and ref-less fields never leak content", () => {
+  const out = redactSnapshot(
+    [
+      '- textbox "Message body" [ref=e5]:',
+      "  - paragraph [ref=e6]: my private draft",
+      "  - paragraph [ref=e7]: second line",
+      '- textbox "Re: subject" [ref=e8]: confidential reply',
+      '- textbox "Card" [ref=e9] [cursor=pointer]: 4111 1111',
+      "- textbox: no ref value",
+      '- heading "After" [level=2] [ref=e10]',
+    ].join("\n"),
+    10_000,
+  );
+  for (const secret of [
+    "private draft",
+    "second line",
+    "confidential",
+    "4111",
+    "no ref value",
+  ])
+    assert.ok(!out.includes(secret), secret);
+  assert.ok(out.includes('textbox "Re: subject" [ref=e8]: [value hidden]'));
+  assert.ok(out.includes('heading "After"'));
+});

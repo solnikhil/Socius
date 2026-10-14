@@ -68,7 +68,16 @@ export interface BrowserSession {
   updatedAt: string;
 }
 
-export const BrowserInteraction = z.enum(["click", "fill", "fill-and-submit"]);
+/**
+ * `navigate` is raised by the runtime, not the agent: an address the agent
+ * built itself after page content entered its context.
+ */
+export const BrowserInteraction = z.enum([
+  "click",
+  "fill",
+  "fill-and-submit",
+  "navigate",
+]);
 export type BrowserInteraction = z.infer<typeof BrowserInteraction>;
 
 /**
@@ -90,7 +99,7 @@ export interface BrowserAction {
   ref: string;
   /** What the element is, as the page describes it: role, name and form target. */
   target: string;
-  /** Exact text that would be typed, or null for a click. */
+  /** Exact text that would be typed, the address to open, or null for a click. */
   content: string | null;
   digest: string;
   state:

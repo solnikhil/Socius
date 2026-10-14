@@ -2,8 +2,18 @@
 // stable element references; form-field values are removed before anything
 // leaves the browser, so typed passwords, codes and drafts never reach a model.
 
-const FIELD =
-  /^(\s*- )(textbox|searchbox|combobox|spinbutton|slider)\b(.*?)(: .*)?$/;
+const ROLES = "textbox|searchbox|combobox|spinbutton|slider";
+/**
+ * An editable field line. Its name and attributes end at the `[ref=…]` token
+ * and any bracketed attributes after it; everything after that is the value.
+ * A page-supplied name containing "[ref=" can only cut the line short, which
+ * hides more, never less.
+ */
+const FIELD = new RegExp(
+  `^(\\s*- )(${ROLES})\\b(.*?\\[ref=[^\\]]+\\](?:\\s*\\[[^\\]]*\\])*)(:.*)?$`,
+);
+/** Fallback for a field line without a ref: the first ":" starts the value. */
+const FIELD_NO_REF = new RegExp(`^(\\s*- )(${ROLES})\\b([^:]*)(:.*)?$`);
 
 /**
  * Removes the value of every editable field, including multi-line block
@@ -18,11 +28,12 @@ export function redactSnapshot(snapshot: string, max: number): string {
       if (indent > skipIndent && line.trim()) continue;
       skipIndent = -1;
     }
-    const match = FIELD.exec(line);
-    if (match && match[4]) {
+    const match = FIELD.exec(line) ?? FIELD_NO_REF.exec(line);
+    // ": value", a block scalar (": |") or ":" followed by child lines such
+    // as a rich-text editor's paragraphs: all of it is hidden.
+    if (match?.[4]) {
       out.push(`${match[1]}${match[2]}${match[3]}: [value hidden]`);
-      // Block scalars (`: |`, `: >`) continue on deeper-indented lines.
-      if (/^: [|>][-+]?\s*$/.test(match[4])) skipIndent = indent;
+      skipIndent = indent;
       continue;
     }
     out.push(line);

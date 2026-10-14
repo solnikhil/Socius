@@ -39,6 +39,7 @@ Playwright (`playwright-core` 1.64.0, Apache-2.0) launches Chromium with a persi
 - References look like `o3.e12`: observation 3, element `e12`. Only the latest observation of the active tab is valid; navigation, scrolling, tab switches, takeover and resume invalidate references.
 - `browserFollowLink` navigates to the link's `href` through the same URL check; it does not click.
 - `browserSearch` builds the results URL from an ordinary GET search form the way the form would submit it. POST forms and other controls need `browserProposeInteraction`.
+- **Exfiltration guard.** Once a task has read page content (`browserObserve` or `browserReadText`), an injected instruction could make the agent put private context into an address. From then on an address the agent builds itself is opened only after the user reviews it (a `navigate` proposal showing the exact address), unless the user wrote it, a page the agent read linked to it, or it goes to a trusted site — one the user named or the agent opened before reading anything — as a search, or as a page without a query string. Following links needs no review.
 - Bounds per task: 40 commands, 80,000 characters of page text, 12,000 characters per observation, 8,000 per read, 6 tabs, and a refusal after three identical consecutive steps. Model steps rise from 6 to 24 when browser tools are present; direct chats with browsing time out after 10 minutes instead of 3, groups after 10 instead of 5. Time waiting for a review never counts.
 - Results carry URL, title and retrieval time. Pages that could not be opened return an error; the bot is told to say so.
 
@@ -60,7 +61,7 @@ A site's own JavaScript can still react to a click in ways the fingerprint does 
 
 ## Model context and privacy
 
-- Observations remove every form-field value (text, password, code, multi-line), so typed passwords or drafts are never sent to a model. Pages that show a password, one-time-code or payment field carry a note telling the bot to ask the user to take control.
+- Observations remove every form-field value (text, password, code, multi-line and rich-text editor content), and `browserReadText` leaves out inputs, text areas and editable regions, so typed passwords or drafts are never sent to a model. Pages that show a password, one-time-code or payment field carry a note telling the bot to ask the user to take control.
 - Page text is labelled untrusted data; the instructions tell the bot never to follow instructions on pages. No screenshots, traces, cookies or network bodies are captured.
 - Page text the bot reads is sent to that bot's model provider. The grant dialog discloses this. Local browser execution is not a no-cloud claim.
 
@@ -88,8 +89,8 @@ Local session only (`localOnly`); phones see status but cannot drive the browser
 
 ## Verification
 
-- `packages/runtime/test/browser-policy.test.ts`: address classification, URL checks, proxy authentication/refusals and observation redaction.
-- `packages/runtime/test/browser.test.ts` (real headless Chromium, scripted model, local fixture site; skipped when Chromium is not installed): grant gating; multipage research with links, new/switched tabs, GET search and cited visits; local/private/redirect/subresource refusal; field-value redaction and refused password fills; guessed and stale refs; exact approval running once and refusing a wrong digest or a repeat; takeover while a proposal waits (proposal withdrawn, task cancelled, no submission), agent refused in human mode, resume with fresh context and void old refs; takeover during a slow navigation waits for the drain and discards the result; one device at a time; per-bot sessions; mid-task revocation; real input pausing the agent; window close mid-proposal; restart; stop; reset.
+- `packages/runtime/test/browser-policy.test.ts`: address classification, URL checks, proxy authentication/refusals and observation redaction, including rich-text editors and field names containing ": ".
+- `packages/runtime/test/browser.test.ts` (real headless Chromium, scripted model, local fixture site; skipped when Chromium is not installed): grant gating; multipage research with links, new/switched tabs, GET search and cited visits; local/private/redirect/subresource refusal; field-value redaction and refused password fills; guessed and stale refs; exact approval running once and refusing a wrong digest or a repeat; takeover while a proposal waits (proposal withdrawn, task cancelled, no submission), agent refused in human mode, resume with fresh context and void old refs; takeover during a slow navigation waits for the drain and discards the result; one device at a time; per-bot sessions; mid-task revocation; real input pausing the agent; window close mid-proposal; restart; stop; reset; after reading pages, a self-built address with data or on an unnamed site waits for review (denied: no request reaches the site; approved: exactly one), while user-written addresses and page links stay free; editable text is left out of reads.
 - A headed smoke run against `https://example.com` through the proxy opened, observed, refused `localhost` and took over in 9 ms.
 
 ## Not yet verified
@@ -98,4 +99,5 @@ Local session only (`localOnly`); phones see status but cannot drive the browser
 - A consented live-model run (fixtures only so far). Measured completion, takeover latency under a live model, token cost and failures are not recorded.
 - Packaged (electron-builder) builds, Windows and Linux hosts, and a Chromium crash (as opposed to a close).
 - Stagehand comparison: not started; no evidence it is needed.
+- The exfiltration guard narrows, but cannot close, every channel: a trusted site that forwards path-based redirects, or a search sent to a trusted site that leaks its queries, could still carry data. Group coordinators' requests to members count as the user's words for this purpose.
 - Notion and the roadmap remain unchecked until the acceptance runs above are recorded.

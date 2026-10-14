@@ -149,6 +149,7 @@ const ACTION_LABEL: Record<BrowserAction["action"], string> = {
   click: "Click",
   fill: "Type into",
   "fill-and-submit": "Type into and submit",
+  navigate: "Open a page",
 };
 const RESULT: Partial<Record<BrowserAction["state"], string>> = {
   succeeded: "Done",
@@ -196,7 +197,8 @@ export function BrowserActionCard({
       <div className="approval-heading">
         <Globe size={18} />
         <strong>
-          {botName} wants to {ACTION_LABEL[a.action].toLowerCase()} on{" "}
+          {botName} wants to {ACTION_LABEL[a.action].toLowerCase()}
+          {a.action === "navigate" ? " at " : " on "}
           {new URL(a.origin).host}
         </strong>
         <span>
@@ -204,18 +206,30 @@ export function BrowserActionCard({
         </span>
       </div>
       <dl className="browser-action-details">
-        <dt>Page</dt>
+        <dt>{a.action === "navigate" ? "From" : "Page"}</dt>
         <dd>
           <code>{a.url}</code>
         </dd>
-        <dt>Element</dt>
-        <dd>{a.target}</dd>
-        {a.content !== null && (
+        {a.action === "navigate" ? (
           <>
-            <dt>Text</dt>
+            <dt>Opens</dt>
             <dd>
               <pre>{a.content}</pre>
+              <small>{a.target}</small>
             </dd>
+          </>
+        ) : (
+          <>
+            <dt>Element</dt>
+            <dd>{a.target}</dd>
+            {a.content !== null && (
+              <>
+                <dt>Text</dt>
+                <dd>
+                  <pre>{a.content}</pre>
+                </dd>
+              </>
+            )}
           </>
         )}
       </dl>

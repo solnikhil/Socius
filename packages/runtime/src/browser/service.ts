@@ -97,7 +97,33 @@ interface TaskBudget {
   commands: number;
   text: number;
   recent: string[];
+  /** Page content has entered the model's context in this task. */
+  tainted: boolean;
+  /** Addresses the user wrote or that pages linked to; normalised, no fragment. */
+  known: Set<string>;
+  /**
+   * Sites the user named or the agent chose before reading any page. Data the
+   * agent sends there does not reach whoever wrote an injected instruction.
+   */
+  trusted: Set<string>;
 }
+
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'`)\]]+/g;
+function normalUrl(raw: string, base?: string): string | null {
+  try {
+    const url = new URL(raw, base);
+    url.hash = "";
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+/** Marks a command result that must wait for the user's review instead. */
+interface Review {
+  review: BrowserAction;
+}
+const isReview = (value: unknown): value is Review =>
+  !!value && typeof value === "object" && "review" in value;
 
 const now = () => new Date().toISOString();
 const digestOf = (value: unknown) =>
@@ -718,9 +744,62 @@ export class BrowserService {
     return s;
   }
 
-  private budget(taskId: string, signature: string) {
-    const b = this.budgets.get(taskId) ?? { commands: 0, text: 0, recent: [] };
-    this.budgets.set(taskId, b);
+  private budgetFor(ctx: BrowserTaskContext): TaskBudget {
+    let b = this.budgets.get(ctx.taskId);
+    if (!b) {
+      const session = this.sessions().find((x) => x.botId === ctx.bot.id);
+      // Only addresses the user wrote start out trusted.
+      const written = `${ctx.objective}\n${session?.objective ?? ""}`;
+      b = {
+        commands: 0,
+        text: 0,
+        recent: [],
+        tainted: false,
+        known: new Set(),
+        trusted: new Set(),
+      };
+      for (const m of written.matchAll(URL_IN_TEXT)) {
+        const url = normalUrl(m[0]);
+        if (!url) continue;
+        b.known.add(url);
+        b.trusted.add(new URL(url).origin);
+      }
+      this.budgets.set(ctx.taskId, b);
+    }
+    return b;
+  }
+  /**
+   * Once page content is in context, an injected instruction could make the
+   * agent put private context into an address. From then on an address the
+   * agent builds itself needs review unless the user wrote it, a page linked
+   * to it, or it goes to a trusted site: a search there, or a page there
+   * without a query string (query strings are how open redirects forward).
+   */
+  private needsReview(
+    ctx: BrowserTaskContext,
+    url: URL,
+    kind: "open" | "search",
+  ) {
+    const b = this.budgetFor(ctx);
+    if (!b.tainted) {
+      b.trusted.add(url.origin);
+      return false;
+    }
+    if (b.known.has(normalUrl(url.href) ?? "")) return false;
+    if (!b.trusted.has(url.origin)) return true;
+    return kind === "open" && !!url.search;
+  }
+  private learn(ctx: BrowserTaskContext, urls: string[], taint: boolean) {
+    const b = this.budgetFor(ctx);
+    if (taint) b.tainted = true;
+    for (const u of urls) {
+      const n = normalUrl(u);
+      if (n && b.known.size < 2000) b.known.add(n);
+    }
+  }
+
+  private budget(ctx: BrowserTaskContext, signature: string) {
+    const b = this.budgetFor(ctx);
     if (++b.commands > MAX_COMMANDS_PER_TASK)
       fail(
         429,
@@ -753,7 +832,7 @@ export class BrowserService {
   ): Promise<T> {
     const { session, revision } = this.bind(ctx);
     this.gate(session.id, ctx, revision);
-    this.budget(ctx.taskId, signature);
+    this.budget(ctx, signature);
     const live = await this.ensureLive(session);
     const step = live.queue.then(async () => {
       const s = this.gate(session.id, ctx, revision);
@@ -804,6 +883,9 @@ export class BrowserService {
       );
     const visit = { url: page.url(), title, at: now() };
     const s = recheck();
+    const b = this.budgets.get(s.taskId ?? "");
+    const final = normalUrl(page.url());
+    if (b && final) b.known.add(final);
     this.save(s, {
       lastConfirmedUrl: page.url(),
       visits: [...s.visits.filter((v) => v.url !== visit.url), visit].slice(
@@ -833,7 +915,12 @@ export class BrowserService {
         ),
       )
       .catch(() => false);
+    const base = page.url();
+    const links = [...snapshot.matchAll(/^\s*- \/url: (.+)$/gm)]
+      .map((m) => normalUrl(m[1]!.trim().replace(/^"|"$/g, ""), base))
+      .filter((u): u is string => !!u);
     return {
+      links,
       tabId,
       url: page.url(),
       title: clipText(await page.title().catch(() => ""), 200),
@@ -986,22 +1073,27 @@ export class BrowserService {
           newTab: z.boolean().optional(),
         }),
         (args) =>
-          this.command(
+          this.reviewed(
             ctx,
-            `Opened ${args.url}`,
-            `open:${args.url}`,
-            async (live, s, recheck) => {
-              let page = await this.page(live);
-              if (args.newTab) {
-                if (live.pages.size >= MAX_TABS)
-                  fail(429, `At most ${MAX_TABS} tabs. Close one first.`);
-                checkUrl(String(args.url), this.allowHosts);
-                page = await live.context.newPage();
-                this.track(s.id, live, page);
-                live.active = live.ids.get(page)!;
-              }
-              return this.goto(live, recheck, page, String(args.url));
-            },
+            this.command(
+              ctx,
+              `Opened ${args.url}`,
+              `open:${args.url}`,
+              async (live, s, recheck): Promise<unknown> => {
+                let page = await this.page(live);
+                const url = checkUrl(String(args.url), this.allowHosts);
+                if (this.needsReview(ctx, url, "open"))
+                  return this.navigation(ctx, live, recheck, page, url);
+                if (args.newTab) {
+                  if (live.pages.size >= MAX_TABS)
+                    fail(429, `At most ${MAX_TABS} tabs. Close one first.`);
+                  page = await live.context.newPage();
+                  this.track(s.id, live, page);
+                  live.active = live.ids.get(page)!;
+                }
+                return this.goto(live, recheck, page, String(args.url));
+              },
+            ),
           ),
       ),
       wrap(
@@ -1014,7 +1106,11 @@ export class BrowserService {
             "Read the page",
             `observe:${Date.now()}`,
             async (live) => {
-              const result = await this.observe(live, await this.page(live));
+              const { links, ...result } = await this.observe(
+                live,
+                await this.page(live),
+              );
+              this.learn(ctx, links, true);
               return {
                 ...result,
                 page: this.text(ctx.taskId, result.page, MAX_OBSERVATION),
@@ -1053,60 +1149,67 @@ export class BrowserService {
           query: z.string().min(1).max(500),
         }),
         (args) =>
-          this.command(
+          this.reviewed(
             ctx,
-            `Searched for "${args.query}"`,
-            `search:${args.ref}:${args.query}`,
-            async (live, _s, recheck) => {
-              const page = await this.page(live);
-              const locator = this.element(live, page, String(args.ref));
-              // The results address is built from the form, the way the form
-              // itself would submit it; no page script or click runs.
-              const target = await locator.evaluate((el, query) => {
-                const input = el as HTMLInputElement;
-                const form = input.form;
-                if (
-                  !form ||
-                  !(
-                    el instanceof HTMLInputElement ||
-                    el instanceof HTMLTextAreaElement
-                  )
-                )
-                  return null;
-                if (
-                  (form.getAttribute("method") ?? "get").toLowerCase() !== "get"
-                )
-                  return null;
-                if (!["text", "search", ""].includes(input.type ?? ""))
-                  return null;
-                if (!input.name) return null;
-                const url = new URL(form.action || location.href);
-                url.search = "";
-                for (const field of Array.from(
-                  form.elements,
-                ) as HTMLInputElement[]) {
-                  if (!field.name || field.disabled) continue;
-                  if (field === input)
-                    url.searchParams.append(field.name, query);
-                  else if (["checkbox", "radio"].includes(field.type)) {
-                    if (field.checked)
-                      url.searchParams.append(field.name, field.value);
-                  } else if (
-                    ["text", "search", "hidden", "select-one", ""].includes(
-                      field.type,
+            this.command(
+              ctx,
+              `Searched for "${args.query}"`,
+              `search:${args.ref}:${args.query}`,
+              async (live, _s, recheck): Promise<unknown> => {
+                const page = await this.page(live);
+                const locator = this.element(live, page, String(args.ref));
+                // The results address is built from the form, the way the form
+                // itself would submit it; no page script or click runs.
+                const target = await locator.evaluate((el, query) => {
+                  const input = el as HTMLInputElement;
+                  const form = input.form;
+                  if (
+                    !form ||
+                    !(
+                      el instanceof HTMLInputElement ||
+                      el instanceof HTMLTextAreaElement
                     )
                   )
-                    url.searchParams.append(field.name, field.value);
-                }
-                return url.href;
-              }, String(args.query));
-              if (!target)
-                fail(
-                  400,
-                  "That field is not part of a simple search form. Use browserProposeInteraction instead.",
-                );
-              return this.goto(live, recheck, page, target!);
-            },
+                    return null;
+                  if (
+                    (form.getAttribute("method") ?? "get").toLowerCase() !==
+                    "get"
+                  )
+                    return null;
+                  if (!["text", "search", ""].includes(input.type ?? ""))
+                    return null;
+                  if (!input.name) return null;
+                  const url = new URL(form.action || location.href);
+                  url.search = "";
+                  for (const field of Array.from(
+                    form.elements,
+                  ) as HTMLInputElement[]) {
+                    if (!field.name || field.disabled) continue;
+                    if (field === input)
+                      url.searchParams.append(field.name, query);
+                    else if (["checkbox", "radio"].includes(field.type)) {
+                      if (field.checked)
+                        url.searchParams.append(field.name, field.value);
+                    } else if (
+                      ["text", "search", "hidden", "select-one", ""].includes(
+                        field.type,
+                      )
+                    )
+                      url.searchParams.append(field.name, field.value);
+                  }
+                  return url.href;
+                }, String(args.query));
+                if (!target)
+                  fail(
+                    400,
+                    "That field is not part of a simple search form. Use browserProposeInteraction instead.",
+                  );
+                const url = checkUrl(target!, this.allowHosts);
+                if (this.needsReview(ctx, url, "search"))
+                  return this.navigation(ctx, live, recheck, page, url);
+                return this.goto(live, recheck, page, target!);
+              },
+            ),
           ),
       ),
       wrap(
@@ -1140,18 +1243,30 @@ export class BrowserService {
             `read:${args.ref ?? ""}:${Date.now()}`,
             async (live) => {
               const page = await this.page(live);
-              const raw = args.ref
-                ? await this.element(live, page, String(args.ref)).innerText()
-                : await page.evaluate(() => {
-                    const main = document.querySelector(
-                      "main, article, [role=main]",
-                    );
-                    return (
-                      (main as HTMLElement | null)?.innerText ??
-                      document.body?.innerText ??
-                      ""
-                    );
-                  });
+              // Text the user (or a draft) typed into editable areas is left
+              // out, like field values in observations.
+              const visibleText = (root: Element) => {
+                const copy = root.cloneNode(true) as HTMLElement;
+                for (const el of copy.querySelectorAll(
+                  'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role=textbox], script, style, noscript, template',
+                ))
+                  el.remove();
+                if (
+                  copy.matches?.(
+                    'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role=textbox]',
+                  )
+                )
+                  return "";
+                return copy.textContent ?? "";
+              };
+              const main = page.locator("main, article, [role=main]");
+              const root = args.ref
+                ? this.element(live, page, String(args.ref))
+                : (await main.count())
+                  ? main.first()
+                  : page.locator("body");
+              const raw = await root.evaluate(visibleText);
+              this.learn(ctx, [], true);
               return {
                 url: page.url(),
                 title: clipText(await page.title().catch(() => ""), 200),
@@ -1261,14 +1376,6 @@ export class BrowserService {
             400,
             "That field is not in a form. Fill it, then propose a click on the button that sends it.",
           );
-        const pending = this.store
-          .all<BrowserAction>("browser-action")
-          .filter((a) => a.taskId === ctx.taskId && a.state === "pending");
-        if (pending.length)
-          fail(409, "Another interaction is already waiting for review.");
-        // Nothing below awaits: the proposal binds the revision that holds now.
-        const s = recheck();
-        const url = new URL(page.url());
         const target = [
           info.label ? `"${info.label}"` : "",
           info.type ? `${info.tag} (${info.type})` : info.tag,
@@ -1278,54 +1385,122 @@ export class BrowserService {
         ]
           .filter(Boolean)
           .join(" ");
-        const base = {
-          sessionId: s.id,
-          botId: ctx.bot.id,
-          taskId: ctx.taskId,
-          revision: s.revision,
-          pageRevision: live.valid!.n,
-          origin: url.origin,
-          url: url.href,
+        return this.createAction(ctx, live, recheck, page, {
           action: args.action,
           ref: args.ref,
           target,
           content: args.action === "click" ? null : args.text!,
-          fingerprint: info,
-        };
-        const created = now();
-        const action: BrowserAction = {
-          id: randomUUID(),
-          sessionId: base.sessionId,
-          botId: base.botId,
-          taskId: base.taskId,
-          revision: base.revision,
-          pageRevision: base.pageRevision,
-          origin: base.origin,
-          url: base.url,
-          action: base.action,
-          ref: base.ref,
-          target: base.target,
-          content: base.content,
-          digest: digestOf(base),
-          state: "pending",
-          error: null,
-          resultUrl: null,
-          createdAt: created,
-          updatedAt: created,
-          expiresAt: new Date(
-            Date.now() + (this.options.approvalTtlMs ?? APPROVAL_WAIT_MS),
-          ).toISOString(),
-        };
-        this.store.put("browser-action", action.id, action);
-        this.store.put("browser-fingerprint", action.id, { info });
-        this.save(s, { mode: "awaiting-approval" });
-        this.store.event(
-          "browser.proposed",
-          `Approval needed: ${args.action} on ${url.origin}`,
-        );
-        return action;
+          info,
+        });
       },
     );
+    return this.awaitDecision(ctx, proposal);
+  }
+
+  /** Runs a command whose result may instead be a proposal awaiting review. */
+  private async reviewed(ctx: BrowserTaskContext, step: Promise<unknown>) {
+    const result = await step;
+    return isReview(result) ? this.awaitDecision(ctx, result.review) : result;
+  }
+
+  /** An address the agent built after reading pages: the user opens it or not. */
+  private navigation(
+    ctx: BrowserTaskContext,
+    live: Live,
+    recheck: () => BrowserSession,
+    page: Page,
+    url: URL,
+  ): Review {
+    return {
+      review: this.createAction(ctx, live, recheck, page, {
+        action: "navigate",
+        ref: "",
+        target:
+          "An address the bot chose after reading web pages. Check it carries nothing private.",
+        content: url.href,
+        info: null,
+      }),
+    };
+  }
+
+  /** Records a proposal bound to the revision and page that hold right now. */
+  private createAction(
+    ctx: BrowserTaskContext,
+    live: Live,
+    recheck: () => BrowserSession,
+    page: Page,
+    proposal: {
+      action: BrowserInteraction;
+      ref: string;
+      target: string;
+      content: string | null;
+      info: unknown;
+    },
+  ): BrowserAction {
+    const pending = this.store
+      .all<BrowserAction>("browser-action")
+      .filter((a) => a.taskId === ctx.taskId && a.state === "pending");
+    if (pending.length)
+      fail(409, "Another step is already waiting for review.");
+    // Nothing below awaits: the proposal binds the revision that holds now.
+    const s = recheck();
+    const url = new URL(page.url());
+    const base = {
+      sessionId: s.id,
+      botId: ctx.bot.id,
+      taskId: ctx.taskId,
+      revision: s.revision,
+      pageRevision: live.valid?.n ?? 0,
+      origin:
+        proposal.action === "navigate"
+          ? new URL(proposal.content!).origin
+          : url.origin,
+      url: url.href,
+      action: proposal.action,
+      ref: proposal.ref,
+      target: proposal.target,
+      content: proposal.content,
+      fingerprint: proposal.info,
+    };
+    const created = now();
+    const action: BrowserAction = {
+      id: randomUUID(),
+      sessionId: base.sessionId,
+      botId: base.botId,
+      taskId: base.taskId,
+      revision: base.revision,
+      pageRevision: base.pageRevision,
+      origin: base.origin,
+      url: base.url,
+      action: base.action,
+      ref: base.ref,
+      target: base.target,
+      content: base.content,
+      digest: digestOf(base),
+      state: "pending",
+      error: null,
+      resultUrl: null,
+      createdAt: created,
+      updatedAt: created,
+      expiresAt: new Date(
+        Date.now() + (this.options.approvalTtlMs ?? APPROVAL_WAIT_MS),
+      ).toISOString(),
+    };
+    this.store.put("browser-action", action.id, action);
+    this.store.put("browser-fingerprint", action.id, { info: proposal.info });
+    this.save(s, { mode: "awaiting-approval" });
+    this.store.event(
+      "browser.proposed",
+      `Approval needed: ${proposal.action} on ${base.origin}`,
+    );
+    return action;
+  }
+
+  /** Waits for the user's review and tells the bot what actually happened. */
+  private async awaitDecision(
+    ctx: BrowserTaskContext,
+    proposal: BrowserAction,
+  ) {
     ctx.send?.({ type: "approval", browserActionId: proposal.id });
     const release = ctx.hold?.();
     let decided: BrowserAction | null;
@@ -1425,6 +1600,7 @@ export class BrowserService {
         current.mode !== "awaiting-approval"
       )
         return stale("Control of the browser changed, so this was withdrawn.");
+      if (a.action === "navigate") return this.approvedNavigation(a, live!);
       const page = this.activePage(live!);
       if (!page || page.url() !== a.url || live!.valid?.n !== a.pageRevision)
         return stale(
@@ -1515,6 +1691,39 @@ export class BrowserService {
     });
     live!.queue = step.catch(() => undefined);
     return step;
+  }
+
+  /** Opens an approved address. Navigation is a read, so a failure is plain. */
+  private async approvedNavigation(a: BrowserAction, live: Live) {
+    this.saveAction(a, { state: "executing" });
+    this.store.event("browser.approved", `Approved opening ${a.origin}`);
+    live.commanding++;
+    try {
+      const url = checkUrl(a.content ?? "", this.allowHosts);
+      const page = await this.page(live);
+      if (live.valid?.tabId === live.ids.get(page)) live.valid = null;
+      const response = await page.goto(url.href, {
+        waitUntil: "domcontentloaded",
+      });
+      if (response?.headers()["x-socius-blocked"])
+        throw new NavigationBlocked("Blocked address");
+      const final = normalUrl(page.url());
+      if (final) this.budgets.get(a.taskId)?.known.add(final);
+      this.saveAction(a, { state: "succeeded", resultUrl: page.url() });
+      this.save(this.session(a.sessionId), {
+        lastAction: clipText(`Opened ${a.origin} (approved)`, 300),
+        lastConfirmedUrl: page.url(),
+      });
+    } catch {
+      this.saveAction(a, {
+        state: "failed",
+        error: "The page could not be opened.",
+      });
+    } finally {
+      live.commanding--;
+      live.lastCommandEnd = Date.now();
+    }
+    return this.store.get<BrowserAction>("browser-action", a.id)!;
   }
 
   /** What the bot is told about its browser at the start of a call. */
