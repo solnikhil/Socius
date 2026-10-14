@@ -250,7 +250,10 @@ test("configure a model, create bots manually and through Socius, install skills
   const plannerReply = page
     .locator(".message")
     .filter({ hasText: "Planner here. 1. Research" });
-  const reactTo = plannerReply.getByRole("button", { name: "React", exact: true });
+  const reactTo = plannerReply.getByRole("button", {
+    name: "React",
+    exact: true,
+  });
   await plannerReply.hover();
   await reactTo.click();
   await page.getByRole("menuitemradio", { name: /React ❤️/ }).click();
@@ -555,6 +558,99 @@ test("connect Notion, read, approve one exact page and see the result", async ({
   await expect(
     page.getByText("Created Notion page “Q3 brief”.").first(),
   ).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+test("Linear grants are scoped to Linear and cleared on disconnect", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    storageState: "test-results/paired-state.json",
+  });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://127.0.0.1:3137/");
+  const openApp = async (name: string) => {
+    await page.getByRole("button", { name: "Connect apps" }).click();
+    await page.getByRole("textbox", { name: "Search apps" }).fill(name);
+    await page
+      .locator(".app-row")
+      .filter({ has: page.getByRole("heading", { name, exact: true }) })
+      .getByRole("button")
+      .click();
+    return page.getByRole("dialog", { name });
+  };
+  // Close the detail, then Connect Apps, waiting out each closing animation.
+  const closeApp = async (dialog: ReturnType<typeof page.getByRole>) => {
+    await dialog.getByRole("button", { name: "Close dialog" }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("textbox", { name: "Search apps" }),
+    ).toHaveCount(0);
+  };
+
+  // Install and sign in through the real OAuth/PKCE fixture.
+  let linear = await openApp("Linear");
+  await linear.getByRole("checkbox").first().check();
+  await linear.getByRole("button", { name: "Install connector" }).click();
+  await expect(linear.getByText("Authentication required")).toBeVisible();
+  const popup = context.waitForEvent("page");
+  await linear.getByRole("button", { name: "Connect Linear" }).click();
+  const signIn = await popup;
+  await expect(
+    signIn.getByText("Connected. You can close this tab"),
+  ).toBeVisible();
+  await signIn.close();
+  await expect(linear.getByText("Ready", { exact: true })).toBeVisible({
+    timeout: 10000,
+  });
+
+  // Socius already holds Notion's legacy global grants; Linear does not borrow them.
+  const read = linear.getByRole("checkbox", { name: "Socius documents.read" });
+  const write = linear.getByRole("checkbox", {
+    name: "Socius documents.write",
+  });
+  await expect(read).not.toBeChecked();
+  await expect(write).not.toBeChecked();
+  await read.click();
+  await expect(read).toBeChecked();
+  await closeApp(linear);
+
+  // The grant is server state and survives reload. Notion's grants are checked below.
+  await page.reload();
+  linear = await openApp("Linear");
+  await expect(
+    linear.getByRole("checkbox", { name: "Socius documents.read" }),
+  ).toBeChecked();
+  await expect(
+    linear.getByRole("checkbox", { name: "Socius documents.write" }),
+  ).not.toBeChecked();
+  await closeApp(linear);
+
+  // Disconnect deletes credentials and clears only Linear's grants.
+  linear = await openApp("Linear");
+  await linear.getByRole("button", { name: "Disconnect" }).click();
+  await expect(
+    linear.getByText("Disconnected and credentials deleted."),
+  ).toBeVisible();
+  await expect(
+    linear.getByRole("checkbox", { name: "Socius documents.read" }),
+  ).toHaveCount(0);
+  await closeApp(linear);
+  const state = await page.evaluate(async () =>
+    (await fetch("/api/state")).json(),
+  );
+  expect(
+    state.connectorGrants.filter(
+      (g: { connectorId: string }) => g.connectorId === "socius/linear",
+    ),
+  ).toEqual([]);
+  const socius = state.bots.find((b: { name: string }) => b.name === "Socius");
+  expect(socius.grantedCapabilities).toEqual(
+    expect.arrayContaining(["documents.read", "documents.write"]),
+  );
   expect(errors).toEqual([]);
   await context.close();
 });
