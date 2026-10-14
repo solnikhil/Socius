@@ -185,7 +185,8 @@ test("phone HTTPS pairing, shared chat, offline recovery, cancellation, exact ap
     await input.fill("approve a planner");
     await mobile.getByRole("button", { name: "Send message" }).click();
     const approve = mobile
-      .getByRole("button", { name: "Create bot", exact: true })
+      .locator(".approval-card")
+      .getByRole("button", { name: /Yes, go ahead/ })
       .first();
     await expect(approve).toBeVisible();
     await approve.click();
