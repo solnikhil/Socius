@@ -105,7 +105,10 @@ async function boot(
   const ok = async <T = unknown>(path: string, data?: unknown): Promise<T> => {
     const response = await request(path, data);
     const body = await response.json();
-    assert.equal(response.status, 200, `${path}: ${JSON.stringify(body)}`);
+    assert.ok(
+      response.status === 200 || response.status === 201,
+      `${path}: ${response.status} ${JSON.stringify(body)}`,
+    );
     return body as T;
   };
   const state = () => ok<Snapshot>("state");
@@ -287,7 +290,15 @@ test("winning flow: import skill, connect Notion, read, approve one exact write,
     // 3. Without a grant, the bot gets no connector tools at all.
     await setModel(r);
     const main = (await r.state()).bots[0]!;
+    // Installing makes the skill available to the workspace, not to any bot.
     let events = await chat(r, main.id, "Make a brief");
+    assert.match(events, /skills:\\n/);
+    assert.doesNotMatch(events, /brief-template/);
+    await r.ok("skills/assign", {
+      botId: main.id,
+      skillId: "local/document-brief",
+    });
+    events = await chat(r, main.id, "Make a brief");
     assert.match(events, /no-search/);
     assert.match(events, /skill:references\/brief-template.md/);
     assert.match(events, /skills:local\/document-brief/);
@@ -954,13 +965,18 @@ test("skill lifecycle: integrity, immutable releases, permission expansion, disa
     // Disabling removes the skill from bots.
     await setModel(r);
     const main = (await r.state()).bots[0]!;
+    assert.doesNotMatch(await chat(r, main.id, "hello"), /local\/digest/);
+    await r.ok("skills/assign", { botId: main.id, skillId: "local/digest" });
     assert.match(await chat(r, main.id, "hello"), /skills:.*local\/digest/);
     await r.ok("installations/enable", { id: "local/digest", enabled: false });
     assert.doesNotMatch(await chat(r, main.id, "hello"), /local\/digest/);
     await r.ok("installations/enable", { id: "local/digest", enabled: true });
 
-    // Rollback restores the previous release and narrows consent.
+    // Rollback restores the previous release and narrows consent. The bot stays
+    // pinned to 1.1.0 and needs review instead of silently switching.
     receipt = await r.ok("installations/rollback", { id: "local/digest" });
+    assert.equal((await r.state()).skillAssignments[0]!.status, "needs-review");
+    assert.doesNotMatch(await chat(r, main.id, "hello"), /local\/digest/);
     assert.equal(receipt.version, "1.0.0");
     assert.deepEqual(receipt.consentedCapabilities, []);
     assert.equal(
@@ -979,7 +995,14 @@ test("skill lifecycle: integrity, immutable releases, permission expansion, disa
       (await blocked.json()).error,
       /Required by socius\/researcher/,
     );
-    await r.ok("installations/uninstall", { id: "local/digest" });
+    // Uninstalling an assigned skill needs confirmation to detach it.
+    assert.equal(
+      (await r.request("installations/uninstall", { id: "local/digest" }))
+        .status,
+      409,
+    );
+    await r.ok("installations/uninstall", { id: "local/digest", detach: true });
+    assert.deepEqual((await r.state()).skillAssignments, []);
     assert.ok(
       !(await r.state()).installations.some((i) => i.id === "local/digest"),
     );

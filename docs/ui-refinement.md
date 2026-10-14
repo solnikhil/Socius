@@ -12,6 +12,7 @@ Owner: **You**. These tasks are separate from teammates' backend implementation.
 - [x] Dialogs, menus, chat details, and shell tooltips use shadcn/ui (Radix plus `tw-animate-css`). Colors stay on the Socius tokens. Form controls and page layout stay in `style.css`. A bot's model is chosen in its name menu. The composer has no model chip.
 - [x] Multi-provider connections, model discovery/testing, default and per-bot model picker, classified setup errors with a Settings action (branch `model-enhancements`).
 - [ ] Visual review of the Settings dialog and model picker in light/dark; live checks against real provider accounts.
+- [x] Living bot avatars: each specialist stores an optional look (shape and eyes, `BotInstance.appearance`), picked with a live preview in Create bot, the bot menu's "Edit name and look" and bot proposal approvals. Bots without one keep their name-derived look; Socius keeps its fixed face. Avatars breathe, blink, glance or circle their eyes when idle, follow the pointer and lean toward it like a magnet, and bob while working. One shared pointer listener drives them (`components/avatarMotion.ts`); reduced motion keeps them still. Looks never go into exported templates. Screenshot: [`docs/assets/living-avatars-create.png`](assets/living-avatars-create.png).
 - [ ] Polish waiting states and inline approvals.
 - [ ] Check keyboard navigation, contrast, focus, responsive behavior and empty/loading/error states.
 
