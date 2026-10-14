@@ -1,3 +1,4 @@
+import type { BotAppearance } from "./appearance.js";
 import type {
   ActionActor,
   BotInstance,
@@ -97,6 +98,7 @@ export interface BotDraft {
   name: string;
   role: string;
   instructions: string;
+  appearance?: BotAppearance | undefined;
 }
 export interface Approval {
   id: string;

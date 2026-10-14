@@ -400,11 +400,13 @@ test("configure a model, create bots manually and through Socius, install skills
   await college.click();
   await expect(college.getByLabel("Unread")).toHaveCount(0);
   await college.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Rename bot" }).click();
-  await page
-    .getByRole("dialog", { name: "Rename bot" })
-    .getByLabel("Name")
-    .fill("Course helper");
+  await page.getByRole("menuitem", { name: "Edit name and look" }).click();
+  const editBot = page.getByRole("dialog", { name: "Edit bot" });
+  await editBot.getByLabel("Name").fill("Course helper");
+  await editBot.getByRole("radio", { name: "Sleepy eyes" }).click();
+  await expect(
+    editBot.getByRole("radio", { name: "Sleepy eyes" }),
+  ).toHaveAttribute("aria-checked", "true");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   const helper = page.getByRole("button", {
     name: "Course helper College planning",

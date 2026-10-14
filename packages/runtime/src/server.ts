@@ -15,6 +15,7 @@ import {
 } from "@socius/marketplace/registry";
 import { reviewedConnectors } from "@socius/connectors";
 import {
+  BotAppearanceSchema,
   Capability,
   Digest,
   type BotInstance,
@@ -94,6 +95,7 @@ const BotDraftSchema = z.strictObject({
   role: z.string().trim().min(1).max(200),
   // Matches the bot template limit, so any valid template can be installed.
   instructions: z.string().trim().min(1).max(20000),
+  appearance: BotAppearanceSchema.optional(),
 });
 const uuid = z.string().uuid();
 const Attachment = z
@@ -761,6 +763,7 @@ export async function startRuntime(options: RuntimeOptions) {
     );
     instance.role = parsed.role;
     instance.instructions = parsed.instructions;
+    if (parsed.appearance) instance.appearance = parsed.appearance;
     store.put("bot", instance.id, instance);
     store.event("bot.created", `Created ${instance.name}.`);
     return instance;
@@ -883,13 +886,21 @@ export async function startRuntime(options: RuntimeOptions) {
           const input = z
             .strictObject({
               id: uuid,
-              name: z.string().trim().min(1).max(100),
+              name: z.string().trim().min(1).max(100).optional(),
+              appearance: BotAppearanceSchema.optional(),
             })
+            .refine(
+              (v) => v.name !== undefined || v.appearance !== undefined,
+              "Choose what to change",
+            )
             .parse(await body(req));
           const b = bot(input.id);
-          b.name = input.name;
+          const renamed = input.name !== undefined && input.name !== b.name;
+          if (input.name !== undefined) b.name = input.name;
+          if (input.appearance) b.appearance = input.appearance;
           store.put("bot", b.id, b);
-          store.event("bot.renamed", `Renamed a bot to ${b.name}.`);
+          if (renamed)
+            store.event("bot.renamed", `Renamed a bot to ${b.name}.`);
           json(res, 200, b);
           return;
         }
@@ -1314,11 +1325,15 @@ export async function startRuntime(options: RuntimeOptions) {
               id: uuid,
               digest: z.string().length(64),
               approve: z.boolean(),
+              // The reviewer picks a proposed bot's look; it is not part of the proposal.
+              appearance: BotAppearanceSchema.optional(),
             })
             .parse(await body(req));
           const approval =
             store.get<Approval>("approval", input.id) ??
             fail(404, "Approval not found");
+          if (input.appearance && approval.kind !== "bot")
+            fail(400, "Only bot proposals have a look");
           if (approval.state !== "pending")
             fail(409, "This proposal was already resolved");
           if (
@@ -1349,7 +1364,12 @@ export async function startRuntime(options: RuntimeOptions) {
               if (b.template.id !== "socius/main")
                 fail(403, "Only the main bot can propose specialists");
               store.transaction(() => {
-                createBot(BotDraftSchema.parse(approval.payload));
+                const draft = BotDraftSchema.parse(approval.payload);
+                createBot(
+                  input.appearance
+                    ? { ...draft, appearance: input.appearance }
+                    : draft,
+                );
                 approval.state = "approved";
                 store.put("approval", approval.id, approval);
               });
