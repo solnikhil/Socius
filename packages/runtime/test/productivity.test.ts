@@ -92,6 +92,14 @@ test("Linear OAuth, connector-specific grants and approval revocation cross the 
         capability,
         granted: true,
       });
+    const scoped = (
+      (await (await r.request("state")).json()) as Snapshot
+    ).bots.find((b) => b.id === bot.id)!;
+    assert.equal(
+      scoped.grantedCapabilities.includes("documents.write"),
+      false,
+      "a Linear grant must not activate legacy Notion/global document access",
+    );
     assert.equal((await r.broker.request(request)).status, "completed");
     assert.equal(fixture.calls[0]!.tool, "list_issues");
     const write = await r.broker.request({
