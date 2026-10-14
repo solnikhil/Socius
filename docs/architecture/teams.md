@@ -2,6 +2,8 @@
 
 Status: boards, delegation, the run queue, budgets, cancellation and restart recovery are implemented. External actions through the connector broker are not; see Limitations. Tracking: [issue #2](https://github.com/solnikhil/Socius/issues/2).
 
+![A four-member board after a completed run](../assets/socius-board-thread.png)
+
 ## Model
 
 A **board** groups any number of private bots around an objective, optional completion criteria, explicitly shared sources and one shared thread. One member is the **coordinator**. There is no roster cap in the schema, API, scheduler or UI. Membership and coordinator status grant no authority.
