@@ -11,9 +11,11 @@ import {
   ArrowUp,
   BookOpen,
   Check,
+  ChevronDown,
   Copy,
   Download,
   FileText,
+  Mic,
   Pencil,
   Plus,
   Settings,
@@ -47,7 +49,14 @@ import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
 import { BotModelMenu } from "../components/ModelPicker.js";
-import { resolvedModel, SETUP_CODES, type OpenSettings } from "../models.js";
+import { ProviderMark } from "../components/ProviderMark.js";
+import { useDictation } from "../components/dictation.js";
+import {
+  connectionOf,
+  resolvedModel,
+  SETUP_CODES,
+  type OpenSettings,
+} from "../models.js";
 
 const suggestions = [
   "Create a research bot that turns my supplied sources into evidence-based briefs.",
@@ -158,6 +167,9 @@ export function Chat({
             (t.state === "failed" || t.state === "cancelled"),
         );
   const model = resolvedModel(state, bot.id);
+  const modelOwner = model && connectionOf(state, model.entry.connectionId);
+  const [modelMenu, setModelMenu] = useState(false);
+  const dictation = useDictation(setText);
   const fail = (message: string, code = "") => {
     setError(message);
     setErrorCode(code);
@@ -753,15 +765,16 @@ export function Chat({
             </button>
           </div>
         )}
-        <form className="composer" onSubmit={submit}>
-          <button
-            type="button"
-            className="icon round composer-plus"
-            aria-label="Attach a text document"
-            onClick={() => upload.current?.click()}
-          >
-            <Plus size={18} />
-          </button>
+        {dictation.error && (
+          <ErrorNote
+            error={dictation.error}
+            action={{ label: "Dismiss", onClick: dictation.clearError }}
+          />
+        )}
+        <form
+          className={`composer ${dictation.listening ? "listening" : ""}`}
+          onSubmit={submit}
+        >
           <input
             className="hidden"
             ref={upload}
@@ -775,7 +788,9 @@ export function Chat({
           <textarea
             ref={input}
             aria-label={`Message ${title}`}
-            placeholder={`Message ${title}`}
+            placeholder={
+              dictation.listening ? "Listening… speak now" : `Message ${title}`
+            }
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={1}
@@ -786,32 +801,92 @@ export function Chat({
                 !e.nativeEvent.isComposing
               ) {
                 e.preventDefault();
+                dictation.stop();
                 void submit();
               }
             }}
           />
-          {busy || running ? (
+          <div className="composer-tools">
             <button
               type="button"
-              className="send"
-              aria-label="Stop task"
+              className="icon round composer-plus"
+              aria-label="Attach a text document"
+              onClick={() => upload.current?.click()}
+            >
+              <Plus size={18} />
+            </button>
+            <Popover open={modelMenu} onOpenChange={setModelMenu}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="model-pill"
+                  aria-label={`Switch model, current ${model?.entry.label ?? "none"}`}
+                >
+                  {modelOwner && (
+                    <ProviderMark
+                      id={modelOwner.connection.provider}
+                      size={16}
+                    />
+                  )}
+                  <span>{model?.entry.label ?? "Choose a model"}</span>
+                  <ChevronDown size={14} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="start"
+                collisionPadding={12}
+                className="floating-panel model-switcher"
+              >
+                <BotModelMenu
+                  bot={bot}
+                  state={state}
+                  onRefresh={async () => {
+                    await onRefresh();
+                    setModelMenu(false);
+                  }}
+                  onSettings={onSettings}
+                  onError={(m) => fail(m)}
+                  onClose={() => setModelMenu(false)}
+                />
+              </PopoverContent>
+            </Popover>
+            <span className="composer-spacer" />
+            <button
+              type="button"
+              className={`icon round composer-mic ${dictation.listening ? "on" : ""}`}
+              aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
+              aria-pressed={dictation.listening}
               onClick={() =>
-                void api("tasks/cancel", { id: taskId || running?.id }).catch(
-                  (e) => fail(e.message),
-                )
+                dictation.listening ? dictation.stop() : dictation.start(text)
               }
             >
-              <Square size={12} fill="currentColor" />
+              <Mic size={17} />
             </button>
-          ) : (
-            <button
-              className="send"
-              aria-label="Send message"
-              disabled={!text.trim() || !model}
-            >
-              <ArrowUp size={18} strokeWidth={2.4} />
-            </button>
-          )}
+            {busy || running ? (
+              <button
+                type="button"
+                className="send"
+                aria-label="Stop task"
+                onClick={() =>
+                  void api("tasks/cancel", { id: taskId || running?.id }).catch(
+                    (e) => fail(e.message),
+                  )
+                }
+              >
+                <Square size={12} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                className="send"
+                aria-label="Send message"
+                disabled={!text.trim() || !model}
+                onClick={() => dictation.stop()}
+              >
+                <ArrowUp size={18} strokeWidth={2.4} />
+              </button>
+            )}
+          </div>
         </form>
       </div>
       {exporting && <ExportBot bot={bot} onClose={() => setExporting(false)} />}
