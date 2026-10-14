@@ -18,8 +18,8 @@ Registered OAuth clients can use a fixed loopback callback, `http://127.0.0.1:37
 
 ## Verification and acceptance
 
-Automated fixture coverage exercises real OAuth/PKCE and Streamable HTTP MCP requests, denial without the connector grant, reads, no side effect before approval, permission revocation before approval, exact approved write arguments, one-use callback and disconnect cleanup. Existing broker tests cover crash/ambiguous outcomes and approval tampering.
+Automated fixture coverage exercises real OAuth/PKCE and Streamable HTTP MCP requests, denial without the connector grant, reads, no side effect before approval, permission revocation before approval, exact approved write arguments, one-use callback and disconnect cleanup. Existing broker tests cover crash/ambiguous outcomes and approval tampering. A browser test (`e2e/workspace.spec.ts`, against the same fixture) installs Linear, signs in through the popup, and confirms in the package detail screen that Linear starts with no grants even though Socius holds the legacy Notion grants. A Linear grant persists across reload, and Disconnect clears only Linear's grants.
 
-Before marking ready: connect a disposable Linear workspace; compare live tools/list schemas; verify search and fetch; deny a create, approve one create and inspect it in Linear; revoke provider access and reconnect; verify encrypted storage and restart in Electron. Confirm scoped grants in the existing package detail screen. No live credentials were used during development.
+Before marking ready: connect a disposable Linear workspace; compare live tools/list schemas; verify search and fetch; deny a create, approve one create and inspect it in Linear; revoke provider access and reconnect; verify encrypted storage and restart in Electron. No live credentials were used during development.
 
 Sources: [Linear MCP](https://linear.app/docs/mcp), [current Linear tool names](https://linear.app/integrations/slack).
