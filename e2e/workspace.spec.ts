@@ -24,7 +24,8 @@ test("configure a model, create bots manually and through Socius, install skills
     animations: "disabled",
   });
   await page.emulateMedia({ colorScheme: "light" });
-  await page.getByRole("button", { name: "New bot", exact: true }).click();
+  await page.getByRole("button", { name: "Create" }).first().click();
+  await page.getByRole("menuitem", { name: "New bot" }).click();
   await page.getByLabel("Name", { exact: true }).fill("College assistant");
   await page.getByLabel("Role", { exact: true }).fill("College planning");
   await page
@@ -51,7 +52,8 @@ test("configure a model, create bots manually and through Socius, install skills
     path: "test-results/socius-chat-dark.png",
     animations: "disabled",
   });
-  await page.getByRole("button", { name: "New chat" }).click();
+  await page.getByRole("button", { name: "Create" }).first().click();
+  await page.getByRole("menuitem", { name: "New chat" }).click();
   await expect(
     page.getByRole("option", { name: /Create new bot/ }),
   ).toBeVisible();

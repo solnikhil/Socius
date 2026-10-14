@@ -198,6 +198,31 @@ test("a four-member research board plans, delegates and returns one reviewed bri
       path: "test-results/socius-sidebar-groups.png",
       animations: "disabled",
     });
+    // Sections fold and stay folded across reloads.
+    await sidebar.getByRole("button", { name: "Unassigned" }).click();
+    await expect(
+      sidebar.getByRole("button", { name: "Unassigned" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await sidebar
+      .getByRole("button", { name: "Collapse Market research" })
+      .click();
+    await expect(boardMembers).toHaveCount(0);
+    await page.reload();
+    await expect(boardMembers).toHaveCount(0);
+    await expect(
+      sidebar.getByRole("button", { name: "Unassigned" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await page.getByRole("button", { name: "Create" }).first().click();
+    await expect(page.getByRole("menuitem", { name: "New bot" })).toBeVisible();
+    await page.screenshot({
+      path: "test-results/socius-create-menu.png",
+      animations: "disabled",
+    });
+    await page.keyboard.press("Escape");
+    await sidebar
+      .getByRole("button", { name: "Expand Market research" })
+      .click();
+    await expect(boardMembers.getByRole("button")).toHaveCount(5);
     await boardButton.click({ button: "right" });
     await page.getByRole("menuitem", { name: "How this board works" }).click();
     await expect(page.locator(".roster li")).toHaveCount(6);

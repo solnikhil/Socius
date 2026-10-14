@@ -22,7 +22,8 @@ test("Electron launches its isolated runtime and persists a manually created bot
     await expect(
       page.getByRole("heading", { name: "What shall we work on?" }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "New bot", exact: true }).click();
+    await page.getByRole("button", { name: "Create" }).first().click();
+    await page.getByRole("menuitem", { name: "New bot" }).click();
     await page.getByLabel("Name", { exact: true }).fill("Desktop planner");
     await page.getByLabel("Role", { exact: true }).fill("Planning");
     await page
