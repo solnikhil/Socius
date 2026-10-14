@@ -67,6 +67,8 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
         bot: instantiateBot(mainBot),
         messages: [{ role: "user", content: "Create a planning bot." }],
         skills: [],
+        loadSkill: () => ({ instructions: "", resources: [] }),
+        readSkillResource: () => "",
         signal: new AbortController().signal,
         searchMemory: () => [],
         proposeMemory: () => ({ approvalId: "unused" }),

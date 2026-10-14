@@ -7,14 +7,17 @@ import {
   renameSync,
   unlinkSync,
   readdirSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { instantiateBot, mainBot } from "@socius/marketplace";
 import type { BotInstance } from "@socius/contracts";
 import type {
+  ActionRecord,
   Message,
   Memory,
   Activity,
+  Installation,
   Task,
   ModelSettings,
 } from "@socius/contracts/app";
@@ -22,10 +25,20 @@ import type {
 export class Store {
   readonly db: DatabaseSync;
   readonly memoryDir: string;
+  /** Content-addressed, immutable release files: releases/<digest>/... */
+  readonly releasesDir: string;
+  /** Scratch space for imports; never active, cleared on start. */
+  readonly stagingDir: string;
+  readonly exportsDir: string;
   constructor(readonly dir: string) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     this.memoryDir = join(dir, "memory");
     mkdirSync(this.memoryDir, { recursive: true, mode: 0o700 });
+    this.releasesDir = join(dir, "packages", "releases");
+    this.stagingDir = join(dir, "packages", "staging");
+    this.exportsDir = join(dir, "exports");
+    for (const d of [this.releasesDir, this.stagingDir, this.exportsDir])
+      mkdirSync(d, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(join(dir, "socius.sqlite"));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS migrations(version INTEGER PRIMARY KEY);
@@ -33,6 +46,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, secret TEXT);
       CREATE VIRTUAL TABLE IF NOT EXISTS memory_search USING fts5(id UNINDEXED, botId UNINDEXED, content);
       INSERT OR IGNORE INTO migrations VALUES(1);`);
+    this.migrate();
     if (!this.all<BotInstance>("bot").length) {
       const bot = instantiateBot(mainBot);
       this.put("bot", bot.id, bot);
@@ -47,7 +61,82 @@ export class Store {
         this.event("task.interrupted", task.error);
       }
     }
+    // A write that was mid-flight when the runtime stopped has an unknown outcome.
+    for (const action of this.all<ActionRecord>("action")) {
+      if (action.state !== "executing") continue;
+      const attempt = action.attempts.at(-1);
+      if (attempt && !attempt.finishedAt) {
+        attempt.finishedAt = new Date().toISOString();
+        attempt.outcome = "ambiguous";
+        attempt.detail = "Socius stopped before the service confirmed the outcome.";
+      }
+      action.state = "unknown";
+      action.retryable = false;
+      action.error =
+        "Socius stopped during this change. Check the result before retrying; it was not repeated.";
+      action.updatedAt = new Date().toISOString();
+      this.put("action", action.id, action);
+      this.event("action.interrupted", `An approved change needs checking: ${action.summary}`);
+    }
+    this.cleanPackages();
     this.reconcileMemory();
+  }
+  private migrate() {
+    const applied = new Set(
+      this.db
+        .prepare("SELECT version FROM migrations")
+        .all()
+        .map((r) => r.version as number),
+    );
+    if (!applied.has(2))
+      this.transaction(() => {
+        // v2: connector credentials live outside general records and snapshots.
+        this.db.exec(`CREATE TABLE IF NOT EXISTS connector_secrets(
+          connection_id TEXT PRIMARY KEY, secret TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+        // v2: installation receipts gain lifecycle, provenance and consent fields.
+        for (const old of this.all<Partial<Installation> & { id: string }>("installation")) {
+          const receipt: Installation = {
+            id: old.id,
+            version: old.version!,
+            digest: old.digest!,
+            installedAt: old.installedAt!,
+            enabled: old.enabled ?? true,
+            source: old.source ?? { type: "bundled" },
+            trust: old.trust ?? "curated",
+            consentedCapabilities: old.consentedCapabilities ?? [],
+            history: old.history ?? [],
+          };
+          this.put("installation", receipt.id, receipt);
+        }
+        this.db.exec("INSERT INTO migrations VALUES(2)");
+      });
+  }
+  /** Removes interrupted imports: staging leftovers and release files without a record. */
+  cleanPackages() {
+    for (const entry of readdirSync(this.stagingDir))
+      rmSync(join(this.stagingDir, entry), { recursive: true, force: true });
+    const known = new Set(this.all<{ digest: string }>("release").map((r) => r.digest));
+    for (const entry of readdirSync(this.releasesDir))
+      if (!known.has(entry))
+        rmSync(join(this.releasesDir, entry), { recursive: true, force: true });
+  }
+  connectionSecret(connectionId: string): string | undefined {
+    return this.db
+      .prepare("SELECT secret FROM connector_secrets WHERE connection_id=?")
+      .get(connectionId)?.secret as string | undefined;
+  }
+  saveConnectionSecret(connectionId: string, secret: string) {
+    this.db
+      .prepare(
+        "INSERT INTO connector_secrets VALUES(?,?,?) ON CONFLICT(connection_id) DO UPDATE SET secret=excluded.secret, updated_at=excluded.updated_at",
+      )
+      .run(connectionId, secret, new Date().toISOString());
+  }
+  deleteConnectionSecret(connectionId: string) {
+    this.db.prepare("DELETE FROM connector_secrets WHERE connection_id=?").run(connectionId);
+  }
+  remove(kind: string, id: string) {
+    this.db.prepare("DELETE FROM records WHERE kind=? AND id=?").run(kind, id);
   }
   all<T>(kind: string): T[] {
     return this.db

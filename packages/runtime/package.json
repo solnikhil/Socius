@@ -6,6 +6,8 @@
   "exports": "./src/server.ts",
   "dependencies": {
     "@socius/contracts": "0.1.0",
-    "@socius/marketplace": "0.1.0"
+    "@socius/marketplace": "0.1.0",
+    "@socius/skills": "0.1.0",
+    "@socius/connectors": "0.1.0"
   }
 }
