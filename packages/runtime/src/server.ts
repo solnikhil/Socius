@@ -24,6 +24,7 @@ import {
 import type {
   Approval,
   BotDraft,
+  BotLayout,
   Category,
   GroupChat,
   Installation,
@@ -776,6 +777,7 @@ export async function startRuntime(options: RuntimeOptions) {
             bots: store.all("bot"),
             groups: store.all("group"),
             categories: store.all("folder"),
+            layouts: store.all("bot-layout"),
             catalog: packages.catalog.list(),
             releases: packages.releases(),
             installations: store.all("installation"),
@@ -794,6 +796,107 @@ export async function startRuntime(options: RuntimeOptions) {
         }
         if (req.method === "POST" && path === "/api/bots") {
           json(res, 201, createBot(BotDraftSchema.parse(await body(req))));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/bots/update") {
+          const input = z
+            .strictObject({
+              id: uuid,
+              name: z.string().trim().min(1).max(100),
+            })
+            .parse(await body(req));
+          const b = bot(input.id);
+          b.name = input.name;
+          store.put("bot", b.id, b);
+          store.event("bot.renamed", `Renamed a bot to ${b.name}.`);
+          json(res, 200, b);
+          return;
+        }
+        if (req.method === "POST" && path === "/api/bots/layout") {
+          const input = z
+            .strictObject({
+              botId: uuid,
+              pinned: z.boolean().optional(),
+              hidden: z.boolean().optional(),
+              unread: z.boolean().optional(),
+            })
+            .refine(
+              (v) =>
+                v.pinned !== undefined ||
+                v.hidden !== undefined ||
+                v.unread !== undefined,
+              "Choose what to change",
+            )
+            .parse(await body(req));
+          const b = bot(input.botId);
+          const current = store.get<BotLayout>("bot-layout", b.id) ?? {
+            botId: b.id,
+            pinned: false,
+            hidden: false,
+            unread: false,
+          };
+          const next: BotLayout = {
+            ...current,
+            ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
+            ...(input.hidden === undefined ? {} : { hidden: input.hidden }),
+            ...(input.unread === undefined ? {} : { unread: input.unread }),
+          };
+          store.put("bot-layout", b.id, next);
+          json(res, 200, next);
+          return;
+        }
+        if (req.method === "DELETE" && path === "/api/bots") {
+          const input = z.strictObject({ id: uuid }).parse(await body(req));
+          const b = bot(input.id);
+          if (b.template.id === "socius/main")
+            fail(400, "Socius stays in the workspace.");
+          if (
+            store
+              .all<Task>("task")
+              .some((t) => t.botId === b.id && t.state === "running")
+          )
+            fail(409, "Wait until this bot finishes its current task.");
+          const groups = store.all<GroupChat>("group");
+          if (
+            groups.some(
+              (g) =>
+                g.memberIds.includes(b.id) &&
+                store
+                  .all<Task>("task")
+                  .some((t) => t.groupId === g.id && t.state === "running"),
+            )
+          )
+            fail(409, "Wait until the group chat using this bot finishes.");
+          const memories = store.memory(b.id);
+          store.transaction(() => {
+            for (const f of store.all<Category>("folder")) {
+              if (!f.botIds.includes(b.id)) continue;
+              store.put("folder", f.id, {
+                ...f,
+                botIds: f.botIds.filter((id) => id !== b.id),
+              });
+            }
+            for (const g of groups) {
+              if (!g.memberIds.includes(b.id)) continue;
+              store.put("group", g.id, {
+                ...g,
+                memberIds: g.memberIds.filter((id) => id !== b.id),
+              });
+            }
+            for (const m of store.all<Message>("message")) {
+              if (m.botId === b.id && !m.groupId) store.delete("message", m.id);
+            }
+            for (const a of store.all<Approval>("approval")) {
+              if (a.botId === b.id && a.state === "pending")
+                store.delete("approval", a.id);
+            }
+            for (const mem of memories) store.deleteMemory(mem.id);
+            store.providers.select(`bot:${b.id}`, null);
+            store.delete("bot-layout", b.id);
+            store.delete("bot", b.id);
+            store.event("bot.deleted", `Deleted ${b.name}.`);
+          });
+          json(res, 200, { ok: true });
           return;
         }
         if (req.method === "GET" && path === "/api/messages") {

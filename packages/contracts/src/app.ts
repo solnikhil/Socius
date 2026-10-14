@@ -48,6 +48,14 @@ export interface Category {
   botIds: string[];
   createdAt: string;
 }
+/** Sidebar placement for one bot. Absent means unpinned, visible and read. */
+export interface BotLayout {
+  botId: string;
+  pinned: boolean;
+  hidden: boolean;
+  /** The user marked the direct chat unread. Opening the chat clears it. */
+  unread: boolean;
+}
 export interface Task {
   id: string;
   botId: string;
@@ -178,6 +186,7 @@ export interface Snapshot {
   bots: BotInstance[];
   groups: GroupChat[];
   categories: Category[];
+  layouts: BotLayout[];
   catalog: Manifest[];
   releases: Release[];
   installations: Installation[];

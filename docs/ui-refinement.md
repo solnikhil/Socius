@@ -1,6 +1,6 @@
 # User-owned UI and refinement checklist
 
-Owner: **You**. These tasks are separate from teammates' backend implementation. Current published UI has New Chat, Connect Apps, chat, memory and settings, light/dark themes, and inline approval review. Memory is a floating dialog (one bot per tab), opened from the account menu or a bot's menu, and is not a sidebar destination. The dedicated Activity tab was removed in commit 01347b7; keep activity recording without reintroducing the tab by assumption.
+Owner: **You**. These tasks are separate from teammates' backend implementation. Current published UI has New Chat, Connect Apps, chat, memory and settings, light/dark themes, and inline approval review. Memory is a floating dialog (one bot per tab), opened from the account menu or a bot's menu, and is not a sidebar destination. Activity opens from the account menu, not the sidebar. The dedicated Activity tab was removed in commit 01347b7; keep activity recording without reintroducing the tab by assumption.
 
 ## Work you can start now
 

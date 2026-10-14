@@ -704,6 +704,82 @@ test("categories file each bot in at most one place and never touch group chats"
   }
 });
 
+test("bot menu actions rename, pin, hide, unread and delete a specialist", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-bot-menu-"));
+  const r = await paired(dir);
+  try {
+    const state = async () =>
+      (await (await r.request("state")).json()) as Snapshot;
+    const main = (await state()).bots[0]!;
+    assert.equal(
+      (await r.request("bots", { id: main.id }, "DELETE")).status,
+      400,
+    );
+    const created = (await (
+      await r.request("bots", {
+        name: "Planner",
+        role: "Plans",
+        instructions: "Plan the work.",
+      })
+    ).json()) as { id: string };
+    const renamed = await (
+      await r.request("bots/update", { id: created.id, name: "Course helper" })
+    ).json();
+    assert.equal(renamed.name, "Course helper");
+    await r.request("bots/layout", {
+      botId: created.id,
+      pinned: true,
+      hidden: true,
+      unread: true,
+    });
+    const marked = (await state()).layouts.find((l) => l.botId === created.id);
+    assert.deepEqual(
+      {
+        pinned: marked?.pinned,
+        hidden: marked?.hidden,
+        unread: marked?.unread,
+      },
+      { pinned: true, hidden: true, unread: true },
+    );
+    await r.request("memory", {
+      botId: created.id,
+      content: "Remember the deadline.",
+    });
+    const work = (await (
+      await r.request("categories", { name: "Work", botIds: [created.id] })
+    ).json()) as Category;
+    const group = (await (
+      await r.request("groups", { memberIds: [created.id] })
+    ).json()) as GroupChat;
+    assert.equal(
+      (await r.request("bots", { id: created.id }, "DELETE")).status,
+      200,
+    );
+    const after = await state();
+    assert.equal(
+      after.bots.some((b) => b.id === created.id),
+      false,
+    );
+    assert.deepEqual(after.layouts, []);
+    assert.deepEqual(
+      after.categories.find((f) => f.id === work.id)?.botIds,
+      [],
+    );
+    assert.deepEqual(
+      after.groups.find((g) => g.id === group.id)?.memberIds,
+      [],
+    );
+    assert.equal(r.store.memory(created.id).length, 0);
+    assert.equal(
+      after.bots.some((b) => b.id === main.id),
+      true,
+    );
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("group replies can be retried after a failure or restart without duplicating the message", async () => {
   const dir = await mkdtemp(join(tmpdir(), "socius-group-retry-"));
   let attempt = 0;

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import {
+  Activity,
   BookOpen,
   ChevronRight,
   Monitor,
   Moon,
   PanelLeft,
+  Pin,
   Plus,
   Search,
   Settings,
@@ -170,10 +172,15 @@ export function App() {
       (t) => t.botId === b.id && !t.groupId && t.state === "running",
     );
   const waiting = (b: BotInstance) => pending.some((a) => a.botId === b.id);
+  const layoutOf = (id: string) => state.layouts.find((l) => l.botId === id);
   const open = (b: BotInstance) => {
     setSelected(b.id);
     setGroupId("");
     setPage("chat");
+    if (layoutOf(b.id)?.unread)
+      void api("bots/layout", { botId: b.id, unread: false }).then(() =>
+        refresh(),
+      );
   };
   const openGroup = (g: GroupChat) => {
     setGroupId(g.id);
@@ -194,30 +201,53 @@ export function App() {
     );
     return pending.some((a) => tasks.has(a.taskId));
   };
-  const botRow = (b: BotInstance, nested: boolean, role = b.role) => (
-    <button
-      key={b.id}
-      className={`bot-row ${nested ? "nested" : ""} ${page === "chat" && !group && b.id === current.id ? "active" : ""}`}
-      onClick={() => open(b)}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        setCategoryMenu(null);
-        setBotMenu({ id: b.id, x: e.clientX, y: e.clientY });
-      }}
-    >
-      <Avatar name={b.name} size={nested ? 30 : 34} />
-      <span className="bot-text">
-        <strong>{b.name}</strong>
-        <small>{running(b) ? "Working…" : role}</small>
-      </span>
-      {(waiting(b) || running(b)) && (
-        <span
-          className={`unread ${running(b) ? "pulse" : ""}`}
-          aria-label={running(b) ? "Working" : "Needs review"}
-        />
-      )}
-    </button>
-  );
+  const pinnedFirst = (bots: BotInstance[]) =>
+    [...bots].sort(
+      (a, b) =>
+        Number(!!layoutOf(b.id)?.pinned) - Number(!!layoutOf(a.id)?.pinned),
+    );
+  const botRow = (b: BotInstance, nested: boolean, role = b.role) => {
+    const flagged = running(b) || waiting(b) || !!layoutOf(b.id)?.unread;
+    return (
+      <button
+        key={b.id}
+        className={`bot-row ${nested ? "nested" : ""} ${page === "chat" && !group && b.id === current.id ? "active" : ""}`}
+        onClick={() => open(b)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setCategoryMenu(null);
+          setBotMenu({ id: b.id, x: e.clientX, y: e.clientY });
+        }}
+      >
+        <Avatar name={b.name} size={nested ? 30 : 34} />
+        <span className="bot-text">
+          <strong>{b.name}</strong>
+          <small>{running(b) ? "Working…" : role}</small>
+        </span>
+        {(layoutOf(b.id)?.pinned || flagged) && (
+          <span className="row-flags">
+            {layoutOf(b.id)?.pinned && (
+              <span className="pin-mark" aria-label="Pinned">
+                <Pin size={13} />
+              </span>
+            )}
+            {flagged && (
+              <span
+                className={`unread ${running(b) ? "pulse" : ""}`}
+                aria-label={
+                  running(b)
+                    ? "Working"
+                    : waiting(b)
+                      ? "Needs review"
+                      : "Unread"
+                }
+              />
+            )}
+          </span>
+        )}
+      </button>
+    );
+  };
   // Everything is created from the top + menu; headings only fold.
   const sectionHeading = (
     key: string,
@@ -243,12 +273,18 @@ export function App() {
   };
   // Categories only group rows in the sidebar; bots outside one are Unassigned.
   const filed = new Set(state.categories.flatMap((f) => f.botIds));
-  const unassigned = specialists.filter((b) => !filed.has(b.id));
+  const hiddenBot = (b: BotInstance) => !!layoutOf(b.id)?.hidden;
+  const unassigned = pinnedFirst(
+    specialists.filter((b) => !filed.has(b.id) && !hiddenBot(b)),
+  );
+  const hiddenBots = pinnedFirst(state.bots.filter(hiddenBot));
   // Each category is a sidebar section like Unassigned; right-click its heading to edit it.
   const categorySection = (f: Category) => {
-    const bots = f.botIds
-      .map((id) => specialists.find((b) => b.id === id))
-      .filter((b): b is BotInstance => !!b);
+    const bots = pinnedFirst(
+      f.botIds
+        .map((id) => specialists.find((b) => b.id === id))
+        .filter((b): b is BotInstance => !!b && !layoutOf(b.id)?.hidden),
+    );
     const key = `category:${f.id}`;
     return (
       <section key={f.id} className="bot-group" aria-label={f.name}>
@@ -320,25 +356,35 @@ export function App() {
       <aside className="sidebar" aria-label="Bots" inert={collapsed}>
         <div className="sidebar-top drag">{toolbar}</div>
         <div className="sidebar-scroll">
-          <div className="featured">
-            <button
-              className={`featured-bot ${page === "chat" && !group && current.id === main.id ? "active" : ""}`}
-              onClick={() => open(main)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setBotMenu({ id: main.id, x: e.clientX, y: e.clientY });
-              }}
-            >
-              <Avatar name={main.name} main size={66} badge />
-              <span>{main.name}</span>
-              {(running(main) || waiting(main)) && (
-                <span
-                  className={`review-dot ${running(main) ? "pulse" : ""}`}
-                  aria-label={running(main) ? "Working" : "Needs review"}
-                />
-              )}
-            </button>
-          </div>
+          {!hiddenBot(main) && (
+            <div className="featured">
+              <button
+                className={`featured-bot ${page === "chat" && !group && current.id === main.id ? "active" : ""}`}
+                onClick={() => open(main)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setBotMenu({ id: main.id, x: e.clientX, y: e.clientY });
+                }}
+              >
+                <Avatar name={main.name} main size={66} badge />
+                <span>{main.name}</span>
+                {(running(main) ||
+                  waiting(main) ||
+                  !!layoutOf(main.id)?.unread) && (
+                  <span
+                    className={`review-dot ${running(main) ? "pulse" : ""}`}
+                    aria-label={
+                      running(main)
+                        ? "Working"
+                        : waiting(main)
+                          ? "Needs review"
+                          : "Unread"
+                    }
+                  />
+                )}
+              </button>
+            </div>
+          )}
           <section className="bot-group" aria-label="Group chats">
             {sectionHeading("groups", "Group chats", state.groups.length)}
             {!folded.has("section:groups") && !state.groups.length && (
@@ -379,7 +425,7 @@ export function App() {
                 {unassigned.map((b) => botRow(b, false))}
                 {!unassigned.length && (
                   <small className="bots-empty">
-                    {specialists.length
+                    {specialists.some((b) => !hiddenBot(b))
                       ? "Every bot is in a category. New bots land here."
                       : "Create a bot or add one from Connect Apps."}
                   </small>
@@ -387,14 +433,13 @@ export function App() {
               </>
             )}
           </section>
-          <section className="bot-group compact">
-            <button
-              className={`group-link ${page === "activity" ? "active" : ""}`}
-              onClick={() => setPage("activity")}
-            >
-              Activity
-            </button>
-          </section>
+          {hiddenBots.length > 0 && (
+            <section className="bot-group" aria-label="Hidden bots">
+              {sectionHeading("hidden", "Hidden bots", hiddenBots.length)}
+              {!folded.has("section:hidden") &&
+                hiddenBots.map((b) => botRow(b, false))}
+            </section>
+          )}
         </div>
         <div className="sidebar-bottom">
           <div className="account" ref={menuRef}>
@@ -427,6 +472,16 @@ export function App() {
                 >
                   <BookOpen size={15} />
                   Memory
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setPage("activity");
+                    setMenu(false);
+                  }}
+                >
+                  <Activity size={15} />
+                  Activity
                 </button>
                 <div className="menu-divider" />
                 <div className="menu-label">Appearance</div>
@@ -572,19 +627,13 @@ export function App() {
       {botMenu && menuBot && (
         <BotMenu
           bot={menuBot}
+          main={menuBot.id === main.id}
+          layout={layoutOf(menuBot.id)}
+          categories={state.categories}
           x={botMenu.x}
           y={botMenu.y}
           onClose={() => setBotMenu(null)}
-          onChat={() => {
-            open(menuBot);
-            setBotMenu(null);
-          }}
-          onMemory={() => {
-            setMemoryBot(menuBot.id);
-            setBotMenu(null);
-          }}
           onRefresh={refresh}
-          {...(menuBot.id === main.id ? {} : { categories: state.categories })}
         />
       )}
       {categoryMenu && menuCategory && (

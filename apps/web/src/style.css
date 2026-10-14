@@ -638,7 +638,8 @@ main > .error {
   min-width: 230px;
   animation: pop 0.12s ease-out;
 }
-.popover > button {
+.popover > button,
+.menu-sub > button {
   width: 100%;
   justify-content: flex-start;
   gap: 10px;
@@ -648,7 +649,8 @@ main > .error {
   border-radius: 9px;
   font-size: 13.5px;
 }
-.popover > button:hover {
+.popover > button:hover,
+.menu-sub > button:hover {
   background: var(--surface-2);
 }
 .account-menu {
@@ -2520,11 +2522,33 @@ h4.with-mark {
   max-height: min(420px, calc(100vh - 16px));
   overflow-y: auto;
 }
-.context-menu > button {
+.context-menu > button,
+.menu-sub > button {
   justify-content: flex-start;
+}
+.context-menu > button.danger,
+.menu-sub > button.danger {
+  color: var(--danger);
 }
 .context-menu .menu-trailing {
   margin-left: auto;
+  color: var(--text-3);
+}
+.menu-sub {
+  position: relative;
+}
+.menu-flyout {
+  position: fixed;
+  width: 210px;
+  max-height: min(280px, calc(100vh - 16px));
+}
+.row-flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pin-mark {
+  display: inline-flex;
   color: var(--text-3);
 }
 .menu-bot {

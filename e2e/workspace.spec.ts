@@ -304,7 +304,8 @@ test("configure a model, create bots manually and through Socius, install skills
   await workCategory
     .getByRole("button", { name: /Planner/ })
     .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Remove from Work" }).click();
+  await page.getByRole("menuitem", { name: "Move to" }).click();
+  await page.getByRole("menuitem", { name: "Unassigned" }).click();
   await expect(workCategory.getByText("Right-click a bot")).toBeVisible();
   await workCategory
     .getByRole("button", { name: "Work", expanded: true })
@@ -314,6 +315,57 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(
     page.getByRole("button", { name: /Planner Planning specialist/ }),
   ).toBeVisible();
+  const college = page.getByRole("button", {
+    name: /College assistant College planning/,
+  });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await college.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+  await expect(college.getByLabel("Pinned")).toBeVisible();
+  await college.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Unpin" }).click();
+  await expect(college.getByLabel("Pinned")).toHaveCount(0);
+  await college.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Mark as unread" }).click();
+  await expect(college.getByLabel("Unread")).toBeVisible();
+  await college.click();
+  await expect(college.getByLabel("Unread")).toHaveCount(0);
+  await college.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Rename bot" }).click();
+  await page
+    .getByRole("dialog", { name: "Rename bot" })
+    .getByLabel("Name")
+    .fill("Course helper");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const helper = page.getByRole("button", {
+    name: "Course helper College planning",
+  });
+  await expect(helper).toBeVisible();
+  await helper.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Copy conversation ID" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(
+    /^[0-9a-f-]{36}$/,
+  );
+  await helper.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Hide from sidebar" }).click();
+  const hiddenBots = page.getByRole("region", { name: "Hidden bots" });
+  await expect(
+    hiddenBots.getByRole("button", { name: "Course helper College planning" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Unassigned" })
+      .getByRole("button", { name: "Course helper College planning" }),
+  ).toHaveCount(0);
+  await hiddenBots
+    .getByRole("button", { name: "Course helper College planning" })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Show in sidebar" }).click();
+  await expect(hiddenBots).toBeHidden();
+  await helper.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete for good?" }).click();
+  await expect(helper).toHaveCount(0);
   // Group messages stay out of each bot's direct chat.
   await page
     .getByRole("button", { name: /Planner Planning specialist/ })
@@ -330,7 +382,8 @@ test("configure a model, create bots manually and through Socius, install skills
     page.getByRole("textbox", { name: "Message Socius" }),
   ).toBeVisible();
   await page.emulateMedia({ colorScheme: "light" });
-  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await page.getByRole("button", { name: "Account and settings" }).click();
+  await page.getByRole("menuitem", { name: "Activity" }).click();
   await expect(
     page.getByRole("heading", { name: "Activity", level: 1 }),
   ).toBeVisible();
@@ -465,7 +518,8 @@ test("import a standard skill, connect Notion, read, approve one exact page and 
   });
 
   // The activity record shows the executed change.
-  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await page.getByRole("button", { name: "Account and settings" }).click();
+  await page.getByRole("menuitem", { name: "Activity" }).click();
   await expect(
     page.getByText("Created Notion page “Q3 brief”.").first(),
   ).toBeVisible();
