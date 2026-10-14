@@ -3088,6 +3088,41 @@ h4.with-mark {
 .grant-row input {
   justify-self: start;
 }
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+.skill-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.skill-row:last-child {
+  border-bottom: none;
+}
+.skill-row small {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.skill-head,
+.skill-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.skill-head > button {
+  margin-left: auto;
+}
+.skill-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 .findings {
   margin: 12px 0;
   padding: 12px 14px;
