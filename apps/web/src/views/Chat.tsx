@@ -16,6 +16,7 @@ import {
   FileText,
   Pencil,
   Plus,
+  Puzzle,
   Settings,
   Square,
   Trash2,
@@ -46,6 +47,7 @@ import { useSmoothText, useStickToBottom } from "../components/streaming.js";
 import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
+import { BotSkills } from "./BotSkills.js";
 import { BotModelMenu } from "../components/ModelPicker.js";
 import { resolvedModel, SETUP_CODES, type OpenSettings } from "../models.js";
 
@@ -104,6 +106,7 @@ export function Chat({
     [consent, setConsent] = useState(false),
     [details, setDetails] = useState(false),
     [exporting, setExporting] = useState(false),
+    [skillsOpen, setSkillsOpen] = useState(false),
     [copied, setCopied] = useState("");
   const scroller = useRef<HTMLDivElement>(null),
     thread = useRef<HTMLDivElement>(null),
@@ -490,6 +493,21 @@ export function Chat({
                 <button
                   onClick={() => {
                     setDetails(false);
+                    setSkillsOpen(true);
+                  }}
+                >
+                  <Puzzle size={15} />
+                  <span>Skills</span>
+                  <em>
+                    {state.skillReviews.some((r) => r.botId === bot.id)
+                      ? "Review"
+                      : state.skillAssignments.filter((a) => a.botId === bot.id)
+                          .length}
+                  </em>
+                </button>
+                <button
+                  onClick={() => {
+                    setDetails(false);
                     setExporting(true);
                   }}
                 >
@@ -770,6 +788,14 @@ export function Chat({
         </form>
       </div>
       {exporting && <ExportBot bot={bot} onClose={() => setExporting(false)} />}
+      {skillsOpen && (
+        <BotSkills
+          bot={bot}
+          state={state}
+          onRefresh={onRefresh}
+          onClose={() => setSkillsOpen(false)}
+        />
+      )}
       {consent && (
         <Modal title="Memory permissions" onClose={() => setConsent(false)}>
           <p className="muted">

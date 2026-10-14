@@ -250,7 +250,10 @@ test("configure a model, create bots manually and through Socius, install skills
   const plannerReply = page
     .locator(".message")
     .filter({ hasText: "Planner here. 1. Research" });
-  const reactTo = plannerReply.getByRole("button", { name: "React", exact: true });
+  const reactTo = plannerReply.getByRole("button", {
+    name: "React",
+    exact: true,
+  });
   await plannerReply.hover();
   await reactTo.click();
   await page.getByRole("menuitemradio", { name: /React ❤️/ }).click();
@@ -555,6 +558,164 @@ test("connect Notion, read, approve one exact page and see the result", async ({
   await expect(
     page.getByText("Created Notion page “Q3 brief”.").first(),
   ).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+test("assign a skill to one bot, share it, turn it off for one bot and review an update", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    storageState: "test-results/paired-state.json",
+  });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://127.0.0.1:3137/");
+  const dir = "examples/skills/document-brief";
+  const skill = await readFile(`${dir}/SKILL.md`, "utf8");
+  const reference = await readFile(
+    `${dir}/references/brief-template.md`,
+    "utf8",
+  );
+  // Skill import is hidden in Connect Apps for now, so install through the API.
+  const installRelease = (markdown: string, version: string) =>
+    page.evaluate(
+      async ({ markdown, reference, version }) => {
+        const post = async (path: string, body: unknown) => {
+          const response = await fetch(`/api/${path}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!response.ok) throw new Error(await response.text());
+          return response.json();
+        };
+        await post("skills/import", {
+          files: [
+            { path: "document-brief/SKILL.md", content: markdown },
+            {
+              path: "document-brief/references/brief-template.md",
+              content: reference,
+            },
+          ],
+        });
+        const id = "local/document-brief";
+        const preview = await post("install/preview", { id, version });
+        await post("install", {
+          id,
+          version,
+          digest: preview.digest,
+          consent: preview.newCapabilities,
+        });
+      },
+      {
+        markdown: Buffer.from(markdown).toString("base64"),
+        reference: Buffer.from(reference).toString("base64"),
+        version,
+      },
+    );
+  await installRelease(skill, "1.0.0");
+  for (const name of ["Draft Writer", "Week Planner"])
+    await page.evaluate(async (name) => {
+      await fetch("/api/bots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          role: `${name} role`,
+          instructions: "Work carefully.",
+        }),
+      });
+    }, name);
+  await page.reload();
+  const sidebar = page.getByRole("complementary", { name: "Bots" });
+  async function open(name: string) {
+    await sidebar.getByText(name, { exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: `${name} details` }),
+    ).toBeVisible();
+  }
+  async function skills(name: string) {
+    await page.getByRole("button", { name: `${name} details` }).click();
+    await page
+      .locator(".bot-details")
+      .getByRole("button", { name: /^Skills/ })
+      .click();
+    const dialog = page.getByRole("dialog", { name: `Skills for ${name}` });
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+  async function ask(name: string, expected: string, count = 1) {
+    await page
+      .getByRole("textbox", { name: `Message ${name}` })
+      .fill("which skills can you use?");
+    await page.keyboard.press("Enter");
+    await expect(page.getByText(expected, { exact: true })).toHaveCount(count);
+  }
+  const LOADED = "Skills: local/document-brief. Document brief loaded.";
+  const BLOCKED = "Skills: none. Document brief blocked.";
+
+  // Assign document-brief only to the writer.
+  await open("Draft Writer");
+  let dialog = await skills("Draft Writer");
+  await expect(dialog.getByText("No skills assigned yet.")).toBeVisible();
+  await dialog
+    .getByRole("listitem")
+    .filter({ hasText: "document-brief" })
+    .getByRole("button", { name: "Assign" })
+    .click();
+  await expect(dialog.getByText("Ready", { exact: true })).toBeVisible();
+  await page.screenshot({
+    path: "test-results/socius-bot-skills.png",
+    animations: "disabled",
+  });
+  await page.keyboard.press("Escape");
+  await ask("Draft Writer", LOADED);
+
+  // The planner cannot see or load it, even by its exact ID.
+  await open("Week Planner");
+  await ask("Week Planner", BLOCKED);
+
+  // Share it explicitly with the planner.
+  dialog = await skills("Week Planner");
+  await dialog.getByRole("button", { name: "Assign" }).click();
+  await expect(dialog.getByText("Ready", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await ask("Week Planner", LOADED);
+
+  // Turning it off for the writer leaves the planner's assignment alone.
+  await open("Draft Writer");
+  dialog = await skills("Draft Writer");
+  await dialog.getByRole("checkbox", { name: "Use document-brief" }).click();
+  await expect(dialog.getByText("Off", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await ask("Draft Writer", BLOCKED);
+  await open("Week Planner");
+  await ask("Week Planner", LOADED, 2);
+
+  // A new release needs review before the planner uses it.
+  await installRelease(
+    skill.replace("version: 1.0.0", "version: 1.1.0"),
+    "1.1.0",
+  );
+  await page.reload();
+  await open("Week Planner");
+  dialog = await skills("Week Planner");
+  await expect(dialog.getByText("Needs review", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Use 1.1.0" }).click();
+  await expect(dialog.getByText("Ready", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Choices persist across reloads. The writer's pin is still 1.0.0 and turned off,
+  // so it waits for its own review instead of following the planner.
+  await page.reload();
+  await open("Draft Writer");
+  dialog = await skills("Draft Writer");
+  await expect(dialog.getByText("Needs review", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("1.0.0", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByRole("checkbox", { name: "Use document-brief" }),
+  ).not.toBeChecked();
   expect(errors).toEqual([]);
   await context.close();
 });

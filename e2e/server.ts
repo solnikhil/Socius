@@ -71,6 +71,18 @@ const runtime = await startRuntime({
       onText(text);
       return text;
     }
+    // Reports what this bot was offered and whether a guessed load succeeds.
+    if (content.toLowerCase().includes("which skills")) {
+      let load = "loaded";
+      try {
+        request.loadSkill("local/document-brief");
+      } catch {
+        load = "blocked";
+      }
+      const text = `Skills: ${request.skills.map((s) => s.id).join(", ") || "none"}. Document brief ${load}.`;
+      onText(text);
+      return text;
+    }
     if (content.toLowerCase().includes("brief")) {
       const tool = (name: string) =>
         request.connectorTools?.find((t) => t.name === name);
