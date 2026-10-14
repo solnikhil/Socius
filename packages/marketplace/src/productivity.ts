@@ -125,3 +125,24 @@ export const calendarManifest = productivityConnector(
     },
   ],
 );
+
+export const slackManifest = productivityConnector(
+  "slack",
+  "Slack",
+  "https://mcp.slack.com/mcp",
+  "Requires an internal or Slack Marketplace published app (unlisted apps cannot use MCP). Configure SOCIUS_SLACK_CLIENT_ID and SOCIUS_SLACK_CLIENT_SECRET with callback http://127.0.0.1:37377/oauth/callback. Searches public channels and posts as the signed-in user after approval. No private search, DMs or scheduling. Workspace admin/IP policies apply.",
+  [
+    {
+      id: "slack.search-public",
+      access: "read",
+      capability: "messages.read",
+      description: "Search public-channel messages.",
+    },
+    {
+      id: "slack.post-message",
+      access: "write",
+      capability: "messages.send",
+      description: "Post to an existing channel after approval.",
+    },
+  ],
+);
