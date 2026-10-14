@@ -23,3 +23,24 @@ test("chat Markdown still supports emphasis and renders HTML as inert text", () 
   assert.ok(html.includes("&lt;script&gt;"));
   assert.ok(!html.includes("<script>"));
 });
+
+test("streaming closes unfinished bold and code so no raw markers show", async () => {
+  const { closeOpenMarks } = await import("../src/components/streaming.js");
+  const cases: [string, string][] = [
+    ["- **Read a specific", "- **Read a specific**"],
+    ["Use `linear_sea", "Use `linear_sea`"],
+    ["**bold `co", "**bold `co`**"],
+    ["`a ** b", "`a ** b`"],
+    ["- **", "- "],
+    ["Run `", "Run "],
+    ["**done** and `done`", "**done** and `done`"],
+    ["```ts\nconst a = `x", "```ts\nconst a = `x"],
+  ];
+  for (const [input, expected] of cases)
+    assert.equal(closeOpenMarks(input), expected, input);
+  const html = renderToStaticMarkup(
+    <Markdown text={closeOpenMarks("- **Read a specific")} />,
+  );
+  assert.ok(html.includes("<strong>Read a specific</strong>"));
+  assert.ok(!html.includes("**"));
+});
