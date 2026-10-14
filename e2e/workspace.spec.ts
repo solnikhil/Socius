@@ -70,13 +70,15 @@ test("configure a model, create bots manually and through Socius, install skills
     page.getByRole("button", { name: "Model: fixture-model" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Create" }).first().click();
-  await expect(page.getByRole("menuitem", { name: "New board" })).toHaveCount(
-    0,
-  );
+  // The + opens the same palette as New chat; there is no separate menu.
+  await expect(page.getByRole("menu", { name: "Create" })).toHaveCount(0);
+  await expect(
+    page.getByRole("option", { name: /Create category/ }),
+  ).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Boards", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("menuitem", { name: "New bot" }).click();
+  await page.getByRole("option", { name: /Create new bot/ }).click();
   await page.getByLabel("Name", { exact: true }).fill("College assistant");
   await page.getByLabel("Role", { exact: true }).fill("College planning");
   await page
@@ -104,7 +106,6 @@ test("configure a model, create bots manually and through Socius, install skills
     animations: "disabled",
   });
   await page.getByRole("button", { name: "Create" }).first().click();
-  await page.getByRole("menuitem", { name: "New chat" }).click();
   await expect(
     page.getByRole("option", { name: /Create new bot/ }),
   ).toBeVisible();
@@ -194,7 +195,7 @@ test("configure a model, create bots manually and through Socius, install skills
     .getByRole("button", { name: "Create", exact: true })
     .first()
     .click();
-  await page.getByRole("menuitem", { name: "New group chat" }).click();
+  await page.getByRole("option", { name: /Create group chat/ }).click();
   await expect(
     page.getByRole("heading", { name: "New group chat", exact: true }),
   ).toBeVisible();
@@ -273,7 +274,7 @@ test("configure a model, create bots manually and through Socius, install skills
     .getByRole("button", { name: "Create", exact: true })
     .first()
     .click();
-  await page.getByRole("menuitem", { name: "New category" }).click();
+  await page.getByRole("option", { name: /Create category/ }).click();
   await page.getByLabel("Name", { exact: true }).fill("Work");
   await page.getByRole("checkbox", { name: /Planner/ }).click();
   await page.getByRole("button", { name: "Create category" }).click();

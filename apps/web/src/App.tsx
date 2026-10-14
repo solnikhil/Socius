@@ -36,7 +36,6 @@ import { ActivityView } from "./views/ActivityView.js";
 import { CreateBot } from "./views/CreateBot.js";
 import { CreateGroup } from "./views/CreateGroup.js";
 import { BotMenu } from "./components/BotMenu.js";
-import { CreateMenu } from "./components/CreateMenu.js";
 import { CategoryMenu } from "./components/CategoryMenu.js";
 import { EditCategory } from "./views/EditCategory.js";
 
@@ -63,9 +62,6 @@ export function App() {
     [page, setPage] = useState<Page>("chat"),
     [creating, setCreating] = useState(false),
     [folded, setFolded] = useState<Set<string>>(readFolded),
-    [createMenu, setCreateMenu] = useState<{ x: number; y: number } | null>(
-      null,
-    ),
     [botMenu, setBotMenu] = useState<{
       id: string;
       x: number;
@@ -313,13 +309,8 @@ export function App() {
       <button
         className="icon round"
         aria-label="Create"
-        aria-haspopup="menu"
-        aria-expanded={!!createMenu}
-        title="New chat, group chat, bot or category"
-        onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          setCreateMenu((m) => (m ? null : { x: r.left, y: r.bottom + 6 }));
-        }}
+        title="New chat, group chat, bot or category  ⌘N"
+        onClick={() => setPage("new")}
       >
         <Plus size={19} />
       </button>
@@ -554,6 +545,10 @@ export function App() {
               setPage("chat");
               setCreating(true);
             }}
+            onCreateCategory={() => {
+              setPage("chat");
+              setEditingCategory({});
+            }}
           />
         )}
         {page === "activity" && (
@@ -600,17 +595,6 @@ export function App() {
           state={state}
           onRefresh={refresh}
           onClose={() => setApps(false)}
-        />
-      )}
-      {createMenu && (
-        <CreateMenu
-          x={createMenu.x}
-          y={createMenu.y}
-          onClose={() => setCreateMenu(null)}
-          onChat={() => setPage("new")}
-          onGroup={() => setGrouping("new")}
-          onBot={() => setCreating(true)}
-          onCategory={() => setEditingCategory({})}
         />
       )}
       {botMenu && menuBot && (

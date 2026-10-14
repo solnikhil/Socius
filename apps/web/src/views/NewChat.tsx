@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Plus, Users, X } from "lucide-react";
+import { FolderPlus, Plus, Users, X } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
 import type { GroupChat } from "@socius/contracts/app";
 import { Avatar, GroupAvatar } from "../components/ui.js";
@@ -15,6 +15,7 @@ export function NewChat({
   onPickGroup,
   onCreate,
   onCreateGroup,
+  onCreateCategory,
 }: {
   bots: BotInstance[];
   groups: { group: GroupChat; faces: { name: string; main?: boolean }[] }[];
@@ -24,6 +25,7 @@ export function NewChat({
   onPickGroup: (group: GroupChat) => void;
   onCreate: () => void;
   onCreateGroup: () => void;
+  onCreateCategory: () => void;
 }) {
   const [query, setQuery] = useState(""),
     [active, setActive] = useState(0);
@@ -44,6 +46,12 @@ export function NewChat({
             label: "Create group chat",
             icon: <Users size={16} />,
             run: onCreateGroup,
+          },
+          {
+            key: "create-category",
+            label: "Create category",
+            icon: <FolderPlus size={16} />,
+            run: onCreateCategory,
           },
         ]),
     ...bots

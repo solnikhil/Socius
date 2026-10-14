@@ -42,7 +42,7 @@ Group chats use the same chat view as direct chats: floating name pill, bubbles 
 
 - A small avatar and name label marks each run of replies from one bot.
 - The pill opens the roster, **Edit members** and **Delete group chat**.
-- Create a group from **New group chat** in the top **+** menu, or press ⌘2 in the `To:` palette. Groups are listed under **Group chats** in the sidebar.
+- Create a group with **Create group chat** in the `To:` palette (the top **+**, ⌘N), or press ⌘2 there. Groups are listed under **Group chats** in the sidebar.
 
 ## API
 
@@ -83,4 +83,4 @@ POST   /api/categories/move    {"botId", "categoryId" | null}    → 200 (null r
 DELETE /api/categories         {"id"}                            → 200 (bots are kept)
 ```
 
-Everything is created from the top **+** menu: New chat, New group chat, New bot and New category. Section headings only fold; an empty Categories section also shows a **New category** link. Right-click a category to edit or delete it, and right-click a bot to move it.
+Everything is created from the `To:` palette that the top **+** opens: pick a bot or group to chat, or **Create new bot**, **Create group chat** or **Create category**. Section headings only fold; an empty Categories section also shows a **New category** link. Right-click a category to edit or delete it, and right-click a bot to move it.
