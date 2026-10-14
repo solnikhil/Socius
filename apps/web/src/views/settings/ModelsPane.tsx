@@ -26,7 +26,7 @@ import {
   type ProviderConnection,
 } from "@socius/contracts/providers";
 import { api } from "../../api.js";
-import { ErrorNote } from "../../components/ui.js";
+import { Avatar, ErrorNote, MAIN_BOT_TEMPLATE } from "../../components/ui.js";
 import { ProviderMark } from "../../components/ProviderMark.js";
 import { modelKey, sameModel, type OpenSettings } from "../../models.js";
 
@@ -79,11 +79,11 @@ export function ModelsPane({
         </div>
       </>
     );
-  async function select(entry: ModelEntry | null) {
+  async function select(entry: ModelEntry | null, botId: string | null = null) {
     setError("");
     try {
       await api("models/select", {
-        botId: null,
+        botId,
         model: entry && {
           connectionId: entry.connectionId,
           modelId: entry.modelId,
@@ -102,8 +102,8 @@ export function ModelsPane({
       <header className="pane-head">
         <h3>Models</h3>
         <p>
-          Add models from your providers. The default is used by every bot
-          unless you choose another model from the bot’s chat.
+          Add models from your providers. Every bot uses the default unless you
+          give it its own model below or from its chat.
         </p>
       </header>
       <div className="pane-section">
@@ -122,17 +122,7 @@ export function ModelsPane({
               }
             >
               {!defaultEntry && <option value="">Choose a model</option>}
-              {state.connections.map((c) => (
-                <optgroup key={c.id} label={c.label}>
-                  {state.models
-                    .filter((m) => m.connectionId === c.id)
-                    .map((m) => (
-                      <option key={modelKey(m)} value={modelKey(m)}>
-                        {m.label}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
+              <ModelOptions state={state} />
             </select>
           </label>
         ) : (
@@ -140,6 +130,13 @@ export function ModelsPane({
         )}
         <ErrorNote error={error} />
       </div>
+      {state.models.length > 0 && (
+        <BotModels
+          state={state}
+          defaultLabel={defaultEntry?.label}
+          onSelect={(m, botId) => void select(m, botId)}
+        />
+      )}
       {state.connections.map((c) => (
         <ConnectionModels
           key={c.id}
@@ -151,6 +148,79 @@ export function ModelsPane({
         />
       ))}
     </>
+  );
+}
+
+function ModelOptions({ state }: { state: Snapshot }) {
+  return state.connections.map((c) => (
+    <optgroup key={c.id} label={c.label}>
+      {state.models
+        .filter((m) => m.connectionId === c.id)
+        .map((m) => (
+          <option key={modelKey(m)} value={modelKey(m)}>
+            {m.label}
+          </option>
+        ))}
+    </optgroup>
+  ));
+}
+
+// Each bot can override the workspace default; group-chat members reply with
+// their own model too.
+function BotModels({
+  state,
+  defaultLabel,
+  onSelect,
+}: {
+  state: Snapshot;
+  defaultLabel: string | undefined;
+  onSelect: (m: ModelEntry | null, botId: string) => void;
+}) {
+  const bots = [...state.bots].sort(
+    (a, b) =>
+      Number(b.template.id === MAIN_BOT_TEMPLATE) -
+      Number(a.template.id === MAIN_BOT_TEMPLATE),
+  );
+  return (
+    <div className="pane-section">
+      <h4>Bots</h4>
+      <ul className="bot-model-list">
+        {bots.map((b) => {
+          const override = state.selection.bots[b.id];
+          const entry =
+            override && state.models.find((m) => sameModel(override, m));
+          return (
+            <li key={b.id}>
+              <Avatar
+                name={b.name}
+                main={b.template.id === MAIN_BOT_TEMPLATE}
+                size={28}
+              />
+              <span className="bot-model-name">
+                <strong>{b.name}</strong>
+                <small>{b.role}</small>
+              </span>
+              <select
+                aria-label={`Model for ${b.name}`}
+                value={entry ? modelKey(entry) : ""}
+                onChange={(e) =>
+                  onSelect(
+                    state.models.find((m) => modelKey(m) === e.target.value) ??
+                      null,
+                    b.id,
+                  )
+                }
+              >
+                <option value="">
+                  {defaultLabel ? `Default · ${defaultLabel}` : "Default"}
+                </option>
+                <ModelOptions state={state} />
+              </select>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

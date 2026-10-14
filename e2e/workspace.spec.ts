@@ -51,6 +51,13 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(settings.getByLabel("Default model")).toHaveValue(
     /fixture-model/,
   );
+  // Each bot can take its own model from Settings, or follow the default.
+  const botModel = settings.getByLabel("Model for Socius");
+  await expect(botModel).toHaveValue("");
+  await botModel.selectOption({ label: "fixture-model" });
+  await expect(botModel).toHaveValue(/fixture-model/);
+  await botModel.selectOption({ value: "" });
+  await expect(botModel).toHaveValue("");
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({
     path: "test-results/socius-settings-dark.png",
@@ -189,7 +196,7 @@ test("configure a model, create bots manually and through Socius, install skills
     .click();
   await page.getByRole("menuitem", { name: "New group chat" }).click();
   await expect(
-    page.getByRole("heading", { name: "New group chat" }),
+    page.getByRole("heading", { name: "New group chat", exact: true }),
   ).toBeVisible();
   await page.getByRole("checkbox", { name: /Planner/ }).click();
   await page.getByRole("checkbox", { name: /College assistant/ }).click();
