@@ -3149,6 +3149,20 @@ h4.with-mark {
 .connect-notice {
   margin: 8px 28px 0;
 }
+.registry-suggestions {
+  margin: 2px 0 10px;
+}
+.registry-suggestions button[aria-pressed="true"] {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.registry-hint {
+  margin: 0 0 14px;
+  max-width: 680px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
 .registry-list {
   display: flex;
   flex-direction: column;
