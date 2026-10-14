@@ -1,3 +1,4 @@
+import { gmail } from "./gmail.js";
 import { github } from "./github.js";
 import { linear } from "./linear.js";
 import { z } from "zod";
@@ -238,7 +239,12 @@ export const notion: ReviewedConnector = {
   },
   actions: [search, fetchPage, createPage] as unknown as ConnectorAction[],
 };
-export const reviewedConnectors: ReviewedConnector[] = [notion, linear, github];
+export const reviewedConnectors: ReviewedConnector[] = [
+  notion,
+  linear,
+  github,
+  gmail,
+];
 export const reviewedConnector = (id: string) =>
   reviewedConnectors.find((c) => c.id === id);
 
