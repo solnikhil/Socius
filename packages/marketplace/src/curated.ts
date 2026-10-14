@@ -3,6 +3,7 @@ import {
   githubManifest,
   gmailManifest,
   calendarManifest,
+  slackManifest,
 } from "./productivity.js";
 import { mainBot, type ReleaseInput } from "./index.js";
 import { botTemplates } from "./templates.js";
@@ -43,6 +44,7 @@ export const curatedCatalog: Manifest[] = [
   githubManifest,
   gmailManifest,
   calendarManifest,
+  slackManifest,
   summary,
   research,
   ...botTemplates,
