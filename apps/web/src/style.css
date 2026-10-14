@@ -3272,7 +3272,8 @@ dialog.create-bot,
 .reaction-picker {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: -6px;
+  /* Opens leftward over the reply, so it never runs off the window edge. */
+  right: -6px;
   z-index: 20;
   display: flex;
   gap: 2px;
@@ -3281,7 +3282,7 @@ dialog.create-bot,
   border-radius: 999px;
   background: var(--elevated);
   box-shadow: var(--shadow);
-  transform-origin: 18px 100%;
+  transform-origin: calc(100% - 18px) 100%;
   animation: picker-in 0.22s cubic-bezier(0.3, 1.5, 0.5, 1);
 }
 .reaction-picker button {
@@ -3325,6 +3326,88 @@ dialog.create-bot,
 .reaction-badge:hover {
   transform: scale(1.1);
 }
+.reaction-picker.below {
+  top: calc(100% + 6px);
+  bottom: auto;
+  transform-origin: calc(100% - 18px) 0;
+}
+/* The hovered or focused reaction names itself, like a tooltip. */
+.reaction-picker button {
+  position: relative;
+}
+.reaction-picker button::after {
+  content: attr(data-label);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--solid);
+  color: var(--solid-text);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px) scale(0.77);
+  transition:
+    opacity 0.12s,
+    transform 0.16s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.reaction-picker.below button::after {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform: translate(-50%, -4px) scale(0.77);
+}
+.reaction-picker button:hover::after,
+.reaction-picker button:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(0.77);
+}
+.reaction-picker button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+/* Tapping the badge removes it; hover hints at that with a small cross. */
+.reaction-badge {
+  cursor: pointer;
+  transition: transform 0.16s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.reaction-badge::after {
+  content: "×";
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--solid);
+  color: var(--solid-text);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity 0.12s,
+    transform 0.16s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.reaction-badge:hover::after,
+.reaction-badge:focus-visible::after {
+  opacity: 1;
+  transform: scale(1);
+}
+.reaction-badge.leaving {
+  pointer-events: none;
+  animation: badge-out 0.17s ease-in forwards;
+}
+@keyframes badge-out {
+  to {
+    opacity: 0;
+    transform: scale(0.2) rotate(20deg);
+  }
+}
 @keyframes picker-in {
   from {
     opacity: 0;
@@ -3350,7 +3433,8 @@ dialog.create-bot,
 @media (prefers-reduced-motion: reduce) {
   .reaction-picker,
   .reaction-picker button,
-  .reaction-badge {
+  .reaction-badge,
+  .reaction-badge.leaving {
     animation: none;
   }
   .react-trigger:hover,

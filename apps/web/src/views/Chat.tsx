@@ -17,14 +17,12 @@ import {
   Pencil,
   Plus,
   Settings,
-  SmilePlus,
   Square,
   Trash2,
   X,
 } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
 import {
-  REACTIONS,
   type GroupChat,
   type Message,
   type Reaction,
@@ -45,6 +43,7 @@ import {
 } from "@/components/ui/popover";
 import { ApprovalCard } from "../components/ApprovalCard.js";
 import { useSmoothText, useStickToBottom } from "../components/streaming.js";
+import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
 import { ModelPicker } from "../components/ModelPicker.js";
@@ -98,6 +97,8 @@ export function Chat({
     [confirmDelete, setConfirmDelete] = useState(false),
     // The reply whose reaction picker is open.
     [reacting, setReacting] = useState(""),
+    // The reply whose reaction badge is animating out.
+    [leaving, setLeaving] = useState(""),
     [busy, setBusy] = useState(false),
     [taskId, setTaskId] = useState(""),
     [error, setError] = useState(""),
@@ -291,24 +292,6 @@ export function Chat({
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  // The picker closes on any click outside it, or Escape.
-  useEffect(() => {
-    if (!reacting) return;
-    const close = (e: Event) => {
-      if (
-        e instanceof KeyboardEvent
-          ? e.key === "Escape"
-          : !(e.target as Element).closest?.(".reactions")
-      )
-        setReacting("");
-    };
-    document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", close);
-    return () => {
-      document.removeEventListener("pointerdown", close);
-      document.removeEventListener("keydown", close);
-    };
-  }, [reacting]);
   async function react(m: Message, reaction: Reaction) {
     setReacting("");
     const next = m.reaction === reaction ? null : reaction;
@@ -327,6 +310,18 @@ export function Chat({
       swap(m.reaction ?? null);
       fail((e as Error).message);
     }
+  }
+  // The badge shrinks away first, then the reaction is cleared.
+  function unreact(m: Message) {
+    if (!m.reaction || leaving) return;
+    setLeaving(m.id);
+    setTimeout(
+      () => {
+        setLeaving("");
+        void react(m, m.reaction!);
+      },
+      matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 170,
+    );
   }
   async function copy(m: Message) {
     try {
@@ -585,51 +580,22 @@ export function Chat({
                       {m.reaction && (
                         <button
                           key={m.reaction}
-                          className="reaction-badge"
-                          aria-label={`You reacted ${m.reaction}. Change reaction`}
-                          onClick={() => setReacting(m.id)}
+                          className={`reaction-badge ${leaving === m.id ? "leaving" : ""}`}
+                          aria-label={`Remove your ${m.reaction} reaction`}
+                          title="Remove reaction"
+                          onClick={() => unreact(m)}
                         >
                           {m.reaction}
                         </button>
                       )}
                     </div>
                     {m.role === "assistant" && (
-                      <div className="reactions">
-                        <button
-                          className="icon ghost tiny react-trigger"
-                          aria-label="React"
-                          aria-expanded={reacting === m.id}
-                          title="React"
-                          onClick={() =>
-                            setReacting((r) => (r === m.id ? "" : m.id))
-                          }
-                        >
-                          <SmilePlus size={15} />
-                        </button>
-                        {reacting === m.id && (
-                          <div
-                            className="reaction-picker"
-                            role="menu"
-                            aria-label="Reactions"
-                          >
-                            {(Object.keys(REACTIONS) as Reaction[]).map(
-                              (r, n) => (
-                                <button
-                                  key={r}
-                                  role="menuitemradio"
-                                  aria-checked={m.reaction === r}
-                                  aria-label={`React ${r}: ${REACTIONS[r]}`}
-                                  className={m.reaction === r ? "chosen" : ""}
-                                  style={{ animationDelay: `${n * 22}ms` }}
-                                  onClick={() => void react(m, r)}
-                                >
-                                  {r}
-                                </button>
-                              ),
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <ReactionPicker
+                        current={m.reaction}
+                        open={reacting === m.id}
+                        onToggle={(open) => setReacting(open ? m.id : "")}
+                        onPick={(r) => void react(m, r)}
+                      />
                     )}
                   </div>
                   <div className="message-actions">

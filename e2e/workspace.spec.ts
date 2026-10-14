@@ -233,30 +233,55 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(page.getByText("Planner here. 1. Research")).toBeVisible();
   await expect(page.getByText("Thanks, Planner.")).toBeVisible();
   await expect(page.locator(".speaker")).toHaveText(["Planner", "Socius"]);
-  // Reacting to a bot's reply sticks, and can be changed from the badge.
+  // Reacting to a bot's reply sticks; tapping the badge removes it.
   const plannerReply = page
     .locator(".message")
     .filter({ hasText: "Planner here. 1. Research" });
+  const reactTo = plannerReply.getByRole("button", { name: "React", exact: true });
   await plannerReply.hover();
-  await plannerReply.getByRole("button", { name: "React" }).click();
+  await reactTo.click();
   await page.getByRole("menuitemradio", { name: /React ❤️/ }).click();
   await expect(page.getByRole("menu", { name: "Reactions" })).toHaveCount(0);
   await expect(
-    plannerReply.getByRole("button", { name: /You reacted ❤️/ }),
+    plannerReply.getByRole("button", { name: /Remove your ❤️ reaction/ }),
   ).toBeVisible();
   await page.reload();
   await page
     .getByRole("button", { name: /Launch crew Socius, Planner/ })
     .click();
-  await plannerReply.getByRole("button", { name: /You reacted ❤️/ }).click();
-  await page.getByRole("menuitemradio", { name: /React 👍/ }).click();
   await expect(
-    plannerReply.getByRole("button", { name: /You reacted 👍/ }),
+    plannerReply.getByRole("button", { name: /Remove your ❤️ reaction/ }),
+  ).toBeVisible();
+  // The picker is keyboard friendly: focus starts on the current reaction,
+  // Escape closes it, and number keys pick.
+  await plannerReply.hover();
+  await reactTo.click();
+  await expect(
+    page.getByRole("menuitemradio", { name: /React ❤️/ }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Reactions" })).toHaveCount(0);
+  await expect(reactTo).toBeFocused();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("1");
+  await expect(
+    plannerReply.getByRole("button", { name: /Remove your 👍 reaction/ }),
   ).toBeVisible();
   await page.screenshot({
     path: "test-results/socius-group-chat-light.png",
     animations: "disabled",
   });
+  await plannerReply
+    .getByRole("button", { name: /Remove your 👍 reaction/ })
+    .click();
+  await expect(plannerReply.locator(".reaction-badge")).toHaveCount(0);
+  await expect(page.getByRole("menu", { name: "Reactions" })).toHaveCount(0);
+  await page.reload();
+  await page
+    .getByRole("button", { name: /Launch crew Socius, Planner/ })
+    .click();
+  await expect(page.getByText("Planner here. 1. Research")).toBeVisible();
+  await expect(plannerReply.locator(".reaction-badge")).toHaveCount(0);
   // A failed group reply can be retried without resending the message.
   await page
     .getByRole("textbox", { name: "Message Launch crew" })
