@@ -565,8 +565,11 @@ export async function startRuntime(options: RuntimeOptions) {
             .strictObject({ botId: uuid, draft: BotExportDraftSchema })
             .parse(await body(req));
           const b = bot(input.botId);
-          const { manifest: _manifest, ...preview } =
-            packages.botExportPreview(b, input.draft, store.memory(b.id));
+          const { manifest: _manifest, ...preview } = packages.botExportPreview(
+            b,
+            input.draft,
+            store.memory(b.id),
+          );
           json(res, 200, preview);
           return;
         }
@@ -608,7 +611,9 @@ export async function startRuntime(options: RuntimeOptions) {
           const input = z
             .strictObject({ connectorId: z.string().max(130) })
             .parse(await body(req));
-          if (!store.get<Installation>("installation", input.connectorId)?.enabled)
+          if (
+            !store.get<Installation>("installation", input.connectorId)?.enabled
+          )
             fail(409, "Install and enable the connector first");
           json(res, 200, await connections.connect(input.connectorId));
           return;

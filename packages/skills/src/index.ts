@@ -55,7 +55,8 @@ const FRONTMATTER_FIELDS = new Set([
 const ACTIVATION_FIELDS =
   /^(entry-?point|command|commands|run|exec|hooks?|scripts?|main|bin|mcp|mcp-?servers|install|postinstall)$/i;
 const NATIVE_BINARY = /\.(exe|dll|so|dylib|node|msi|com|scr|app|bin|jar)$/i;
-const SCRIPT_FILE = /\.(sh|bash|zsh|ps1|psm1|bat|cmd|py|js|mjs|cjs|ts|rb|pl|php)$/i;
+const SCRIPT_FILE =
+  /\.(sh|bash|zsh|ps1|psm1|bat|cmd|py|js|mjs|cjs|ts|rb|pl|php)$/i;
 const TEXT_FILE = /\.(md|markdown|txt|json|ya?ml|csv|tsv|xml|html?)$/i;
 const SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 const IGNORED_SEGMENT = /^\./;
@@ -119,7 +120,9 @@ function parseYaml(yaml: string): Record<string, unknown> {
     prettyErrors: false,
   });
   if (doc.errors.length)
-    reject(`Invalid YAML frontmatter: ${doc.errors[0]!.message.split("\n")[0]}`);
+    reject(
+      `Invalid YAML frontmatter: ${doc.errors[0]!.message.split("\n")[0]}`,
+    );
   let data: unknown;
   try {
     data = doc.toJS({ maxAliasCount: 0 });
@@ -211,7 +214,8 @@ export function skillManifestFromMarkdown(
       : reject(`Invalid dependency "${d}"; use publisher/name@1.2.3`);
   });
   const instructions = body.trim();
-  if (!instructions) reject("SKILL.md must contain instructions after the frontmatter");
+  if (!instructions)
+    reject("SKILL.md must contain instructions after the frontmatter");
   const parsed = SkillManifest.safeParse({
     schemaVersion: 1,
     id: `${publisher}/${name}`,
@@ -231,7 +235,9 @@ export function skillManifestFromMarkdown(
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0]!;
-    reject(`Invalid skill metadata at ${issue.path.join(".") || "root"}: ${issue.message}`);
+    reject(
+      `Invalid skill metadata at ${issue.path.join(".") || "root"}: ${issue.message}`,
+    );
   }
   return parsed.data!;
 }
@@ -249,7 +255,8 @@ export function parseSkillFiles(
   let total = 0;
   for (const entry of entries) {
     const segments = entrySegments(entry.path);
-    if (segments.length < 2) reject(`File must be inside the skill directory: ${entry.path}`);
+    if (segments.length < 2)
+      reject(`File must be inside the skill directory: ${entry.path}`);
     roots.add(segments[0]!);
     if (roots.size > 1) reject("Import exactly one skill directory");
     if (segments.some((s) => IGNORED_SEGMENT.test(s))) {
@@ -257,7 +264,8 @@ export function parseSkillFiles(
       continue;
     }
     for (const s of segments)
-      if (!SEGMENT.test(s)) reject(`Unsupported characters in path: ${entry.path}`);
+      if (!SEGMENT.test(s))
+        reject(`Unsupported characters in path: ${entry.path}`);
     const path = segments.slice(1).join("/");
     const folded = path.toLowerCase();
     if (seen.has(folded)) reject(`Duplicate file path: ${path}`);
@@ -265,12 +273,15 @@ export function parseSkillFiles(
     if (entry.bytes.byteLength > SKILL_LIMITS.maxFileBytes)
       reject(`File is larger than 1 MiB: ${path}`);
     total += entry.bytes.byteLength;
-    if (total > SKILL_LIMITS.maxTotalBytes) reject("Skill directory is larger than 5 MiB");
+    if (total > SKILL_LIMITS.maxTotalBytes)
+      reject("Skill directory is larger than 5 MiB");
     if (NATIVE_BINARY.test(path) || isNativeExecutable(entry.bytes))
       reject(`Native executables are not supported: ${path}`);
     const kind = path === "SKILL.md" ? "reference" : resourceKind(path);
     if (SCRIPT_FILE.test(path) && kind !== "script")
-      reject(`Executable scripts must live in scripts/ and remain inert: ${path}`);
+      reject(
+        `Executable scripts must live in scripts/ and remain inert: ${path}`,
+      );
     files.push({ path, bytes: entry.bytes, kind });
   }
   if (files.length > SKILL_LIMITS.maxFiles) reject("Skill has too many files");
@@ -302,7 +313,9 @@ export function parseSkillFiles(
 }
 
 /** Reads a local skill directory without following symbolic links or junctions. */
-export async function readSkillDirectory(dir: string): Promise<SkillFileEntry[]> {
+export async function readSkillDirectory(
+  dir: string,
+): Promise<SkillFileEntry[]> {
   if ((await lstat(dir)).isSymbolicLink())
     reject("The skill directory itself is a symbolic link");
   const root = await realpath(dir);
@@ -310,7 +323,8 @@ export async function readSkillDirectory(dir: string): Promise<SkillFileEntry[]>
   const entries: SkillFileEntry[] = [];
   let total = 0;
   async function walk(relative: string[], depth: number) {
-    if (depth > SKILL_LIMITS.maxDepth) reject("Skill directory is nested too deeply");
+    if (depth > SKILL_LIMITS.maxDepth)
+      reject("Skill directory is nested too deeply");
     const absolute = join(root, ...relative);
     for (const item of await readdir(absolute)) {
       const path = [...relative, item];
@@ -326,7 +340,8 @@ export async function readSkillDirectory(dir: string): Promise<SkillFileEntry[]>
       if (info.size > SKILL_LIMITS.maxFileBytes)
         reject(`File is larger than 1 MiB: ${path.join("/")}`);
       total += info.size;
-      if (total > SKILL_LIMITS.maxTotalBytes) reject("Skill directory is larger than 5 MiB");
+      if (total > SKILL_LIMITS.maxTotalBytes)
+        reject("Skill directory is larger than 5 MiB");
       const resolved = await realpath(full);
       if (!resolved.startsWith(root + sep))
         reject(`File escapes the skill directory: ${path.join("/")}`);
@@ -334,7 +349,8 @@ export async function readSkillDirectory(dir: string): Promise<SkillFileEntry[]>
         path: [name, ...path].join("/"),
         bytes: new Uint8Array(await readFile(full)),
       });
-      if (entries.length > SKILL_LIMITS.maxFiles) reject("Skill has too many files");
+      if (entries.length > SKILL_LIMITS.maxFiles)
+        reject("Skill has too many files");
     }
   }
   await walk([], 0);
@@ -360,8 +376,12 @@ export function serializeSkill(
   const frontmatter: Record<string, unknown> = {
     name,
     description: manifest.description,
-    ...(manifest.license !== "NOASSERTION" ? { license: manifest.license } : {}),
-    ...(manifest.compatibility ? { compatibility: manifest.compatibility } : {}),
+    ...(manifest.license !== "NOASSERTION"
+      ? { license: manifest.license }
+      : {}),
+    ...(manifest.compatibility
+      ? { compatibility: manifest.compatibility }
+      : {}),
     ...(Object.keys(metadata).length ? { metadata } : {}),
     ...(manifest.allowedTools?.length
       ? { "allowed-tools": manifest.allowedTools.join(" ") }

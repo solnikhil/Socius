@@ -13,7 +13,10 @@ import type {
   InstallPreview,
   Snapshot,
 } from "@socius/contracts/app";
-import { startNotionFixture, type NotionFixture } from "../../connectors/test/fixture.js";
+import {
+  startNotionFixture,
+  type NotionFixture,
+} from "../../connectors/test/fixture.js";
 
 // Test-only reversible box standing in for OS encryption.
 const box: SecretBox = {
@@ -24,19 +27,31 @@ const PARENT = "11111111-1111-1111-1111-111111111111";
 // Deterministic model: reads with the granted tools, then proposes one page.
 const runner: ModelRunner = async (request, onText) => {
   const text = String(request.messages.at(-1)?.content);
-  const tool = (name: string) => request.connectorTools?.find((t) => t.name === name);
-  const notes: string[] = [`skills:${request.skills.map((s) => s.id).join(",")}`];
+  const tool = (name: string) =>
+    request.connectorTools?.find((t) => t.name === name);
+  const notes: string[] = [
+    `skills:${request.skills.map((s) => s.id).join(",")}`,
+  ];
   if (text.includes("brief")) {
     const skill = request.skills.find((s) => s.name === "document-brief");
     if (skill) {
       const loaded = request.loadSkill(skill.id);
       notes.push(`skill:${loaded.resources.join(",")}`);
-      notes.push(request.readSkillResource(skill.id, loaded.resources[0]!).split("\n")[0]!);
+      notes.push(
+        request
+          .readSkillResource(skill.id, loaded.resources[0]!)
+          .split("\n")[0]!,
+      );
     }
     const search = tool("notion_search");
-    notes.push(JSON.stringify(search ? await search.execute({ query: "planning" }) : "no-search"));
+    notes.push(
+      JSON.stringify(
+        search ? await search.execute({ query: "planning" }) : "no-search",
+      ),
+    );
     const fetchTool = tool("notion_fetch");
-    if (fetchTool) notes.push(JSON.stringify(await fetchTool.execute({ page: PARENT })));
+    if (fetchTool)
+      notes.push(JSON.stringify(await fetchTool.execute({ page: PARENT })));
     const propose = tool("notion_propose_page");
     if (propose)
       notes.push(
@@ -54,7 +69,11 @@ const runner: ModelRunner = async (request, onText) => {
   return out;
 };
 
-async function boot(dir: string, fixture: NotionFixture, extra: Parameters<typeof startRuntime>[0]["broker"] = {}) {
+async function boot(
+  dir: string,
+  fixture: NotionFixture,
+  extra: Parameters<typeof startRuntime>[0]["broker"] = {},
+) {
   const runtime = await startRuntime({
     dataDir: dir,
     runner,
@@ -102,14 +121,25 @@ async function skillFiles(dir: string) {
   return files;
 }
 async function install(r: Runtime, id: string, version: string) {
-  const preview = await r.ok<InstallPreview>("install/preview", { id, version });
-  await r.ok("install", { id, version, digest: preview.digest, consent: preview.newCapabilities });
+  const preview = await r.ok<InstallPreview>("install/preview", {
+    id,
+    version,
+  });
+  await r.ok("install", {
+    id,
+    version,
+    digest: preview.digest,
+    consent: preview.newCapabilities,
+  });
   return preview;
 }
 async function connect(r: Runtime) {
-  const started = await r.ok<{ authorizationUrl: string; opened: boolean }>("connectors/connect", {
-    connectorId: "socius/notion",
-  });
+  const started = await r.ok<{ authorizationUrl: string; opened: boolean }>(
+    "connectors/connect",
+    {
+      connectorId: "socius/notion",
+    },
+  );
   // Simulate the user approving in their browser: follow the provider redirect to Socius.
   const consent = await fetch(started.authorizationUrl, { redirect: "manual" });
   const callback = consent.headers.get("location")!;
@@ -122,7 +152,11 @@ async function connect(r: Runtime) {
   return (await r.state()).connections.find((c) => c.state !== "disconnected")!;
 }
 async function setModel(r: Runtime) {
-  await r.ok("settings", { provider: "ollama", model: "fixture", baseURL: "http://127.0.0.1:11434/v1" });
+  await r.ok("settings", {
+    provider: "ollama",
+    model: "fixture",
+    baseURL: "http://127.0.0.1:11434/v1",
+  });
 }
 async function chat(r: Runtime, botId: string, content: string) {
   const response = await r.request("chat", { botId, content });
@@ -130,7 +164,12 @@ async function chat(r: Runtime, botId: string, content: string) {
   assert.match(events, /"type":"done"/);
   return events;
 }
-async function grant(r: Runtime, botId: string, capability: string, granted = true) {
+async function grant(
+  r: Runtime,
+  botId: string,
+  capability: string,
+  granted = true,
+) {
   await r.ok("grants", { botId, capability, granted });
 }
 
@@ -140,16 +179,37 @@ test("winning flow: import skill, connect Notion, read, approve one exact write,
   let r = await boot(dir, fixture);
   try {
     // 1. Import a standard skill and review its release before installing.
-    const imported = await r.ok<{ release: { manifest: { id: string; version: string }; trust: string; source: { type: string } } }>(
-      "skills/import",
-      { label: "document-brief", files: await skillFiles(resolve("examples/skills/document-brief")) },
-    );
+    const imported = await r.ok<{
+      release: {
+        manifest: { id: string; version: string };
+        trust: string;
+        source: { type: string };
+      };
+    }>("skills/import", {
+      label: "document-brief",
+      files: await skillFiles(resolve("examples/skills/document-brief")),
+    });
     assert.equal(imported.release.trust, "local-unverified");
     assert.equal(imported.release.source.type, "local-import");
-    const skillPreview = await r.ok<InstallPreview>("install/preview", { id: "local/document-brief", version: "1.0.0" });
-    assert.deepEqual(skillPreview.newCapabilities, ["documents.read", "documents.write"]);
+    const skillPreview = await r.ok<InstallPreview>("install/preview", {
+      id: "local/document-brief",
+      version: "1.0.0",
+    });
+    assert.deepEqual(skillPreview.newCapabilities, [
+      "documents.read",
+      "documents.write",
+    ]);
     // Missing consent blocks installation.
-    assert.equal((await r.request("install", { id: "local/document-brief", version: "1.0.0", digest: skillPreview.digest })).status, 409);
+    assert.equal(
+      (
+        await r.request("install", {
+          id: "local/document-brief",
+          version: "1.0.0",
+          digest: skillPreview.digest,
+        })
+      ).status,
+      409,
+    );
     await install(r, "local/document-brief", "1.0.0");
     await install(r, "socius/notion", "0.2.0");
 
@@ -179,10 +239,17 @@ test("winning flow: import skill, connect Notion, read, approve one exact write,
     events = await chat(r, main.id, "Make a brief");
     assert.match(events, /Q3 planning/);
     assert.match(events, /awaiting-approval/);
-    assert.equal(fixture.calls.filter((c) => c.tool === "notion-create-pages").length, 0);
+    assert.equal(
+      fixture.calls.filter((c) => c.tool === "notion-create-pages").length,
+      0,
+    );
     let action = (await r.state()).actions[0]!;
     assert.equal(action.state, "pending");
-    assert.deepEqual(action.arguments, { parentPage: PARENT, title: "Q3 brief", content: "## Findings\n- Ship connectors [Q3 planning]" });
+    assert.deepEqual(action.arguments, {
+      parentPage: PARENT,
+      title: "Q3 brief",
+      content: "## Findings\n- Ship connectors [Q3 planning]",
+    });
     assert.equal(action.actor.botId, main.id);
     assert.equal(action.release.id, "socius/notion");
 
@@ -191,14 +258,41 @@ test("winning flow: import skill, connect Notion, read, approve one exact write,
     r = await boot(dir, fixture);
     action = (await r.state()).actions[0]!;
     assert.equal(action.state, "pending");
-    assert.equal((await r.request("actions/resolve", { id: action.id, digest: "0".repeat(64), approve: true })).status, 409);
-    const approved = await r.ok<ActionRecord>("actions/resolve", { id: action.id, digest: action.digest, approve: true });
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: action.id,
+          digest: "0".repeat(64),
+          approve: true,
+        })
+      ).status,
+      409,
+    );
+    const approved = await r.ok<ActionRecord>("actions/resolve", {
+      id: action.id,
+      digest: action.digest,
+      approve: true,
+    });
     assert.equal(approved.state, "succeeded");
     assert.match(approved.result!.url!, /^https:\/\/www\.notion\.so\//);
-    assert.equal(fixture.calls.filter((c) => c.tool === "notion-create-pages").length, 1);
-    assert.ok(fixture.pages.some((p) => p.title === "Q3 brief" && p.parent === PARENT));
+    assert.equal(
+      fixture.calls.filter((c) => c.tool === "notion-create-pages").length,
+      1,
+    );
+    assert.ok(
+      fixture.pages.some((p) => p.title === "Q3 brief" && p.parent === PARENT),
+    );
     // Executes once: a second approval is refused.
-    assert.equal((await r.request("actions/resolve", { id: action.id, digest: action.digest, approve: true })).status, 409);
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: action.id,
+          digest: action.digest,
+          approve: true,
+        })
+      ).status,
+      409,
+    );
     const activity = (await r.state()).activity.map((a) => a.kind);
     assert.ok(activity.includes("action.succeeded"));
     assert.ok(activity.includes("connector.read"));
@@ -233,37 +327,93 @@ test("tampering, expiry, revoked grants and disabled connectors block writes", a
     // Tampering with stored arguments invalidates the binding digest.
     await r.close();
     const db = new DatabaseSync(join(dir, "socius.sqlite"));
-    const row = db.prepare("SELECT data FROM records WHERE kind='action' AND id=?").get(action.id)!;
+    const row = db
+      .prepare("SELECT data FROM records WHERE kind='action' AND id=?")
+      .get(action.id)!;
     const tampered = JSON.parse(String(row.data));
     tampered.arguments.title = "Something else";
-    db.prepare("UPDATE records SET data=? WHERE kind='action' AND id=?").run(JSON.stringify(tampered), action.id);
+    db.prepare("UPDATE records SET data=? WHERE kind='action' AND id=?").run(
+      JSON.stringify(tampered),
+      action.id,
+    );
     db.close();
     r = await boot(dir, fixture, { now: () => now });
-    assert.equal((await r.request("actions/resolve", { id: action.id, digest: action.digest, approve: true })).status, 409);
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: action.id,
+          digest: action.digest,
+          approve: true,
+        })
+      ).status,
+      409,
+    );
 
     // Expiry.
     await chat(r, main.id, "brief again");
-    let next = (await r.state()).actions.find((a) => a.state === "pending" && a.id !== action.id)!;
+    let next = (await r.state()).actions.find(
+      (a) => a.state === "pending" && a.id !== action.id,
+    )!;
     now += 2 * 86_400_000;
-    assert.equal((await r.request("actions/resolve", { id: next.id, digest: next.digest, approve: true })).status, 409);
-    assert.equal((await r.state()).actions.find((a) => a.id === next.id)!.state, "expired");
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: next.id,
+          digest: next.digest,
+          approve: true,
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (await r.state()).actions.find((a) => a.id === next.id)!.state,
+      "expired",
+    );
     now = Date.now();
 
     // Revoked bot grant blocks a pending write at execution time.
     await chat(r, main.id, "brief three");
-    next = (await r.state()).actions.find((a) => a.state === "pending" && a.id !== action.id)!;
+    next = (await r.state()).actions.find(
+      (a) => a.state === "pending" && a.id !== action.id,
+    )!;
     await grant(r, main.id, "documents.write", false);
-    assert.equal((await r.request("actions/resolve", { id: next.id, digest: next.digest, approve: true })).status, 403);
-    assert.equal((await r.state()).actions.find((a) => a.id === next.id)!.state, "blocked");
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: next.id,
+          digest: next.digest,
+          approve: true,
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (await r.state()).actions.find((a) => a.id === next.id)!.state,
+      "blocked",
+    );
     await grant(r, main.id, "documents.write");
 
     // Disabling the connector blocks pending writes and removes the tools.
     await chat(r, main.id, "brief four");
-    next = (await r.state()).actions.find((a) => a.state === "pending" && a.id !== action.id)!;
+    next = (await r.state()).actions.find(
+      (a) => a.state === "pending" && a.id !== action.id,
+    )!;
     await r.ok("installations/enable", { id: "socius/notion", enabled: false });
-    assert.equal((await r.request("actions/resolve", { id: next.id, digest: next.digest, approve: true })).status, 403);
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: next.id,
+          digest: next.digest,
+          approve: true,
+        })
+      ).status,
+      403,
+    );
     assert.match(await chat(r, main.id, "brief five"), /no-search/);
-    assert.equal(fixture.calls.filter((c) => c.tool === "notion-create-pages").length, 0);
+    assert.equal(
+      fixture.calls.filter((c) => c.tool === "notion-create-pages").length,
+      0,
+    );
   } finally {
     await r.close();
     await fixture.close();
@@ -277,10 +427,21 @@ test("board and delegated requests go through the same broker and are blocked af
   const r = await boot(dir, fixture);
   try {
     const { main } = await proposed(r, fixture);
-    const receipt = (await r.state()).installations.find((i) => i.id === "socius/notion")!;
-    const release = { id: receipt.id, version: receipt.version, digest: receipt.digest };
+    const receipt = (await r.state()).installations.find(
+      (i) => i.id === "socius/notion",
+    )!;
+    const release = {
+      id: receipt.id,
+      version: receipt.version,
+      digest: receipt.digest,
+    };
     const boardRequest = {
-      actor: { botId: main.id, taskId: "board-task-1", boardId: "board-1", runId: "run-1" },
+      actor: {
+        botId: main.id,
+        taskId: "board-task-1",
+        boardId: "board-1",
+        runId: "run-1",
+      },
       release,
       action: "notion.search",
       arguments: { query: "planning" },
@@ -288,9 +449,24 @@ test("board and delegated requests go through the same broker and are blocked af
     const read = await r.broker.request(boardRequest);
     assert.equal(read.status, "completed");
     // Callers cannot self-grant: an unknown action or a mismatched release is refused.
-    await assert.rejects(r.broker.request({ ...boardRequest, action: "notion.delete-everything" }), /Unknown action/);
-    await assert.rejects(r.broker.request({ ...boardRequest, release: { ...release, digest: "0".repeat(64) } }), /release changed/);
-    await assert.rejects(r.broker.request({ ...boardRequest, arguments: { query: "x", code: "rm -rf" } }), /Invalid arguments/);
+    await assert.rejects(
+      r.broker.request({ ...boardRequest, action: "notion.delete-everything" }),
+      /Unknown action/,
+    );
+    await assert.rejects(
+      r.broker.request({
+        ...boardRequest,
+        release: { ...release, digest: "0".repeat(64) },
+      }),
+      /release changed/,
+    );
+    await assert.rejects(
+      r.broker.request({
+        ...boardRequest,
+        arguments: { query: "x", code: "rm -rf" },
+      }),
+      /Invalid arguments/,
+    );
     // A board write parks for approval like any other.
     const write = await r.broker.request({
       ...boardRequest,
@@ -299,20 +475,47 @@ test("board and delegated requests go through the same broker and are blocked af
     });
     assert.equal(write.status, "awaiting-approval");
     // Revoking the connection blocks reads and the pending write.
-    const connection = (await r.state()).connections.find((c) => c.state === "ready")!;
-    const disconnected = await r.ok<ConnectorConnection>("connectors/disconnect", { connectionId: connection.id });
+    const connection = (await r.state()).connections.find(
+      (c) => c.state === "ready",
+    )!;
+    const disconnected = await r.ok<ConnectorConnection>(
+      "connectors/disconnect",
+      { connectionId: connection.id },
+    );
     assert.equal(disconnected.state, "disconnected");
     assert.ok(fixture.revoked.length >= 1, "provider revocation was requested");
     await assert.rejects(r.broker.request(boardRequest), /not connected/);
-    const pending = (await r.state()).actions.find((a) => a.actor.boardId === "board-1")!;
-    assert.equal((await r.request("actions/resolve", { id: pending.id, digest: pending.digest, approve: true })).status, 409);
+    const pending = (await r.state()).actions.find(
+      (a) => a.actor.boardId === "board-1",
+    )!;
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: pending.id,
+          digest: pending.digest,
+          approve: true,
+        })
+      ).status,
+      409,
+    );
     // Reconnecting creates a new account binding; old approvals stay blocked.
     await connect(r);
-    assert.equal((await r.request("actions/resolve", { id: pending.id, digest: pending.digest, approve: true })).status, 409);
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: pending.id,
+          digest: pending.digest,
+          approve: true,
+        })
+      ).status,
+      409,
+    );
     // Uninstall removes the connector and revokes its credentials.
     await r.ok("installations/uninstall", { id: "socius/notion" });
     await assert.rejects(r.broker.request(boardRequest), /not installed/);
-    assert.ok((await r.state()).connections.every((c) => c.state === "disconnected"));
+    assert.ok(
+      (await r.state()).connections.every((c) => c.state === "disconnected"),
+    );
   } finally {
     await r.close();
     await fixture.close();
@@ -324,12 +527,17 @@ test("rate limits and timeouts never trigger blind repeats; ambiguous writes are
   const fixture = await startNotionFixture();
   const dir = await mkdtemp(join(tmpdir(), "socius-retry-"));
   const r = await boot(dir, fixture);
-  const creates = () => fixture.calls.filter((c) => c.tool === "notion-create-pages").length;
+  const creates = () =>
+    fixture.calls.filter((c) => c.tool === "notion-create-pages").length;
   try {
     const { main, action } = await proposed(r, fixture);
     // Rate limit: one attempt, failed and retryable only by the user.
     fixture.createMode = "rate-limit";
-    let result = await r.ok<ActionRecord>("actions/resolve", { id: action.id, digest: action.digest, approve: true });
+    let result = await r.ok<ActionRecord>("actions/resolve", {
+      id: action.id,
+      digest: action.digest,
+      approve: true,
+    });
     assert.equal(result.state, "failed");
     assert.equal(result.retryable, true);
     assert.equal(result.attempts.at(-1)!.outcome, "rate-limited");
@@ -343,15 +551,24 @@ test("rate limits and timeouts never trigger blind repeats; ambiguous writes are
 
     // Timeout after the remote effect happened: reconciled to success, not repeated.
     await chat(r, main.id, "brief again");
-    const second = (await r.state()).actions.find((a) => a.state === "pending")!;
+    const second = (await r.state()).actions.find(
+      (a) => a.state === "pending",
+    )!;
     fixture.createMode = "hang-after-create";
-    result = await r.ok<ActionRecord>("actions/resolve", { id: second.id, digest: second.digest, approve: true });
+    result = await r.ok<ActionRecord>("actions/resolve", {
+      id: second.id,
+      digest: second.digest,
+      approve: true,
+    });
     assert.equal(result.state, "succeeded");
     assert.equal(result.attempts.length, 1);
     assert.equal(result.attempts[0]!.outcome, "succeeded");
     assert.match(result.attempts[0]!.detail!, /Confirmed by checking/);
     assert.equal(creates(), 3);
-    assert.equal((await r.request("actions/retry", { id: second.id })).status, 409);
+    assert.equal(
+      (await r.request("actions/retry", { id: second.id })).status,
+      409,
+    );
 
     // Ambiguous with no visible effect: stays unknown, not retryable until checked.
     fixture.createMode = "ok";
@@ -365,10 +582,17 @@ test("rate limits and timeouts never trigger blind repeats; ambiguous writes are
       fixture.pages.push = originalPush;
       return before + items.length;
     };
-    result = await r.ok<ActionRecord>("actions/resolve", { id: third.id, digest: third.digest, approve: true });
+    result = await r.ok<ActionRecord>("actions/resolve", {
+      id: third.id,
+      digest: third.digest,
+      approve: true,
+    });
     assert.equal(result.state, "unknown");
     assert.equal(result.retryable, false);
-    assert.equal((await r.request("actions/retry", { id: third.id })).status, 409);
+    assert.equal(
+      (await r.request("actions/retry", { id: third.id })).status,
+      409,
+    );
     result = await r.ok<ActionRecord>("actions/check", { id: third.id });
     assert.equal(result.state, "unknown");
     assert.equal(result.retryable, true);
@@ -390,17 +614,32 @@ test("an interrupted write becomes unknown on restart and is never replayed", as
     const { action } = await proposed(r, fixture);
     await r.close();
     const db = new DatabaseSync(join(dir, "socius.sqlite"));
-    const row = db.prepare("SELECT data FROM records WHERE kind='action' AND id=?").get(action.id)!;
+    const row = db
+      .prepare("SELECT data FROM records WHERE kind='action' AND id=?")
+      .get(action.id)!;
     const record = JSON.parse(String(row.data)) as ActionRecord;
     record.state = "executing";
-    record.attempts.push({ id: "a", startedAt: new Date().toISOString(), finishedAt: null, outcome: null, detail: null, baseline: null });
-    db.prepare("UPDATE records SET data=? WHERE kind='action' AND id=?").run(JSON.stringify(record), action.id);
+    record.attempts.push({
+      id: "a",
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      outcome: null,
+      detail: null,
+      baseline: null,
+    });
+    db.prepare("UPDATE records SET data=? WHERE kind='action' AND id=?").run(
+      JSON.stringify(record),
+      action.id,
+    );
     db.close();
     r = await boot(dir, fixture);
     const after = (await r.state()).actions.find((a) => a.id === action.id)!;
     assert.equal(after.state, "unknown");
     assert.equal(after.retryable, false);
-    assert.equal(fixture.calls.filter((c) => c.tool === "notion-create-pages").length, 0);
+    assert.equal(
+      fixture.calls.filter((c) => c.tool === "notion-create-pages").length,
+      0,
+    );
   } finally {
     await r.close();
     await fixture.close();
@@ -411,7 +650,10 @@ test("an interrupted write becomes unknown on restart and is never replayed", as
 test("connection states: unsupported without secure storage, schema drift, expired access", async () => {
   const fixture = await startNotionFixture();
   const dir = await mkdtemp(join(tmpdir(), "socius-states-"));
-  const plain = await startRuntime({ dataDir: join(dir, "plain"), connectorEndpoints: { "socius/notion": `${fixture.url}/mcp` } });
+  const plain = await startRuntime({
+    dataDir: join(dir, "plain"),
+    connectorEndpoints: { "socius/notion": `${fixture.url}/mcp` },
+  });
   const r = await boot(join(dir, "secure"), fixture);
   try {
     const pairing = await fetch(plain.pairingURL, { redirect: "manual" });
@@ -419,14 +661,30 @@ test("connection states: unsupported without secure storage, schema drift, expir
     const post = (path: string, data: unknown) =>
       fetch(`${plain.origin}/api/${path}`, {
         method: "POST",
-        headers: { Cookie: cookie, Origin: plain.origin, "Content-Type": "application/json" },
+        headers: {
+          Cookie: cookie,
+          Origin: plain.origin,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(data),
       });
-    const preview = (await (await post("install/preview", { id: "socius/notion", version: "0.2.0" })).json()) as InstallPreview;
-    await post("install", { id: "socius/notion", version: "0.2.0", digest: preview.digest, consent: preview.newCapabilities });
-    const refused = await post("connectors/connect", { connectorId: "socius/notion" });
+    const preview = (await (
+      await post("install/preview", { id: "socius/notion", version: "0.2.0" })
+    ).json()) as InstallPreview;
+    await post("install", {
+      id: "socius/notion",
+      version: "0.2.0",
+      digest: preview.digest,
+      consent: preview.newCapabilities,
+    });
+    const refused = await post("connectors/connect", {
+      connectorId: "socius/notion",
+    });
     assert.equal(refused.status, 409);
-    assert.match((await refused.json()).error, /OS-backed credential encryption/);
+    assert.match(
+      (await refused.json()).error,
+      /OS-backed credential encryption/,
+    );
 
     await install(r, "socius/notion", "0.2.0");
     fixture.driftSchema = true;
@@ -434,9 +692,18 @@ test("connection states: unsupported without secure storage, schema drift, expir
     assert.equal(drifted.state, "unsupported");
     assert.match(drifted.detail, /notion-search/);
     fixture.driftSchema = false;
-    assert.equal((await r.ok<ConnectorConnection>("connectors/verify", { connectionId: drifted.id })).state, "ready");
+    assert.equal(
+      (
+        await r.ok<ConnectorConnection>("connectors/verify", {
+          connectionId: drifted.id,
+        })
+      ).state,
+      "ready",
+    );
     fixture.revokeAll();
-    const expired = await r.ok<ConnectorConnection>("connectors/verify", { connectionId: drifted.id });
+    const expired = await r.ok<ConnectorConnection>("connectors/verify", {
+      connectionId: drifted.id,
+    });
     assert.equal(expired.state, "authentication-required");
   } finally {
     await plain.close();
@@ -456,17 +723,27 @@ test("skill lifecycle: integrity, immutable releases, permission expansion, disa
     ).toString("base64");
   const files = (version: string, caps = "", ref = "v1") => [
     { path: "digest/SKILL.md", content: md(version, caps) },
-    { path: "digest/references/guide.md", content: Buffer.from(`# Guide ${ref}`).toString("base64") },
+    {
+      path: "digest/references/guide.md",
+      content: Buffer.from(`# Guide ${ref}`).toString("base64"),
+    },
   ];
   try {
     await r.ok("skills/import", { files: files("1.0.0") });
     // Same identity with different content is refused.
-    const conflict = await r.request("skills/import", { files: files("1.0.0", "", "changed") });
+    const conflict = await r.request("skills/import", {
+      files: files("1.0.0", "", "changed"),
+    });
     assert.equal(conflict.status, 409);
     assert.match((await conflict.json()).error, /immutable/);
     // Malformed and unsafe imports are refused with clear errors.
     for (const bad of [
-      [{ path: "digest/SKILL.md", content: Buffer.from("no frontmatter").toString("base64") }],
+      [
+        {
+          path: "digest/SKILL.md",
+          content: Buffer.from("no frontmatter").toString("base64"),
+        },
+      ],
       [...files("1.0.1"), { path: "digest/../escape.md", content: "eA==" }],
       [...files("1.0.1"), { path: "digest/run.py", content: "eA==" }],
     ]) {
@@ -476,24 +753,66 @@ test("skill lifecycle: integrity, immutable releases, permission expansion, disa
     await install(r, "local/digest", "1.0.0");
 
     // Tampered files on disk fail integrity verification before activation.
-    await r.ok("skills/import", { files: files("1.1.0", "documents.read", "v2") });
-    const v11 = (await r.state()).releases.find((x) => x.manifest.id === "local/digest" && x.manifest.version === "1.1.0")!;
-    const guide = join(dir, "packages", "releases", v11.digest, "references", "guide.md");
+    await r.ok("skills/import", {
+      files: files("1.1.0", "documents.read", "v2"),
+    });
+    const v11 = (await r.state()).releases.find(
+      (x) => x.manifest.id === "local/digest" && x.manifest.version === "1.1.0",
+    )!;
+    const guide = join(
+      dir,
+      "packages",
+      "releases",
+      v11.digest,
+      "references",
+      "guide.md",
+    );
     const original = await readFile(guide);
     await writeFile(guide, "# tampered");
-    const tampered = await r.ok<InstallPreview>("install/preview", { id: "local/digest", version: "1.1.0" });
-    const failed = await r.request("install", { id: "local/digest", version: "1.1.0", digest: tampered.digest, consent: tampered.newCapabilities });
+    const tampered = await r.ok<InstallPreview>("install/preview", {
+      id: "local/digest",
+      version: "1.1.0",
+    });
+    const failed = await r.request("install", {
+      id: "local/digest",
+      version: "1.1.0",
+      digest: tampered.digest,
+      consent: tampered.newCapabilities,
+    });
     assert.equal(failed.status, 409);
     assert.match((await failed.json()).error, /integrity/);
     await writeFile(guide, original);
 
     // Updating to a release that requests more permissions requires fresh consent.
-    const update = await r.ok<InstallPreview>("install/preview", { id: "local/digest", version: "1.1.0" });
+    const update = await r.ok<InstallPreview>("install/preview", {
+      id: "local/digest",
+      version: "1.1.0",
+    });
     assert.deepEqual(update.newCapabilities, ["documents.read"]);
-    assert.deepEqual(update.packages[0]!.installed, { version: "1.0.0", digest: update.packages[0]!.installed!.digest });
-    assert.equal((await r.request("install", { id: "local/digest", version: "1.1.0", digest: update.digest, consent: [] })).status, 409);
-    await r.ok("install", { id: "local/digest", version: "1.1.0", digest: update.digest, consent: ["documents.read"] });
-    let receipt = (await r.state()).installations.find((i) => i.id === "local/digest")!;
+    assert.deepEqual(update.packages[0]!.installed, {
+      version: "1.0.0",
+      digest: update.packages[0]!.installed!.digest,
+    });
+    assert.equal(
+      (
+        await r.request("install", {
+          id: "local/digest",
+          version: "1.1.0",
+          digest: update.digest,
+          consent: [],
+        })
+      ).status,
+      409,
+    );
+    await r.ok("install", {
+      id: "local/digest",
+      version: "1.1.0",
+      digest: update.digest,
+      consent: ["documents.read"],
+    });
+    let receipt = (await r.state()).installations.find(
+      (i) => i.id === "local/digest",
+    )!;
     assert.equal(receipt.version, "1.1.0");
     assert.equal(receipt.history.at(-1)!.version, "1.0.0");
 
@@ -509,21 +828,45 @@ test("skill lifecycle: integrity, immutable releases, permission expansion, disa
     receipt = await r.ok("installations/rollback", { id: "local/digest" });
     assert.equal(receipt.version, "1.0.0");
     assert.deepEqual(receipt.consentedCapabilities, []);
-    assert.equal((await r.request("installations/rollback", { id: "local/digest" })).status, 409);
+    assert.equal(
+      (await r.request("installations/rollback", { id: "local/digest" }))
+        .status,
+      409,
+    );
 
     // Dependencies block uninstalling a required package.
     await install(r, "socius/researcher", "0.1.0");
-    const blocked = await r.request("installations/uninstall", { id: "socius/research-brief" });
+    const blocked = await r.request("installations/uninstall", {
+      id: "socius/research-brief",
+    });
     assert.equal(blocked.status, 409);
-    assert.match((await blocked.json()).error, /Required by socius\/researcher/);
+    assert.match(
+      (await blocked.json()).error,
+      /Required by socius\/researcher/,
+    );
     await r.ok("installations/uninstall", { id: "local/digest" });
-    assert.ok(!(await r.state()).installations.some((i) => i.id === "local/digest"));
+    assert.ok(
+      !(await r.state()).installations.some((i) => i.id === "local/digest"),
+    );
 
     // Skill export writes a standard directory after review.
-    const preview = await r.ok<ExportPreview>("export/skill/preview", { id: "local/digest", version: "1.1.0" });
-    assert.deepEqual(preview.files.map((f) => f.path), ["digest/SKILL.md", "digest/references/guide.md"]);
-    const exported = await r.ok<{ path: string }>("export/skill", { id: "local/digest", version: "1.1.0", digest: preview.digest });
-    assert.match(await readFile(join(exported.path, "SKILL.md"), "utf8"), /name: digest/);
+    const preview = await r.ok<ExportPreview>("export/skill/preview", {
+      id: "local/digest",
+      version: "1.1.0",
+    });
+    assert.deepEqual(
+      preview.files.map((f) => f.path),
+      ["digest/SKILL.md", "digest/references/guide.md"],
+    );
+    const exported = await r.ok<{ path: string }>("export/skill", {
+      id: "local/digest",
+      version: "1.1.0",
+      digest: preview.digest,
+    });
+    assert.match(
+      await readFile(join(exported.path, "SKILL.md"), "utf8"),
+      /name: digest/,
+    );
   } finally {
     await r.close();
     await fixture.close();
@@ -538,35 +881,86 @@ test("bot export uses an allowlist, flags private text and requires review", asy
   try {
     const main = (await r.state()).bots[0]!;
     await r.ok("grants", { botId: main.id, memory: true });
-    await r.ok("memory", { botId: main.id, content: "My manager is Priya and my salary review is in May." });
+    await r.ok("memory", {
+      botId: main.id,
+      content: "My manager is Priya and my salary review is in May.",
+    });
     await setModel(r);
     await chat(r, main.id, "hello there");
     const draft = {
       name: "Planning helper",
       description: "Helps plan weeks.",
       role: "Planner",
-      instructions: "Plan carefully. Email me at someone@example.com. Context: My manager is Priya and my salary review is in May.",
+      instructions:
+        "Plan carefully. Email me at someone@example.com. Context: My manager is Priya and my salary review is in May.",
       version: "1.0.0",
       license: "MIT",
     };
-    const preview = await r.ok<ExportPreview>("export/bot/preview", { botId: main.id, draft });
+    const preview = await r.ok<ExportPreview>("export/bot/preview", {
+      botId: main.id,
+      draft,
+    });
     const kinds = preview.findings.map((f) => f.kind).sort();
     assert.deepEqual(kinds, ["email", "private-memory"]);
     const template = JSON.parse(preview.files[0]!.content);
-    for (const forbidden of ["grantedCapabilities", "memoryNamespace", "messages", "memory", "routinesEnabled", "apiKey", "connections"])
+    for (const forbidden of [
+      "grantedCapabilities",
+      "memoryNamespace",
+      "messages",
+      "memory",
+      "routinesEnabled",
+      "apiKey",
+      "connections",
+    ])
       assert.equal(forbidden in template, false, forbidden);
-    assert.deepEqual(template.capabilities, ["memory.read", "memory.write", "tasks.delegate"]);
+    assert.deepEqual(template.capabilities, [
+      "memory.read",
+      "memory.write",
+      "tasks.delegate",
+    ]);
     assert.doesNotMatch(preview.files[0]!.content, /hello there/);
     // Flagged text must be acknowledged; a changed draft invalidates the review.
-    assert.equal((await r.request("export/bot", { botId: main.id, draft, digest: preview.digest })).status, 409);
-    assert.equal((await r.request("export/bot", { botId: main.id, draft: { ...draft, name: "X" }, digest: preview.digest, acknowledge: true })).status, 409);
-    const clean = { ...draft, instructions: "Plan carefully from supplied context." };
-    const cleanPreview = await r.ok<ExportPreview>("export/bot/preview", { botId: main.id, draft: clean });
+    assert.equal(
+      (
+        await r.request("export/bot", {
+          botId: main.id,
+          draft,
+          digest: preview.digest,
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (
+        await r.request("export/bot", {
+          botId: main.id,
+          draft: { ...draft, name: "X" },
+          digest: preview.digest,
+          acknowledge: true,
+        })
+      ).status,
+      409,
+    );
+    const clean = {
+      ...draft,
+      instructions: "Plan carefully from supplied context.",
+    };
+    const cleanPreview = await r.ok<ExportPreview>("export/bot/preview", {
+      botId: main.id,
+      draft: clean,
+    });
     assert.deepEqual(cleanPreview.findings, []);
-    const done = await r.ok<{ path: string }>("export/bot", { botId: main.id, draft: clean, digest: cleanPreview.digest });
+    const done = await r.ok<{ path: string }>("export/bot", {
+      botId: main.id,
+      draft: clean,
+      digest: cleanPreview.digest,
+    });
     const written = JSON.parse(await readFile(done.path, "utf8"));
     // The exported template imports back as an unverified local release and installs as a fresh bot.
-    const imported = await r.ok<{ release: { trust: string } }>("templates/import", { manifest: written });
+    const imported = await r.ok<{ release: { trust: string } }>(
+      "templates/import",
+      { manifest: written },
+    );
     assert.equal(imported.release.trust, "local-unverified");
     await install(r, "local/planning-helper", "1.0.0");
     const bots = (await r.state()).bots;

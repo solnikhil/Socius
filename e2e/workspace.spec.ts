@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+// Both tests share one fixture runtime and its one-time pairing, so they run in order.
+test.describe.configure({ mode: "serial" });
 test("configure a model, create bots manually and through Socius, install skills and edit memory", async ({
   page,
 }) => {
@@ -122,5 +125,133 @@ test("configure a model, create bots manually and through Socius, install skills
     path: "test-results/socius-memory.png",
     fullPage: true,
   });
+  await page.context().storageState({ path: "test-results/paired-state.json" });
   expect(errors).toEqual([]);
+});
+test("import a standard skill, connect Notion, read, approve one exact page and see the result", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    storageState: "test-results/paired-state.json",
+  });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://127.0.0.1:3137/");
+  await expect(
+    page.getByRole("button", { name: "Socius", exact: true }),
+  ).toBeVisible();
+
+  // Import the example SKILL.md directory and review it before installing.
+  await page.getByRole("button", { name: "Connect apps" }).click();
+  await page
+    .getByLabel("Skill folder")
+    .setInputFiles(resolve("examples/skills/document-brief"));
+  const detail = page.getByRole("dialog", { name: "document-brief" });
+  await expect(
+    detail.getByText("Imported locally · publisher not verified"),
+  ).toBeVisible();
+  await expect(
+    detail.getByText("references/brief-template.md", { exact: true }),
+  ).toBeVisible();
+  const installSkill = detail.getByRole("button", { name: "Install skill" });
+  await expect(installSkill).toBeDisabled();
+  await detail.getByRole("checkbox").check();
+  await page.screenshot({
+    path: "test-results/socius-skill-review.png",
+    animations: "disabled",
+  });
+  await installSkill.click();
+  await expect(detail).not.toBeVisible();
+  await page.getByRole("tab", { name: "Skills", exact: true }).click();
+  await expect(
+    page
+      .locator(".app-row")
+      .filter({ hasText: "document-brief" })
+      .getByRole("button", { name: "Added" }),
+  ).toBeVisible();
+
+  // Registry discovery is metadata-only; unreviewed servers cannot be installed.
+  await page.getByRole("tab", { name: "MCP Registry" }).click();
+  await expect(page.getByText("io.example/unreviewed")).toBeVisible();
+  await expect(
+    page
+      .locator(".registry-row")
+      .filter({ hasText: "io.example/unreviewed" })
+      .getByText("Not reviewed", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/socius-registry.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Review" }).click();
+
+  // Install and connect Notion through a browser sign-in outside chat.
+  const notion = page.getByRole("dialog", { name: "Notion" });
+  await expect(
+    notion.getByText("Registry entry reviewed by Socius"),
+  ).toBeVisible();
+  await notion.getByRole("checkbox").check();
+  await notion.getByRole("button", { name: "Install connector" }).click();
+  await expect(notion.getByText("Authentication required")).toBeVisible();
+  const popup = context.waitForEvent("page");
+  await notion.getByRole("button", { name: "Connect Notion" }).click();
+  const signIn = await popup;
+  await expect(
+    signIn.getByText("Connected. You can close this tab"),
+  ).toBeVisible();
+  await signIn.close();
+  await expect(notion.getByText("Ready", { exact: true })).toBeVisible({
+    timeout: 10000,
+  });
+  // Grants are server state: click, then wait for the refreshed snapshot.
+  for (const capability of ["documents.read", "documents.write"]) {
+    const box = notion.getByRole("checkbox", { name: `Socius ${capability}` });
+    await box.click();
+    await expect(box).toBeChecked();
+  }
+  await page.screenshot({
+    path: "test-results/socius-notion-setup.png",
+    animations: "disabled",
+  });
+  await notion.getByRole("button", { name: "Close dialog" }).click();
+  await page.keyboard.press("Escape");
+
+  // Ask for a source-backed brief; the bot reads and proposes one exact page.
+  await page.getByRole("button", { name: "Socius", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Message Socius" })
+    .fill("Make a brief from my Q3 planning page");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(
+    page.getByText("From Q3 planning: ship connectors."),
+  ).toBeVisible();
+  const card = page
+    .locator(".action-card")
+    .filter({ hasText: "Review a change" });
+  await expect(card.getByText("Create Notion page “Q3 brief”")).toBeVisible();
+  await expect(card.getByText("## Findings")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/socius-action-review.png",
+    animations: "disabled",
+  });
+  await card.getByRole("button", { name: "Approve this change" }).click();
+  const done = page.locator(".action-card").filter({ hasText: "Change made" });
+  await expect(done.getByText("Created Notion page “Q3 brief”.")).toBeVisible();
+  await expect(done.getByRole("link", { name: "Open" })).toHaveAttribute(
+    "href",
+    /notion\.so/,
+  );
+  await page.screenshot({
+    path: "test-results/socius-action-done.png",
+    animations: "disabled",
+  });
+
+  // The activity record shows the executed change.
+  await page.getByRole("button", { name: "Activity" }).click();
+  await expect(
+    page.getByText("Created Notion page “Q3 brief”.").first(),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
 });

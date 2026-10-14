@@ -116,7 +116,9 @@ export class Catalog {
   latest(id: string): Release | undefined {
     return this.releases()
       .filter((r) => r.manifest.id === id && r.compatible)
-      .sort((a, b) => compareVersions(b.manifest.version, a.manifest.version))[0];
+      .sort((a, b) =>
+        compareVersions(b.manifest.version, a.manifest.version),
+      )[0];
   }
   planInstall(id: string, version: string): InstallPlan {
     const ordered: Release[] = [];
@@ -190,7 +192,10 @@ const PATTERNS: { kind: ReviewFinding["kind"]; re: RegExp }[] = [
     kind: "secret",
     re: /\b(sk-[A-Za-z0-9_-]{12,}|sk-ant-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|ntn_[A-Za-z0-9]{20,}|secret_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}|[A-Fa-f0-9]{40,}|(?:password|passwd|api[_-]?key|token)\s*[:=]\s*\S+)/gi,
   },
-  { kind: "path", re: /(?:[A-Za-z]:\\Users\\[^\s\\]+|\/(?:Users|home)\/[^\s/]+)/g },
+  {
+    kind: "path",
+    re: /(?:[A-Za-z]:\\Users\\[^\s\\]+|\/(?:Users|home)\/[^\s/]+)/g,
+  },
 ];
 /**
  * Flags free text that may contain private material. A heuristic aid to the required

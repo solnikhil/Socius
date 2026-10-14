@@ -154,7 +154,11 @@ test("reviewed installations bind the release digest, persist, and never grant p
       200,
     );
     const after = (await (await r.request("state")).json()) as Snapshot;
-    assert.ok(after.bots.every((b) => !b.grantedCapabilities.includes("documents.read")));
+    assert.ok(
+      after.bots.every(
+        (b) => !b.grantedCapabilities.includes("documents.read"),
+      ),
+    );
   } finally {
     await r.close();
     await rm(dir, { recursive: true, force: true });

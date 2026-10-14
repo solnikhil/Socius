@@ -24,6 +24,7 @@ import {
   type ThemePreference,
 } from "./components/ui.js";
 import { AppIcon } from "./components/AppIcon.js";
+import { needsAttention } from "./components/ActionCard.js";
 import { Chat } from "./views/Chat.js";
 import { NewChat } from "./views/NewChat.js";
 import { ConnectApps } from "./views/ConnectApps.js";
@@ -95,6 +96,8 @@ export function App() {
   const pending = state.approvals.filter(
     (a) => a.state === "pending" && Date.parse(a.expiresAt) > Date.now(),
   );
+  const attention =
+    pending.length + state.actions.filter(needsAttention).length;
   const main =
     state.bots.find((b) => b.template.id === MAIN_BOT_TEMPLATE) ??
     state.bots[0]!;
@@ -194,7 +197,7 @@ export function App() {
               onClick={() => setPage("activity")}
             >
               Activity
-              <span>{pending.length || ""}</span>
+              <span>{attention || ""}</span>
             </button>
             <button
               className={`group-link ${page === "memory" ? "active" : ""}`}
@@ -213,7 +216,7 @@ export function App() {
               onClick={() => setMenu((m) => !m)}
             >
               <User size={16} />
-              {pending.length > 0 && <span className="dot" />}
+              {attention > 0 && <span className="dot" />}
             </button>
             {menu && (
               <div className="popover account-menu" role="menu">

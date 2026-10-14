@@ -69,45 +69,84 @@ export async function startNotionFixture(): Promise<NotionFixture> {
       state.calls.push({ tool, args });
     server.registerTool(
       "notion-search",
-      { description: "Search", inputSchema: (state.driftSchema ? { q: z.string() } : { query: z.string() }) as { query: z.ZodString } },
+      {
+        description: "Search",
+        inputSchema: (state.driftSchema
+          ? { q: z.string() }
+          : { query: z.string() }) as { query: z.ZodString },
+      },
       async (args) => {
         record("notion-search", args);
-        const query = String((args as { query?: string }).query ?? "").toLowerCase();
-        const hits = state.pages.filter((p) => `${p.title} ${p.content}`.toLowerCase().includes(query));
+        const query = String(
+          (args as { query?: string }).query ?? "",
+        ).toLowerCase();
+        const hits = state.pages.filter((p) =>
+          `${p.title} ${p.content}`.toLowerCase().includes(query),
+        );
         return {
           content: [
             {
               type: "text",
-              text: hits.map((p) => `<page url="https://www.notion.so/${p.id.replaceAll("-", "")}">${p.title}</page>`).join("\n") || "No results",
+              text:
+                hits
+                  .map(
+                    (p) =>
+                      `<page url="https://www.notion.so/${p.id.replaceAll("-", "")}">${p.title}</page>`,
+                  )
+                  .join("\n") || "No results",
             },
           ],
         };
       },
     );
-    server.registerTool("notion-fetch", { description: "Fetch", inputSchema: { id: z.string() } }, async (args) => {
-      record("notion-fetch", args);
-      const page = state.pages.find((p) => p.id === args.id);
-      if (!page) return { isError: true, content: [{ type: "text" as const, text: "Not found" }] };
-      const children = state.pages
-        .filter((p) => p.parent === page.id)
-        .map((p) => `<page url="https://www.notion.so/${p.id.replaceAll("-", "")}">${p.title}</page>`);
-      return {
-        content: [{ type: "text" as const, text: `# ${page.title}\n${page.content}\n${children.join("\n")}` }],
-      };
-    });
+    server.registerTool(
+      "notion-fetch",
+      { description: "Fetch", inputSchema: { id: z.string() } },
+      async (args) => {
+        record("notion-fetch", args);
+        const page = state.pages.find((p) => p.id === args.id);
+        if (!page)
+          return {
+            isError: true,
+            content: [{ type: "text" as const, text: "Not found" }],
+          };
+        const children = state.pages
+          .filter((p) => p.parent === page.id)
+          .map(
+            (p) =>
+              `<page url="https://www.notion.so/${p.id.replaceAll("-", "")}">${p.title}</page>`,
+          );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `# ${page.title}\n${page.content}\n${children.join("\n")}`,
+            },
+          ],
+        };
+      },
+    );
     server.registerTool(
       "notion-create-pages",
       {
         description: "Create",
         inputSchema: {
           parent: z.object({ page_id: z.string() }),
-          pages: z.array(z.object({ properties: z.object({ title: z.string() }), content: z.string() })),
+          pages: z.array(
+            z.object({
+              properties: z.object({ title: z.string() }),
+              content: z.string(),
+            }),
+          ),
         },
       },
       async (args) => {
         record("notion-create-pages", args);
         if (state.createMode === "reject")
-          return { isError: true, content: [{ type: "text" as const, text: "Parent not shared" }] };
+          return {
+            isError: true,
+            content: [{ type: "text" as const, text: "Parent not shared" }],
+          };
         const page: FixturePage = {
           id: dashed(randomBytes(16).toString("hex")),
           title: args.pages[0]!.properties.title,
@@ -115,9 +154,15 @@ export async function startNotionFixture(): Promise<NotionFixture> {
           parent: args.parent.page_id,
         };
         state.pages.push(page);
-        if (state.createMode === "hang-after-create") await new Promise((r) => setTimeout(r, 3000));
+        if (state.createMode === "hang-after-create")
+          await new Promise((r) => setTimeout(r, 3000));
         return {
-          content: [{ type: "text" as const, text: `Created https://www.notion.so/${page.id.replaceAll("-", "")}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Created https://www.notion.so/${page.id.replaceAll("-", "")}`,
+            },
+          ],
         };
       },
     );
@@ -125,7 +170,11 @@ export async function startNotionFixture(): Promise<NotionFixture> {
   };
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", state.url);
-    const send = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+    const send = (
+      status: number,
+      body: unknown,
+      headers: Record<string, string> = {},
+    ) => {
       res.writeHead(status, { "Content-Type": "application/json", ...headers });
       res.end(JSON.stringify(body));
     };
@@ -157,10 +206,16 @@ export async function startNotionFixture(): Promise<NotionFixture> {
       // Simulates the user approving access in their browser.
       const clientId = url.searchParams.get("client_id") ?? "";
       const redirect = url.searchParams.get("redirect_uri") ?? "";
-      if (!clients.get(clientId)?.includes(redirect) || url.searchParams.get("code_challenge_method") !== "S256")
+      if (
+        !clients.get(clientId)?.includes(redirect) ||
+        url.searchParams.get("code_challenge_method") !== "S256"
+      )
         return send(400, { error: "invalid_request" });
       const code = randomBytes(12).toString("hex");
-      codes.set(code, { challenge: url.searchParams.get("code_challenge") ?? "", clientId });
+      codes.set(code, {
+        challenge: url.searchParams.get("code_challenge") ?? "",
+        clientId,
+      });
       const target = new URL(redirect);
       target.searchParams.set("code", code);
       target.searchParams.set("state", url.searchParams.get("state") ?? "");
@@ -172,17 +227,29 @@ export async function startNotionFixture(): Promise<NotionFixture> {
       if (form.get("grant_type") === "authorization_code") {
         const grant = codes.get(form.get("code") ?? "");
         codes.delete(form.get("code") ?? "");
-        const challenge = createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url");
-        if (!grant || grant.challenge !== challenge || grant.clientId !== form.get("client_id"))
+        const challenge = createHash("sha256")
+          .update(form.get("code_verifier") ?? "")
+          .digest("base64url");
+        if (
+          !grant ||
+          grant.challenge !== challenge ||
+          grant.clientId !== form.get("client_id")
+        )
           return send(400, { error: "invalid_grant" });
       } else if (form.get("grant_type") === "refresh_token") {
-        if (!refresh.has(form.get("refresh_token") ?? "")) return send(400, { error: "invalid_grant" });
+        if (!refresh.has(form.get("refresh_token") ?? ""))
+          return send(400, { error: "invalid_grant" });
       } else return send(400, { error: "unsupported_grant_type" });
       const access = randomBytes(16).toString("hex"),
         renew = randomBytes(16).toString("hex");
       tokens.add(access);
       refresh.add(renew);
-      return send(200, { access_token: access, refresh_token: renew, token_type: "Bearer", expires_in: 3600 });
+      return send(200, {
+        access_token: access,
+        refresh_token: renew,
+        token_type: "Bearer",
+        expires_in: 3600,
+      });
     }
     if (url.pathname === "/revoke" && req.method === "POST") {
       const token = new URLSearchParams(await read(req)).get("token") ?? "";
@@ -212,15 +279,26 @@ export async function startNotionFixture(): Promise<NotionFixture> {
     }
     send(404, { error: "not found" });
   });
-  async function handle(req: IncomingMessage, res: import("node:http").ServerResponse, parsed?: unknown) {
-    const transport = new StreamableHTTPServerTransport({} as ConstructorParameters<typeof StreamableHTTPServerTransport>[0]);
+  async function handle(
+    req: IncomingMessage,
+    res: import("node:http").ServerResponse,
+    parsed?: unknown,
+  ) {
+    const transport = new StreamableHTTPServerTransport(
+      {} as ConstructorParameters<typeof StreamableHTTPServerTransport>[0],
+    );
     const server = mcp();
     res.on("close", () => {
       void transport.close();
       void server.close();
     });
     await server.connect(transport as Parameters<McpServer["connect"]>[0]);
-    await transport.handleRequest(req, res, parsed ?? (req.method === "POST" ? JSON.parse(await read(req)) : undefined));
+    await transport.handleRequest(
+      req,
+      res,
+      parsed ??
+        (req.method === "POST" ? JSON.parse(await read(req)) : undefined),
+    );
   }
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   state.url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;

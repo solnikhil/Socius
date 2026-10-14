@@ -71,10 +71,13 @@ class StoredOAuthProvider implements OAuthClientProvider {
   }
   clientInformation() {
     const info = this.secrets.clientInformation as
-      | (OAuthClientInformationMixed & { redirect_uris?: string[] })
-      | undefined;
+      (OAuthClientInformationMixed & { redirect_uris?: string[] }) | undefined;
     // The desktop runtime uses an ephemeral port; a new sign-in re-registers for it.
-    if (this.flow && info?.redirect_uris && !info.redirect_uris.includes(this.redirect))
+    if (
+      this.flow &&
+      info?.redirect_uris &&
+      !info.redirect_uris.includes(this.redirect)
+    )
       return undefined;
     return info;
   }
@@ -92,7 +95,10 @@ class StoredOAuthProvider implements OAuthClientProvider {
   redirectToAuthorization(url: URL) {
     // Outside an explicit sign-in, never start one implicitly from a bot action.
     if (!this.onRedirect)
-      throw new ConnectorError("auth", "The connected account needs to sign in again.");
+      throw new ConnectorError(
+        "auth",
+        "The connected account needs to sign in again.",
+      );
     this.onRedirect(url);
   }
   async saveCodeVerifier(verifier: string) {
@@ -100,7 +106,8 @@ class StoredOAuthProvider implements OAuthClientProvider {
     await this.persist(this.secrets);
   }
   codeVerifier() {
-    if (!this.secrets.codeVerifier) throw new ConnectorError("auth", "Sign-in expired; start again.");
+    if (!this.secrets.codeVerifier)
+      throw new ConnectorError("auth", "Sign-in expired; start again.");
     return this.secrets.codeVerifier;
   }
   async saveDiscoveryState(state: OAuthDiscoveryState) {
@@ -110,17 +117,25 @@ class StoredOAuthProvider implements OAuthClientProvider {
   discoveryState() {
     return this.secrets.discoveryState;
   }
-  async invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery") {
-    if (scope === "all" || scope === "client") delete this.secrets.clientInformation;
+  async invalidateCredentials(
+    scope: "all" | "client" | "tokens" | "verifier" | "discovery",
+  ) {
+    if (scope === "all" || scope === "client")
+      delete this.secrets.clientInformation;
     if (scope === "all" || scope === "tokens") delete this.secrets.tokens;
-    if (scope === "all" || scope === "verifier") delete this.secrets.codeVerifier;
-    if (scope === "all" || scope === "discovery") delete this.secrets.discoveryState;
+    if (scope === "all" || scope === "verifier")
+      delete this.secrets.codeVerifier;
+    if (scope === "all" || scope === "discovery")
+      delete this.secrets.discoveryState;
     await this.persist(this.secrets);
   }
 }
 
 export class ConnectionService {
-  private readonly flows = new Map<string, { connectionId: string; expiresAt: number }>();
+  private readonly flows = new Map<
+    string,
+    { connectionId: string; expiresAt: number }
+  >();
   constructor(
     private readonly store: Store,
     private readonly options: ConnectionOptions,
@@ -138,19 +153,26 @@ export class ConnectionService {
   /** The current connection for a connector. Revoked connections are history. */
   forConnector(connectorId: string) {
     return this.list()
-      .filter((c) => c.connectorId === connectorId && c.state !== "disconnected")
+      .filter(
+        (c) => c.connectorId === connectorId && c.state !== "disconnected",
+      )
       .at(-1);
   }
   private connector(id: string): ReviewedConnector {
     return reviewedConnector(id) ?? fail(404, "Unknown connector");
   }
   private serverUrl(connector: ReviewedConnector) {
-    return new URL(this.options.endpoints?.[connector.id] ?? connector.serverUrl);
+    return new URL(
+      this.options.endpoints?.[connector.id] ?? connector.serverUrl,
+    );
   }
   private redirect() {
     return `${this.origin()}/oauth/callback`;
   }
-  private update(connection: ConnectorConnection, patch: Partial<ConnectorConnection>) {
+  private update(
+    connection: ConnectorConnection,
+    patch: Partial<ConnectorConnection>,
+  ) {
     Object.assign(connection, patch, { updatedAt: new Date().toISOString() });
     this.store.put("connection", connection.id, connection);
     return connection;
@@ -158,7 +180,9 @@ export class ConnectionService {
   private async load(connectionId: string): Promise<SecretState> {
     const sealed = this.store.connectionSecret(connectionId);
     if (!sealed) return {};
-    const box = this.options.secretBox ?? fail(409, "Secure credential storage is unavailable");
+    const box =
+      this.options.secretBox ??
+      fail(409, "Secure credential storage is unavailable");
     try {
       return JSON.parse(await box.decrypt(sealed)) as SecretState;
     } catch {
@@ -167,15 +191,23 @@ export class ConnectionService {
   }
   private persister(connectionId: string) {
     return async (state: SecretState) => {
-      const box = this.options.secretBox ?? fail(409, "Secure credential storage is unavailable");
-      this.store.saveConnectionSecret(connectionId, await box.encrypt(JSON.stringify(state)));
+      const box =
+        this.options.secretBox ??
+        fail(409, "Secure credential storage is unavailable");
+      this.store.saveConnectionSecret(
+        connectionId,
+        await box.encrypt(JSON.stringify(state)),
+      );
     };
   }
 
   async connect(connectorId: string) {
     const connector = this.connector(connectorId);
     if (!this.options.secretBox)
-      fail(409, "Connecting accounts needs OS-backed credential encryption. Use the desktop app.");
+      fail(
+        409,
+        "Connecting accounts needs OS-backed credential encryption. Use the desktop app.",
+      );
     const now = new Date().toISOString();
     const connection =
       this.forConnector(connectorId) ??
@@ -212,21 +244,29 @@ export class ConnectionService {
     } catch {
       this.update(connection, {
         state: "failed",
-        detail: "Could not start sign-in. Check your internet connection and try again.",
+        detail:
+          "Could not start sign-in. Check your internet connection and try again.",
       });
       return fail(502, "Could not start sign-in with the service");
     }
-    if (!authorizationUrl) fail(502, "The service did not provide a sign-in page");
+    if (!authorizationUrl)
+      fail(502, "The service did not provide a sign-in page");
     const allowed =
       authorizationUrl!.protocol === "https:" ||
       (!!this.options.endpoints && authorizationUrl!.hostname === "127.0.0.1");
     if (!allowed) fail(502, "The service returned an insecure sign-in address");
-    this.flows.set(flow, { connectionId: connection.id, expiresAt: Date.now() + FLOW_TTL });
+    this.flows.set(flow, {
+      connectionId: connection.id,
+      expiresAt: Date.now() + FLOW_TTL,
+    });
     this.update(connection, {
       state: "authentication-required",
       detail: "Finish signing in through your browser.",
     });
-    this.store.event("connector.sign-in", `Sign-in to ${connectorId} started in the browser.`);
+    this.store.event(
+      "connector.sign-in",
+      `Sign-in to ${connectorId} started in the browser.`,
+    );
     this.options.openExternal?.(authorizationUrl!.href);
     return {
       connection,
@@ -236,21 +276,31 @@ export class ConnectionService {
   }
 
   /** Completes an OAuth redirect. The one-time state binds it to a sign-in we started. */
-  async callback(params: URLSearchParams): Promise<{ ok: boolean; message: string }> {
+  async callback(
+    params: URLSearchParams,
+  ): Promise<{ ok: boolean; message: string }> {
     const flowId = params.get("state") ?? "";
     const flow = this.flows.get(flowId);
     if (!flow || flow.expiresAt < Date.now())
-      return { ok: false, message: "This sign-in link is invalid or expired. Start again in Socius." };
+      return {
+        ok: false,
+        message:
+          "This sign-in link is invalid or expired. Start again in Socius.",
+      };
     this.flows.delete(flowId);
     const connection = this.get(flow.connectionId);
-    if (!connection) return { ok: false, message: "This connection no longer exists." };
+    if (!connection)
+      return { ok: false, message: "This connection no longer exists." };
     const code = params.get("code");
     if (!code || params.get("error")) {
       this.update(connection, {
         state: "authentication-required",
         detail: "Sign-in was cancelled or denied. Nothing was connected.",
       });
-      return { ok: false, message: "Sign-in was cancelled. You can close this tab." };
+      return {
+        ok: false,
+        message: "Sign-in was cancelled. You can close this tab.",
+      };
     }
     const connector = this.connector(connection.connectorId);
     const provider = new StoredOAuthProvider(
@@ -271,16 +321,26 @@ export class ConnectionService {
         state: "failed",
         detail: "The service did not accept the sign-in. Try connecting again.",
       });
-      return { ok: false, message: "Sign-in failed. Return to Socius and try again." };
+      return {
+        ok: false,
+        message: "Sign-in failed. Return to Socius and try again.",
+      };
     }
     await this.verify(connection.id);
-    this.store.event("connector.connected", `Connected ${connection.connectorId}. Bots still need document access granted.`);
-    return { ok: true, message: "Connected. You can close this tab and return to Socius." };
+    this.store.event(
+      "connector.connected",
+      `Connected ${connection.connectorId}. Bots still need document access granted.`,
+    );
+    return {
+      ok: true,
+      message: "Connected. You can close this tab and return to Socius.",
+    };
   }
 
   /** Opens an authenticated client for a reviewed action. Never starts a sign-in. */
   async client(connectionId: string): Promise<McpToolClient> {
-    const connection = this.get(connectionId) ?? fail(404, "Connection not found");
+    const connection =
+      this.get(connectionId) ?? fail(404, "Connection not found");
     const connector = this.connector(connection.connectorId);
     const provider = new StoredOAuthProvider(
       await this.load(connection.id),
@@ -292,7 +352,9 @@ export class ConnectionService {
         url: this.serverUrl(connector),
         authProvider: provider,
         ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
-        ...(this.options.timeoutMs ? { timeoutMs: this.options.timeoutMs } : {}),
+        ...(this.options.timeoutMs
+          ? { timeoutMs: this.options.timeoutMs }
+          : {}),
       });
     } catch (error) {
       const failure = classifyError(error);
@@ -305,18 +367,24 @@ export class ConnectionService {
     if (connection && connection.state !== "disconnected")
       this.update(connection, {
         state: "authentication-required",
-        detail: "Access expired or was revoked in the service. Reconnect to continue.",
+        detail:
+          "Access expired or was revoked in the service. Reconnect to continue.",
       });
   }
 
   /** Confirms the upstream server still offers the reviewed tools and inputs. */
   async verify(connectionId: string) {
-    const connection = this.get(connectionId) ?? fail(404, "Connection not found");
-    if (connection.state === "disconnected") fail(409, "This connection was revoked");
+    const connection =
+      this.get(connectionId) ?? fail(404, "Connection not found");
+    if (connection.state === "disconnected")
+      fail(409, "This connection was revoked");
     let client: McpToolClient | undefined;
     try {
       client = await this.client(connectionId);
-      const problem = checkToolSchemas(this.connector(connection.connectorId), await client.listTools());
+      const problem = checkToolSchemas(
+        this.connector(connection.connectorId),
+        await client.listTools(),
+      );
       return problem
         ? this.update(connection, {
             state: "unsupported",
@@ -324,7 +392,8 @@ export class ConnectionService {
           })
         : this.update(connection, {
             state: "ready",
-            detail: "Connected. Grant document access to each bot that should use it.",
+            detail:
+              "Connected. Grant document access to each bot that should use it.",
           });
     } catch (error) {
       const failure = classifyError(error);
@@ -340,23 +409,28 @@ export class ConnectionService {
 
   /** Deletes local credentials and asks the provider to revoke them (best effort). */
   async disconnect(connectionId: string) {
-    const connection = this.get(connectionId) ?? fail(404, "Connection not found");
+    const connection =
+      this.get(connectionId) ?? fail(404, "Connection not found");
     let revoked = false;
     try {
       const state = await this.load(connectionId);
       const metadata = state.discoveryState?.authorizationServerMetadata as
-        | { revocation_endpoint?: string }
-        | undefined;
+        { revocation_endpoint?: string } | undefined;
       const token = state.tokens?.refresh_token ?? state.tokens?.access_token;
-      const clientId = (state.clientInformation as { client_id?: string } | undefined)?.client_id;
+      const clientId = (
+        state.clientInformation as { client_id?: string } | undefined
+      )?.client_id;
       if (metadata?.revocation_endpoint && token && clientId) {
-        const response = await (this.options.fetch ?? fetch)(metadata.revocation_endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ token, client_id: clientId }),
-          redirect: "error",
-          signal: AbortSignal.timeout(5000),
-        });
+        const response = await (this.options.fetch ?? fetch)(
+          metadata.revocation_endpoint,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ token, client_id: clientId }),
+            redirect: "error",
+            signal: AbortSignal.timeout(5000),
+          },
+        );
         revoked = response.ok;
       }
     } catch {
@@ -369,7 +443,10 @@ export class ConnectionService {
         ? "Disconnected and revoked with the provider."
         : "Disconnected. Socius deleted its credentials; also remove Socius in the provider's connection settings to be certain.",
     });
-    this.store.event("connector.disconnected", `Disconnected ${connection.connectorId}. Stored credentials were deleted.`);
+    this.store.event(
+      "connector.disconnected",
+      `Disconnected ${connection.connectorId}. Stored credentials were deleted.`,
+    );
     return connection;
   }
 }

@@ -51,7 +51,10 @@ export class ActionBroker {
   private now() {
     return this.options.now?.() ?? Date.now();
   }
-  private find(actionId: string): { connector: ReviewedConnector; action: ConnectorAction } {
+  private find(actionId: string): {
+    connector: ReviewedConnector;
+    action: ConnectorAction;
+  } {
     for (const connector of reviewedConnectors) {
       const action = connector.actions.find((a) => a.id === actionId);
       if (action) return { connector, action };
@@ -61,31 +64,69 @@ export class ActionBroker {
   /** Every check that must hold for the action to run now. Fails closed. */
   private authorize(request: ActionRequestType) {
     const bot =
-      this.store.get<BotInstance>("bot", request.actor.botId) ?? fail(404, "Bot not found");
+      this.store.get<BotInstance>("bot", request.actor.botId) ??
+      fail(404, "Bot not found");
     const { connector, action } = this.find(request.action);
-    if (request.release.id !== connector.id) fail(403, "The action does not belong to that release");
+    if (request.release.id !== connector.id)
+      fail(403, "The action does not belong to that release");
     const receipt =
       this.store.get<Installation>("installation", connector.id) ??
       fail(403, `${connector.id} is not installed`);
     if (!receipt.enabled) fail(403, `${connector.id} is disabled`);
-    if (receipt.version !== request.release.version || receipt.digest !== request.release.digest)
-      fail(409, "The installed release changed. Ask again so the new release can be reviewed.");
+    if (
+      receipt.version !== request.release.version ||
+      receipt.digest !== request.release.digest
+    )
+      fail(
+        409,
+        "The installed release changed. Ask again so the new release can be reviewed.",
+      );
     const release = this.packages.installedRelease(connector.id);
-    if (!release || release.manifest.kind !== "connector" || verifyManifest(release.manifest).length)
+    if (
+      !release ||
+      release.manifest.kind !== "connector" ||
+      verifyManifest(release.manifest).length
+    )
       fail(403, "The installed connector does not match reviewed code");
-    if (!release!.manifest.capabilities.includes(action.capability) || !receipt.consentedCapabilities.includes(action.capability))
+    if (
+      !release!.manifest.capabilities.includes(action.capability) ||
+      !receipt.consentedCapabilities.includes(action.capability)
+    )
       fail(403, `The installation was not consented for ${action.capability}`);
     if (!bot.grantedCapabilities.includes(action.capability))
       fail(403, `${bot.name} has not been granted ${action.capability}`);
     const connection = this.connections.forConnector(connector.id);
     if (!connection) fail(409, `${release!.manifest.name} is not connected`);
     if (connection!.state !== "ready")
-      fail(409, `${release!.manifest.name} is not ready: ${connection!.detail || connection!.state}`);
+      fail(
+        409,
+        `${release!.manifest.name} is not ready: ${connection!.detail || connection!.state}`,
+      );
     const parsed = action.input.safeParse(request.arguments);
-    if (!parsed.success) fail(400, `Invalid arguments for ${action.id}: ${parsed.error.issues[0]?.message ?? "invalid"}`);
-    return { bot, connector, action, connection: connection!, args: parsed.data! };
+    if (!parsed.success)
+      fail(
+        400,
+        `Invalid arguments for ${action.id}: ${parsed.error.issues[0]?.message ?? "invalid"}`,
+      );
+    return {
+      bot,
+      connector,
+      action,
+      connection: connection!,
+      args: parsed.data!,
+    };
   }
-  private recordDigest(record: Pick<ActionRecord, "actor" | "release" | "action" | "connectionId" | "arguments" | "expiresAt">) {
+  private recordDigest(
+    record: Pick<
+      ActionRecord,
+      | "actor"
+      | "release"
+      | "action"
+      | "connectionId"
+      | "arguments"
+      | "expiresAt"
+    >,
+  ) {
     return digestOf({
       actor: record.actor,
       release: record.release,
@@ -103,17 +144,23 @@ export class ActionBroker {
     const { action, connection, args } = this.authorize(request);
     if (action.access === "read") {
       const count = (this.reads.get(request.actor.taskId) ?? 0) + 1;
-      if (count > MAX_READS_PER_TASK) fail(429, "Read limit for this task reached");
+      if (count > MAX_READS_PER_TASK)
+        fail(429, "Read limit for this task reached");
       this.reads.set(request.actor.taskId, count);
       let client: McpToolClient | undefined;
       try {
         client = await this.connections.client(connection.id);
         const output = await this.withTimeout(action.execute(client, args));
         this.store.event("connector.read", output.summary);
-        return { status: "completed", summary: output.summary, data: output.data ?? null };
+        return {
+          status: "completed",
+          summary: output.summary,
+          data: output.data ?? null,
+        };
       } catch (error) {
         if (error instanceof ConnectorError) {
-          if (error.kind === "auth") this.connections.markAuthRequired(connection.id);
+          if (error.kind === "auth")
+            this.connections.markAuthRequired(connection.id);
           return fail(502, error.message);
         }
         throw error;
@@ -123,8 +170,11 @@ export class ActionBroker {
     }
     const pending = this.store
       .all<ActionRecord>("action")
-      .filter((a) => a.actor.taskId === request.actor.taskId && a.state === "pending");
-    if (pending.length >= MAX_PENDING_PER_TASK) fail(429, "Proposal limit reached for this task");
+      .filter(
+        (a) => a.actor.taskId === request.actor.taskId && a.state === "pending",
+      );
+    if (pending.length >= MAX_PENDING_PER_TASK)
+      fail(429, "Proposal limit reached for this task");
     const now = new Date(this.now()).toISOString();
     const base = {
       actor: request.actor,
@@ -132,7 +182,9 @@ export class ActionBroker {
       action: action.id,
       connectionId: connection.id,
       arguments: args,
-      expiresAt: new Date(this.now() + (this.options.approvalTtlMs ?? 86_400_000)).toISOString(),
+      expiresAt: new Date(
+        this.now() + (this.options.approvalTtlMs ?? 86_400_000),
+      ).toISOString(),
     };
     const record: ActionRecord = {
       id: randomUUID(),
@@ -150,22 +202,35 @@ export class ActionBroker {
     };
     this.store.put("action", record.id, record);
     this.store.event("action.requested", `Approval needed: ${record.summary}`);
-    return { status: "awaiting-approval", actionId: record.id, summary: record.summary };
+    return {
+      status: "awaiting-approval",
+      actionId: record.id,
+      summary: record.summary,
+    };
   }
 
   private save(record: ActionRecord, patch: Partial<ActionRecord>) {
-    Object.assign(record, patch, { updatedAt: new Date(this.now()).toISOString() });
+    Object.assign(record, patch, {
+      updatedAt: new Date(this.now()).toISOString(),
+    });
     this.store.put("action", record.id, record);
     return record;
   }
   private load(id: string) {
-    return this.store.get<ActionRecord>("action", z.string().uuid().parse(id)) ?? fail(404, "Action not found");
+    return (
+      this.store.get<ActionRecord>("action", z.string().uuid().parse(id)) ??
+      fail(404, "Action not found")
+    );
   }
   /** Rebuilds and rechecks the original request; any drift or tampering blocks execution. */
   private reauthorize(record: ActionRecord) {
-    if (record.digest !== this.recordDigest(record)) fail(409, "Proposal content changed");
+    if (record.digest !== this.recordDigest(record))
+      fail(409, "Proposal content changed");
     if (Date.parse(record.expiresAt) < this.now()) {
-      this.save(record, { state: "expired", error: "The approval window ended." });
+      this.save(record, {
+        state: "expired",
+        error: "The approval window ended.",
+      });
       fail(409, "Proposal expired");
     }
     try {
@@ -178,7 +243,10 @@ export class ActionBroker {
       if (canonicalJson(checked.args) !== canonicalJson(record.arguments))
         fail(409, "Proposal content changed");
       if (checked.connection.id !== record.connectionId)
-        fail(409, "The account connection changed. Ask again so the new account can be reviewed.");
+        fail(
+          409,
+          "The account connection changed. Ask again so the new account can be reviewed.",
+        );
       return checked;
     } catch (error) {
       if (error instanceof PackageError && record.state === "pending")
@@ -189,10 +257,13 @@ export class ActionBroker {
 
   async resolve(input: { id: string; digest: string; approve: boolean }) {
     const record = this.load(input.id);
-    if (record.state !== "pending") fail(409, "This proposal was already resolved");
-    if (!same(record.digest, input.digest)) fail(409, "Proposal content changed");
+    if (record.state !== "pending")
+      fail(409, "This proposal was already resolved");
+    if (!same(record.digest, input.digest))
+      fail(409, "Proposal content changed");
     if (!input.approve) {
-      if (record.digest !== this.recordDigest(record)) fail(409, "Proposal content changed");
+      if (record.digest !== this.recordDigest(record))
+        fail(409, "Proposal content changed");
       this.save(record, { state: "denied" });
       this.store.event("action.denied", `Declined: ${record.summary}`);
       return record;
@@ -205,19 +276,32 @@ export class ActionBroker {
   /** User-initiated retry, only after the previous attempt proved nothing happened. */
   async retry(id: string) {
     const record = this.load(id);
-    if (!(record.state === "failed" || record.state === "unknown") || !record.retryable)
-      fail(409, "Retry is only possible after Socius confirmed the change did not happen");
+    if (
+      !(record.state === "failed" || record.state === "unknown") ||
+      !record.retryable
+    )
+      fail(
+        409,
+        "Retry is only possible after Socius confirmed the change did not happen",
+      );
     if (record.attempts.length >= MAX_ATTEMPTS)
-      fail(409, "Attempt limit reached. Ask the bot to propose the change again.");
+      fail(
+        409,
+        "Attempt limit reached. Ask the bot to propose the change again.",
+      );
     const checked = this.reauthorize(record);
-    this.store.event("action.retried", `Retrying after confirmation: ${record.summary}`);
+    this.store.event(
+      "action.retried",
+      `Retrying after confirmation: ${record.summary}`,
+    );
     return this.execute(record, checked.action, checked.args);
   }
 
   /** Looks for the effect of an ambiguous write. Never repeats the write itself. */
   async check(id: string) {
     const record = this.load(id);
-    if (record.state !== "unknown") fail(409, "Only changes with an unknown outcome can be checked");
+    if (record.state !== "unknown")
+      fail(409, "Only changes with an unknown outcome can be checked");
     const { action } = this.find(record.action);
     const args = action.input.parse(record.arguments);
     const found = await this.reconcile(record, action, args);
@@ -230,16 +314,28 @@ export class ActionBroker {
     return record;
   }
 
-  private async reconcile(record: ActionRecord, action: ConnectorAction, args: Record<string, unknown>) {
+  private async reconcile(
+    record: ActionRecord,
+    action: ConnectorAction,
+    args: Record<string, unknown>,
+  ) {
     if (!action.reconcile) return false;
     let client: McpToolClient | undefined;
     try {
       client = await this.connections.client(record.connectionId);
       const output = await this.withTimeout(
-        action.reconcile(client, args, record.attempts.at(-1)?.baseline ?? null),
+        action.reconcile(
+          client,
+          args,
+          record.attempts.at(-1)?.baseline ?? null,
+        ),
       );
       if (!output) return false;
-      this.succeed(record, output, "Confirmed by checking the service after an unclear response.");
+      this.succeed(
+        record,
+        output,
+        "Confirmed by checking the service after an unclear response.",
+      );
       return true;
     } catch {
       return false;
@@ -247,9 +343,17 @@ export class ActionBroker {
       await client?.close().catch(() => undefined);
     }
   }
-  private succeed(record: ActionRecord, output: ActionOutput, detail: string | null = null) {
+  private succeed(
+    record: ActionRecord,
+    output: ActionOutput,
+    detail: string | null = null,
+  ) {
     const attempt = record.attempts.at(-1);
-    if (attempt) Object.assign(attempt, { outcome: "succeeded", detail: detail ?? attempt.detail });
+    if (attempt)
+      Object.assign(attempt, {
+        outcome: "succeeded",
+        detail: detail ?? attempt.detail,
+      });
     this.save(record, {
       state: "succeeded",
       result: { summary: output.summary, url: output.url ?? null },
@@ -259,7 +363,11 @@ export class ActionBroker {
     this.store.event("action.succeeded", output.summary);
   }
 
-  private async execute(record: ActionRecord, action: ConnectorAction, args: Record<string, unknown>) {
+  private async execute(
+    record: ActionRecord,
+    action: ConnectorAction,
+    args: Record<string, unknown>,
+  ) {
     const attempt = {
       id: randomUUID(),
       startedAt: new Date(this.now()).toISOString(),
@@ -269,20 +377,30 @@ export class ActionBroker {
       baseline: null as string | null,
     };
     // Persist intent before any remote call, so a crash leaves an "unknown", never a replay.
-    this.save(record, { state: "executing", attempts: [...record.attempts, attempt], error: null, retryable: false });
+    this.save(record, {
+      state: "executing",
+      attempts: [...record.attempts, attempt],
+      error: null,
+      retryable: false,
+    });
     const current = record.attempts.at(-1)!;
     let client: McpToolClient | undefined;
     try {
       client = await this.connections.client(record.connectionId);
       if (action.prepare) {
         try {
-          current.baseline = await this.withTimeout(action.prepare(client, args));
+          current.baseline = await this.withTimeout(
+            action.prepare(client, args),
+          );
         } catch (error) {
           // Nothing was written yet, so any failure here is a definite non-execution.
           const failure = error instanceof ConnectorError ? error : null;
           throw new ConnectorError(
-            failure?.kind === "auth" || failure?.kind === "rate-limited" ? failure.kind : "rejected",
-            failure?.message ?? "Socius could not check the page before writing.",
+            failure?.kind === "auth" || failure?.kind === "rate-limited"
+              ? failure.kind
+              : "rejected",
+            failure?.message ??
+              "Socius could not check the page before writing.",
           );
         }
         this.save(record, {});
@@ -292,23 +410,36 @@ export class ActionBroker {
       this.succeed(record, output);
     } catch (error) {
       current.finishedAt = new Date(this.now()).toISOString();
-      const failure = error instanceof ConnectorError ? error : new ConnectorError("ambiguous", "The change failed unexpectedly.");
+      const failure =
+        error instanceof ConnectorError
+          ? error
+          : new ConnectorError("ambiguous", "The change failed unexpectedly.");
       current.detail = failure.message;
-      if (failure.kind === "auth") this.connections.markAuthRequired(record.connectionId);
+      if (failure.kind === "auth")
+        this.connections.markAuthRequired(record.connectionId);
       if (failure.kind === "ambiguous") {
         current.outcome = "ambiguous";
         this.save(record, {
           state: "unknown",
           retryable: false,
-          error: "The service did not confirm the outcome. Socius checked once and will not repeat the change automatically.",
+          error:
+            "The service did not confirm the outcome. Socius checked once and will not repeat the change automatically.",
         });
-        this.store.event("action.unknown", `Outcome unknown: ${record.summary}`);
+        this.store.event(
+          "action.unknown",
+          `Outcome unknown: ${record.summary}`,
+        );
         await client?.close().catch(() => undefined);
         client = undefined;
         await this.reconcile(record, action, args);
       } else {
-        current.outcome = failure.kind === "rate-limited" ? "rate-limited" : "failed";
-        this.save(record, { state: "failed", retryable: true, error: failure.message });
+        current.outcome =
+          failure.kind === "rate-limited" ? "rate-limited" : "failed";
+        this.save(record, {
+          state: "failed",
+          retryable: true,
+          error: failure.message,
+        });
         this.store.event("action.failed", `Not completed: ${record.summary}`);
       }
     } finally {
@@ -324,7 +455,13 @@ export class ActionBroker {
       promise,
       new Promise<never>((_, reject) => {
         timer = setTimeout(
-          () => reject(new ConnectorError("ambiguous", "The request timed out before the service confirmed the outcome.")),
+          () =>
+            reject(
+              new ConnectorError(
+                "ambiguous",
+                "The request timed out before the service confirmed the outcome.",
+              ),
+            ),
           ms,
         );
       }),

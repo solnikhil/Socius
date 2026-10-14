@@ -68,7 +68,8 @@ export class Store {
       if (attempt && !attempt.finishedAt) {
         attempt.finishedAt = new Date().toISOString();
         attempt.outcome = "ambiguous";
-        attempt.detail = "Socius stopped before the service confirmed the outcome.";
+        attempt.detail =
+          "Socius stopped before the service confirmed the outcome.";
       }
       action.state = "unknown";
       action.retryable = false;
@@ -76,7 +77,10 @@ export class Store {
         "Socius stopped during this change. Check the result before retrying; it was not repeated.";
       action.updatedAt = new Date().toISOString();
       this.put("action", action.id, action);
-      this.event("action.interrupted", `An approved change needs checking: ${action.summary}`);
+      this.event(
+        "action.interrupted",
+        `An approved change needs checking: ${action.summary}`,
+      );
     }
     this.cleanPackages();
     this.reconcileMemory();
@@ -94,7 +98,9 @@ export class Store {
         this.db.exec(`CREATE TABLE IF NOT EXISTS connector_secrets(
           connection_id TEXT PRIMARY KEY, secret TEXT NOT NULL, updated_at TEXT NOT NULL)`);
         // v2: installation receipts gain lifecycle, provenance and consent fields.
-        for (const old of this.all<Partial<Installation> & { id: string }>("installation")) {
+        for (const old of this.all<Partial<Installation> & { id: string }>(
+          "installation",
+        )) {
           const receipt: Installation = {
             id: old.id,
             version: old.version!,
@@ -115,7 +121,9 @@ export class Store {
   cleanPackages() {
     for (const entry of readdirSync(this.stagingDir))
       rmSync(join(this.stagingDir, entry), { recursive: true, force: true });
-    const known = new Set(this.all<{ digest: string }>("release").map((r) => r.digest));
+    const known = new Set(
+      this.all<{ digest: string }>("release").map((r) => r.digest),
+    );
     for (const entry of readdirSync(this.releasesDir))
       if (!known.has(entry))
         rmSync(join(this.releasesDir, entry), { recursive: true, force: true });
@@ -133,7 +141,9 @@ export class Store {
       .run(connectionId, secret, new Date().toISOString());
   }
   deleteConnectionSecret(connectionId: string) {
-    this.db.prepare("DELETE FROM connector_secrets WHERE connection_id=?").run(connectionId);
+    this.db
+      .prepare("DELETE FROM connector_secrets WHERE connection_id=?")
+      .run(connectionId);
   }
   remove(kind: string, id: string) {
     this.db.prepare("DELETE FROM records WHERE kind=? AND id=?").run(kind, id);

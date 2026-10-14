@@ -42,7 +42,8 @@ console.log(
         version: example.manifest.version,
         resources: example.manifest.resources?.length ?? 0,
       },
-      plan: catalog.planInstall(mainBot.id, mainBot.version).requestedCapabilities,
+      plan: catalog.planInstall(mainBot.id, mainBot.version)
+        .requestedCapabilities,
       bot: instantiateBot(mainBot).grantedCapabilities,
     },
     null,

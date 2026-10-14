@@ -86,7 +86,8 @@ export const curatedCatalog: Manifest[] = [
         id: "notion.search",
         access: "read",
         capability: "documents.read",
-        description: "Search page titles and content the connected account can see.",
+        description:
+          "Search page titles and content the connected account can see.",
       },
       {
         id: "notion.fetch",

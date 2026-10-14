@@ -75,7 +75,10 @@ export class PackageService {
       try {
         this.catalog.add(r);
       } catch {
-        store.event("package.skipped", "A stored release failed validation and was not loaded.");
+        store.event(
+          "package.skipped",
+          "A stored release failed validation and was not loaded.",
+        );
       }
     }
   }
@@ -87,11 +90,14 @@ export class PackageService {
   }
   installedRelease(id: string): Release | undefined {
     const receipt = this.installation(id);
-    const release = receipt && this.catalog.release(receipt.id, receipt.version);
+    const release =
+      receipt && this.catalog.release(receipt.id, receipt.version);
     return release && release.digest === receipt.digest ? release : undefined;
   }
   /** Installed, enabled and intact releases of a kind; disabled packages are unusable. */
-  active<K extends Manifest["kind"]>(kind: K): (Release & { manifest: Extract<Manifest, { kind: K }> })[] {
+  active<K extends Manifest["kind"]>(
+    kind: K,
+  ): (Release & { manifest: Extract<Manifest, { kind: K }> })[] {
     return this.store
       .all<Installation>("installation")
       .filter((i) => i.enabled)
@@ -118,7 +124,9 @@ export class PackageService {
         digest: r.digest,
         source: r.source,
         trust: r.trust,
-        installed: receipt ? { version: receipt.version, digest: receipt.digest } : null,
+        installed: receipt
+          ? { version: receipt.version, digest: receipt.digest }
+          : null,
       };
     });
     const fresh = sorted(
@@ -149,7 +157,11 @@ export class PackageService {
   verifyFiles(release: Release) {
     if (release.manifest.kind !== "skill") return;
     for (const resource of release.manifest.resources ?? []) {
-      const path = join(this.store.releasesDir, release.digest, ...resource.path.split("/"));
+      const path = join(
+        this.store.releasesDir,
+        release.digest,
+        ...resource.path.split("/"),
+      );
       let bytes: Buffer;
       try {
         bytes = readFileSync(path);
@@ -162,23 +174,39 @@ export class PackageService {
   }
 
   install(
-    input: { id: string; version: string; digest: string; consent: Capability[] },
+    input: {
+      id: string;
+      version: string;
+      digest: string;
+      consent: Capability[];
+    },
     createBot: (template: BotManifest) => BotInstance,
   ) {
     const preview = this.preview(input.id, input.version);
     if (preview.digest !== input.digest)
       fail(409, "The installation plan changed. Review it again.");
-    const missing = preview.newCapabilities.filter((c) => !input.consent.includes(c));
+    const missing = preview.newCapabilities.filter(
+      (c) => !input.consent.includes(c),
+    );
     if (missing.length)
-      fail(409, `Consent is required for newly requested permissions: ${missing.join(", ")}`);
+      fail(
+        409,
+        `Consent is required for newly requested permissions: ${missing.join(", ")}`,
+      );
     const plan = this.plan(input.id, input.version);
     for (const release of plan.releases) {
       this.verifyFiles(release);
       if (release.manifest.kind === "connector") {
         if (release.trust === "local-unverified")
           fail(409, "Unreviewed connectors cannot be installed");
-        if (!reviewedConnector(release.manifest.id) || verifyManifest(release.manifest).length)
-          fail(409, `${release.manifest.name} has no matching reviewed runtime implementation`);
+        if (
+          !reviewedConnector(release.manifest.id) ||
+          verifyManifest(release.manifest).length
+        )
+          fail(
+            409,
+            `${release.manifest.name} has no matching reviewed runtime implementation`,
+          );
       }
     }
     const now = new Date().toISOString();
@@ -187,7 +215,10 @@ export class PackageService {
       for (const release of plan.releases) {
         const p = release.manifest;
         const prior = this.installation(p.id);
-        const same = prior && prior.version === p.version && prior.digest === release.digest;
+        const same =
+          prior &&
+          prior.version === p.version &&
+          prior.digest === release.digest;
         const receipt: Installation = same
           ? prior
           : {
@@ -202,7 +233,11 @@ export class PackageService {
               history: prior
                 ? [
                     ...prior.history,
-                    { version: prior.version, digest: prior.digest, installedAt: prior.installedAt },
+                    {
+                      version: prior.version,
+                      digest: prior.digest,
+                      installedAt: prior.installedAt,
+                    },
                   ].slice(-10)
                 : [],
             };
@@ -223,7 +258,8 @@ export class PackageService {
   }
 
   setEnabled(id: string, enabled: boolean) {
-    const receipt = this.installation(id) ?? fail(404, "Package is not installed");
+    const receipt =
+      this.installation(id) ?? fail(404, "Package is not installed");
     receipt.enabled = enabled;
     this.store.put("installation", id, receipt);
     this.store.event(
@@ -238,33 +274,50 @@ export class PackageService {
       .all<Installation>("installation")
       .filter((i) => i.id !== id)
       .filter((i) =>
-        this.catalog.release(i.id, i.version)?.manifest.dependencies.some((d) => d.id === id),
+        this.catalog
+          .release(i.id, i.version)
+          ?.manifest.dependencies.some((d) => d.id === id),
       )
       .map((i) => i.id);
   }
 
   uninstall(id: string) {
-    const receipt = this.installation(id) ?? fail(404, "Package is not installed");
+    const receipt =
+      this.installation(id) ?? fail(404, "Package is not installed");
     const dependents = this.dependents(id);
     if (dependents.length)
       fail(409, `Required by ${dependents.join(", ")}. Uninstall those first.`);
     this.store.remove("installation", id);
-    this.store.event("package.uninstalled", `Uninstalled ${id} ${receipt.version}.`);
+    this.store.event(
+      "package.uninstalled",
+      `Uninstalled ${id} ${receipt.version}.`,
+    );
   }
 
   rollback(id: string) {
-    const receipt = this.installation(id) ?? fail(404, "Package is not installed");
-    const previous = receipt.history.at(-1) ?? fail(409, "No earlier release to roll back to");
+    const receipt =
+      this.installation(id) ?? fail(404, "Package is not installed");
+    const previous =
+      receipt.history.at(-1) ?? fail(409, "No earlier release to roll back to");
     const release = this.catalog.release(id, previous.version);
     if (!release || release.digest !== previous.digest)
       fail(409, "The earlier release is no longer available");
-    const extra = newCapabilities(release!.manifest.capabilities, receipt.consentedCapabilities);
+    const extra = newCapabilities(
+      release!.manifest.capabilities,
+      receipt.consentedCapabilities,
+    );
     if (extra.length)
-      fail(409, `The earlier release requests ${extra.join(", ")}; install it from the catalog to consent`);
+      fail(
+        409,
+        `The earlier release requests ${extra.join(", ")}; install it from the catalog to consent`,
+      );
     for (const d of release!.manifest.dependencies) {
       const dep = this.installation(d.id);
       if (!dep || dep.version !== d.version)
-        fail(409, `The earlier release needs ${d.id}@${d.version}; install it from the catalog`);
+        fail(
+          409,
+          `The earlier release needs ${d.id}@${d.version}; install it from the catalog`,
+        );
     }
     this.verifyFiles(release!);
     const rolled: Installation = {
@@ -276,11 +329,18 @@ export class PackageService {
       history: receipt.history.slice(0, -1),
     };
     this.store.put("installation", id, rolled);
-    this.store.event("package.rolled-back", `Rolled ${id} back to ${previous.version}.`);
+    this.store.event(
+      "package.rolled-back",
+      `Rolled ${id} back to ${previous.version}.`,
+    );
     return rolled;
   }
 
-  private addRelease(manifest: Manifest, source: ReleaseSource, files?: { path: string; bytes: Uint8Array }[]): Release {
+  private addRelease(
+    manifest: Manifest,
+    source: ReleaseSource,
+    files?: { path: string; bytes: Uint8Array }[],
+  ): Release {
     const existing = this.catalog.release(manifest.id, manifest.version);
     const candidate: StoredRelease = {
       digest: "",
@@ -308,7 +368,10 @@ export class PackageService {
           writeFileSync(path, f.bytes, { mode: 0o600 });
         }
         for (const f of files)
-          if (sha256(readFileSync(join(staging, ...f.path.split("/")))) !== sha256(f.bytes))
+          if (
+            sha256(readFileSync(join(staging, ...f.path.split("/")))) !==
+            sha256(f.bytes)
+          )
             fail(500, "Staged file verification failed");
         renameSync(staging, target);
       } finally {
@@ -334,18 +397,25 @@ export class PackageService {
       { type: "local-import", label: label.slice(0, 200) || "Local folder" },
       resources,
     );
-    this.store.event("package.imported", `Imported skill ${release.manifest.name} ${release.manifest.version} for review.`);
+    this.store.event(
+      "package.imported",
+      `Imported skill ${release.manifest.name} ${release.manifest.version} for review.`,
+    );
     return { release, ignored: parsed.ignored };
   }
 
   importTemplate(input: unknown, label: string) {
     const parsed = BotManifestSchema.safeParse(input);
-    if (!parsed.success) fail(400, "This file is not a valid Socius bot template");
+    if (!parsed.success)
+      fail(400, "This file is not a valid Socius bot template");
     const release = this.addRelease(parsed.data!, {
       type: "local-import",
       label: label.slice(0, 200) || "Template file",
     });
-    this.store.event("package.imported", `Imported bot template ${release.manifest.name} for review.`);
+    this.store.event(
+      "package.imported",
+      `Imported bot template ${release.manifest.name} for review.`,
+    );
     return { release };
   }
 
@@ -354,10 +424,15 @@ export class PackageService {
     const manifest = release.manifest as SkillManifest;
     const resource = manifest.resources?.find((r) => r.path === path);
     if (!resource) fail(404, "That skill has no such resource");
-    if (resource!.kind !== "reference") fail(403, "Only reference documents can be read; scripts stay inert");
-    if (resource!.size > MAX_RESOURCE_TEXT) fail(413, "Resource is too large to load");
-    const bytes = readFileSync(join(this.store.releasesDir, release.digest, ...path.split("/")));
-    if (sha256(bytes) !== resource!.sha256) fail(409, "Resource failed its integrity check");
+    if (resource!.kind !== "reference")
+      fail(403, "Only reference documents can be read; scripts stay inert");
+    if (resource!.size > MAX_RESOURCE_TEXT)
+      fail(413, "Resource is too large to load");
+    const bytes = readFileSync(
+      join(this.store.releasesDir, release.digest, ...path.split("/")),
+    );
+    if (sha256(bytes) !== resource!.sha256)
+      fail(409, "Resource failed its integrity check");
     try {
       return utf8.decode(bytes);
     } catch {
@@ -372,13 +447,16 @@ export class PackageService {
       manifest,
       (manifest.resources ?? []).map((r) => ({
         path: r.path,
-        bytes: readFileSync(join(this.store.releasesDir, release.digest, ...r.path.split("/"))),
+        bytes: readFileSync(
+          join(this.store.releasesDir, release.digest, ...r.path.split("/")),
+        ),
       })),
     );
   }
   exportSkillPreview(id: string, version: string): ExportPreview {
     const release = this.catalog.release(id, version);
-    if (!release || release.manifest.kind !== "skill") return fail(404, "Skill not found");
+    if (!release || release.manifest.kind !== "skill")
+      return fail(404, "Skill not found");
     let files;
     try {
       files = this.skillFiles(release);
@@ -390,34 +468,58 @@ export class PackageService {
       try {
         return { path: f.path, content: utf8.decode(f.bytes) };
       } catch {
-        return { path: f.path, content: `[binary file, ${f.bytes.byteLength} bytes]` };
+        return {
+          path: f.path,
+          content: `[binary file, ${f.bytes.byteLength} bytes]`,
+        };
       }
     });
     return {
       kind: "skill",
       files: view,
-      findings: reviewText(Object.fromEntries(view.map((f) => [f.path, f.content]))),
+      findings: reviewText(
+        Object.fromEntries(view.map((f) => [f.path, f.content])),
+      ),
       digest: digestOf(view),
     };
   }
-  exportSkill(id: string, version: string, digest: string, acknowledged: boolean) {
+  exportSkill(
+    id: string,
+    version: string,
+    digest: string,
+    acknowledged: boolean,
+  ) {
     const preview = this.exportSkillPreview(id, version);
-    if (preview.digest !== digest) fail(409, "The export changed. Review it again.");
+    if (preview.digest !== digest)
+      fail(409, "The export changed. Review it again.");
     if (preview.findings.length && !acknowledged)
       fail(409, "Review the flagged text before exporting");
     const release = this.catalog.release(id, version)!;
-    const dir = join(this.store.exportsDir, `${Date.now()}-${slug(release.manifest.name)}`);
+    const dir = join(
+      this.store.exportsDir,
+      `${Date.now()}-${slug(release.manifest.name)}`,
+    );
     for (const f of this.skillFiles(release)) {
       const path = join(dir, ...f.path.split("/"));
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, f.bytes);
     }
-    this.store.event("package.exported", `Exported skill ${release.manifest.name} after review.`);
+    this.store.event(
+      "package.exported",
+      `Exported skill ${release.manifest.name} after review.`,
+    );
     return { path: join(dir, id.split("/")[1]!) };
   }
 
-  botExportPreview(bot: BotInstance, draft: BotExportDraft, memory: Memory[]): ExportPreview & { manifest: BotManifest } {
-    const template = this.catalog.release(bot.template.id, bot.template.version)?.manifest;
+  botExportPreview(
+    bot: BotInstance,
+    draft: BotExportDraft,
+    memory: Memory[],
+  ): ExportPreview & { manifest: BotManifest } {
+    const template = this.catalog.release(
+      bot.template.id,
+      bot.template.version,
+    )?.manifest;
     let manifest: BotManifest;
     try {
       manifest = exportBotTemplate(
@@ -426,7 +528,10 @@ export class PackageService {
         this.store.all<Installation>("installation"),
       );
     } catch {
-      return fail(400, "Check the template fields: name, role, instructions, a 1.2.3 version and a license are required");
+      return fail(
+        400,
+        "Check the template fields: name, role, instructions, a 1.2.3 version and a license are required",
+      );
     }
     const content = `${JSON.stringify(manifest, null, 2)}\n`;
     const files = [{ path: `${slug(manifest.name)}.socius-bot.json`, content }];
@@ -446,15 +551,25 @@ export class PackageService {
       digest: digestOf(files),
     };
   }
-  exportBot(bot: BotInstance, draft: BotExportDraft, memory: Memory[], digest: string, acknowledged: boolean) {
+  exportBot(
+    bot: BotInstance,
+    draft: BotExportDraft,
+    memory: Memory[],
+    digest: string,
+    acknowledged: boolean,
+  ) {
     const preview = this.botExportPreview(bot, draft, memory);
-    if (preview.digest !== digest) fail(409, "The export changed. Review it again.");
+    if (preview.digest !== digest)
+      fail(409, "The export changed. Review it again.");
     if (preview.findings.length && !acknowledged)
       fail(409, "Review the flagged text before exporting");
     const file = preview.files[0]!;
     const path = join(this.store.exportsDir, `${Date.now()}-${file.path}`);
     writeFileSync(path, file.content);
-    this.store.event("bot.exported", `Exported a reusable template from ${bot.name} after review.`);
+    this.store.event(
+      "bot.exported",
+      `Exported a reusable template from ${bot.name} after review.`,
+    );
     return { path, file };
   }
 }

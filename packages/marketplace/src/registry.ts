@@ -24,7 +24,10 @@ export const reviewedServers: ServerReview[] = [
   },
 ];
 
-const Remote = z.looseObject({ type: z.string().max(40), url: z.string().url() });
+const Remote = z.looseObject({
+  type: z.string().max(40),
+  url: z.string().url(),
+});
 const Package = z.looseObject({
   registryType: z.string().max(40),
   identifier: z.string().max(300),
@@ -58,7 +61,8 @@ export function matchReview(server: {
       r.name === server.name &&
       r.versions.includes(server.version) &&
       server.remotes.some(
-        (remote) => remote.type === "streamable-http" && remote.url === r.remoteUrl,
+        (remote) =>
+          remote.type === "streamable-http" && remote.url === r.remoteUrl,
       ),
   );
 }
@@ -86,15 +90,24 @@ export class RegistryClient {
     this.memory.set(key, page);
     this.options.cache?.set(key, page);
   }
-  async search(input: { search?: string; cursor?: string } = {}): Promise<RegistryPage> {
+  async search(
+    input: { search?: string; cursor?: string } = {},
+  ): Promise<RegistryPage> {
     const search = (input.search ?? "").trim().slice(0, 100);
     const cursor = (input.cursor ?? "").slice(0, 500);
     const key = `${search}\n${cursor}`;
     const cached = this.cacheGet(key);
     const ttl = this.options.ttlMs ?? 10 * 60 * 1000;
-    if (cached && !cached.error && Date.now() - Date.parse(cached.fetchedAt) < ttl)
+    if (
+      cached &&
+      !cached.error &&
+      Date.now() - Date.parse(cached.fetchedAt) < ttl
+    )
       return structuredClone(cached);
-    const url = new URL("/v0.1/servers", this.options.baseURL ?? OFFICIAL_REGISTRY);
+    const url = new URL(
+      "/v0.1/servers",
+      this.options.baseURL ?? OFFICIAL_REGISTRY,
+    );
     url.searchParams.set("limit", "30");
     url.searchParams.set("version", "latest");
     if (search) url.searchParams.set("search", search);
@@ -108,7 +121,8 @@ export class RegistryClient {
         error instanceof Error && error.message.startsWith("Registry")
           ? error.message
           : "Registry request failed";
-      if (cached) return { ...structuredClone(cached), stale: true, error: message };
+      if (cached)
+        return { ...structuredClone(cached), stale: true, error: message };
       return {
         servers: [],
         nextCursor: null,
@@ -121,7 +135,10 @@ export class RegistryClient {
   }
   private async fetchPage(url: URL): Promise<RegistryPage> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 8000);
+    const timer = setTimeout(
+      () => controller.abort(),
+      this.options.timeoutMs ?? 8000,
+    );
     try {
       const response = await (this.options.fetch ?? fetch)(url, {
         headers: { Accept: "application/json" },
@@ -129,8 +146,10 @@ export class RegistryClient {
         redirect: "error",
         signal: controller.signal,
       });
-      if (response.status === 429) throw new Error("Registry rate limit reached; try again later");
-      if (!response.ok) throw new Error(`Registry returned HTTP ${response.status}`);
+      if (response.status === 429)
+        throw new Error("Registry rate limit reached; try again later");
+      if (!response.ok)
+        throw new Error(`Registry returned HTTP ${response.status}`);
       const text = await response.text();
       if (text.length > (this.options.maxBytes ?? 2 * 1024 * 1024))
         throw new Error("Registry response too large");
@@ -141,7 +160,8 @@ export class RegistryClient {
         throw new Error("Registry returned invalid JSON");
       }
       const parsed = PageSchema.safeParse(body);
-      if (!parsed.success) throw new Error("Registry response has an unexpected shape");
+      if (!parsed.success)
+        throw new Error("Registry response has an unexpected shape");
       let skipped = 0;
       const servers: RegistryServerView[] = [];
       for (const raw of parsed.data.servers) {
@@ -151,20 +171,29 @@ export class RegistryClient {
           continue;
         }
         const s = entry.data.server;
-        const official = entry.data._meta?.["io.modelcontextprotocol.registry/official"] as
-          | { isLatest?: boolean; status?: string }
-          | undefined;
+        const official = entry.data._meta?.[
+          "io.modelcontextprotocol.registry/official"
+        ] as { isLatest?: boolean; status?: string } | undefined;
         if (official?.status && official.status !== "active") {
           skipped++;
           continue;
         }
-        const remotes = (s.remotes ?? []).map((r) => ({ type: r.type, url: r.url }));
-        const review = matchReview({ name: s.name, version: s.version, remotes });
+        const remotes = (s.remotes ?? []).map((r) => ({
+          type: r.type,
+          url: r.url,
+        }));
+        const review = matchReview({
+          name: s.name,
+          version: s.version,
+          remotes,
+        });
         servers.push({
           name: s.name,
           version: s.version,
           description: s.description,
-          repositoryUrl: s.repository?.url?.startsWith("https://") ? s.repository.url : null,
+          repositoryUrl: s.repository?.url?.startsWith("https://")
+            ? s.repository.url
+            : null,
           remotes,
           packages: (s.packages ?? []).map((p) => ({
             registryType: p.registryType,
@@ -186,7 +215,8 @@ export class RegistryClient {
         error: null,
       };
     } catch (error) {
-      if (controller.signal.aborted) throw new Error("Registry request timed out");
+      if (controller.signal.aborted)
+        throw new Error("Registry request timed out");
       throw error;
     } finally {
       clearTimeout(timer);

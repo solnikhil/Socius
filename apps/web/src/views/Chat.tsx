@@ -30,6 +30,8 @@ import {
   useDismiss,
 } from "../components/ui.js";
 import { ApprovalCard } from "../components/ApprovalCard.js";
+import { ActionCard, needsAttention } from "../components/ActionCard.js";
+import { ExportBot } from "./ExportBot.js";
 
 const suggestions = [
   "Create a research bot that turns my supplied sources into evidence-based briefs.",
@@ -62,6 +64,7 @@ export function Chat({
     } | null>(null),
     [consent, setConsent] = useState(false),
     [details, setDetails] = useState(false),
+    [exporting, setExporting] = useState(false),
     [copied, setCopied] = useState("");
   const bottom = useRef<HTMLDivElement>(null),
     upload = useRef<HTMLInputElement>(null),
@@ -203,6 +206,13 @@ export function Chat({
       a.state === "pending" &&
       Date.parse(a.expiresAt) > Date.now(),
   );
+  const actions = state.actions
+    .filter(
+      (a) =>
+        a.actor.botId === bot.id &&
+        (needsAttention(a) || a.state === "succeeded"),
+    )
+    .slice(-5);
   const empty = messages.length === 0 && !busy;
   return (
     <div className="chat">
@@ -240,6 +250,15 @@ export function Chat({
                 <BookOpen size={15} />
                 <span>Memory</span>
                 <em>{memory ? "On" : "Off"}</em>
+              </button>
+              <button
+                onClick={() => {
+                  setDetails(false);
+                  setExporting(true);
+                }}
+              >
+                <Download size={15} />
+                <span>Export as template</span>
               </button>
               <p>
                 {state.settings.provider === "ollama"
@@ -351,6 +370,14 @@ export function Chat({
           {approvals.map((a) => (
             <ApprovalCard key={a.id} approval={a} onRefresh={onRefresh} />
           ))}
+          {actions.map((a) => (
+            <ActionCard
+              key={a.id}
+              action={a}
+              state={state}
+              onRefresh={onRefresh}
+            />
+          ))}
           <div ref={bottom} />
         </div>
       </div>
@@ -434,6 +461,7 @@ export function Chat({
           )}
         </form>
       </div>
+      {exporting && <ExportBot bot={bot} onClose={() => setExporting(false)} />}
       {consent && (
         <Modal title="Memory permissions" onClose={() => setConsent(false)}>
           <p className="muted">
