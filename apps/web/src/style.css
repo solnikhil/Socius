@@ -3587,6 +3587,37 @@ dialog.create-bot,
   margin-top: 4px;
   font-size: 12.5px;
 }
+.decision-exact {
+  margin: 8px 0 0 32px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.decision-exact summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.decision-exact dl {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+.decision-exact dl div {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) 1fr;
+  gap: 10px;
+  padding: 2px 0;
+}
+.decision-exact dt {
+  color: var(--text-3);
+}
+.decision-exact dd {
+  margin: 0;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
 .decision-options {
   display: flex;
   flex-direction: column;

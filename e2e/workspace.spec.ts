@@ -544,17 +544,27 @@ test("connect Notion, read, approve one exact page and see the result", async ({
   ).toBeVisible();
   // Only what matters: the page body reads as text; IDs and package details stay hidden.
   await expect(card.getByText("Findings", { exact: true })).toBeVisible();
-  await expect(card.getByText("## Findings")).toHaveCount(0);
-  await expect(card.getByText(/11111111-1111/)).toHaveCount(0);
+  await expect(
+    card.locator(".decision-prose").getByText("## Findings"),
+  ).toHaveCount(0);
   await expect(card.getByText(/socius\/notion|documents\.write/)).toHaveCount(
     0,
   );
-  await expect(card).toBeFocused();
+  // The card never takes focus by itself, so typing cannot answer it.
+  await expect(card).not.toBeFocused();
+  // Hidden IDs keep a short reference, and the exact arguments are one click away.
+  await expect(card.getByText("…111111")).toBeVisible();
+  await card.getByText("Exact details").click();
+  await expect(
+    card.getByText("11111111-1111-1111-1111-111111111111"),
+  ).toBeVisible();
+  await card.getByText("Exact details").click();
   await page.screenshot({
     path: "test-results/socius-action-review.png",
     animations: "disabled",
   });
-  // "A" answers from the keyboard; the same reply then reports the outcome.
+  // Once the user focuses the card, "A" answers; the same reply then reports the outcome.
+  await card.focus();
   await page.keyboard.press("a");
   await expect(
     page.getByText("Done, the “Q3 brief” page is in Notion."),
