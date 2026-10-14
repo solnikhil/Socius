@@ -134,7 +134,12 @@ test("fresh cache entries avoid repeat network calls", async () => {
 });
 
 test("incompatible releases cannot be planned and new capabilities are computed against consent", () => {
-  const future = { ...mainBot, id: "test/future", minRuntime: "9.0.0" };
+  const future = {
+    ...mainBot,
+    id: "test/future",
+    version: "0.1.0",
+    minRuntime: "9.0.0",
+  };
   const catalog = new Catalog([future]);
   assert.equal(catalog.releases()[0]!.compatible, false);
   assert.throws(

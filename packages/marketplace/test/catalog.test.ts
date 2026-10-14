@@ -148,7 +148,7 @@ test("each installation creates a distinct bot with no grants and disabled routi
   assert.notEqual(a.memoryNamespace, b.memoryNamespace);
   assert.deepEqual(a.grantedCapabilities, []);
   assert.equal(a.routinesEnabled, false);
-  assert.deepEqual(a.template, { id: "socius/main", version: "0.1.0" });
+  assert.deepEqual(a.template, { id: "socius/main", version: mainBot.version });
 });
 test("rejects non-bot instantiation and empty names", () => {
   assert.throws(() => instantiateBot(skill("test/summary")), /Expected bot/);

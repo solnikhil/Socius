@@ -350,6 +350,54 @@ export async function startRuntime(options: RuntimeOptions) {
       .all<Task>("task")
       .some((t) => t.state === "running" && match(t));
   }
+  /**
+   * What Socius sees in its own chat so it can route work: the specialists
+   * (with their categories), group chats and bot templates it can adapt.
+   */
+  function workspaceBriefing(): string {
+    const lead = coordinator();
+    const bots = store.all<BotInstance>("bot").filter((b) => b.id !== lead.id);
+    const categoryOf = new Map(
+      store
+        .all<Category>("folder")
+        .flatMap((c) => c.botIds.map((id) => [id, c.name] as const)),
+    );
+    const name = (id: string) =>
+      bots.find((b) => b.id === id)?.name ?? "a former member";
+    const templates = packages.catalog
+      .list()
+      .filter(
+        (m): m is BotManifest => m.kind === "bot" && m.id !== lead.template.id,
+      );
+    return [
+      DEFAULT_FRAMING,
+      bots.length
+        ? `Specialist bots in this workspace (name: role [category]):\n${bots
+            .slice(0, 60)
+            .map(
+              (b) =>
+                `- ${b.name}: ${clip(b.role, 160)}${categoryOf.has(b.id) ? ` [${categoryOf.get(b.id)}]` : ""}`,
+            )
+            .join("\n")}`
+        : "There are no specialist bots yet.",
+      store.all<GroupChat>("group").length
+        ? `Group chats (you coordinate each one):\n${store
+            .all<GroupChat>("group")
+            .slice(0, 30)
+            .map((g) => `- ${g.name}: ${g.memberIds.map(name).join(", ")}`)
+            .join("\n")}`
+        : "There are no group chats yet.",
+      templates.length
+        ? `Bot templates the user can start from in Create bot, or you can adapt with createBot:\n${templates
+            .slice(0, 40)
+            .map((t) => `- ${t.name}: ${clip(t.role, 120)}`)
+            .join("\n")}`
+        : "",
+      "This roster is a snapshot for routing. Bots cannot be messaged from here: suggest opening a bot's chat, or a group chat when several should work together.",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
   /** Everything a model call needs except its messages, checked against the bot's own grants. */
   async function modelContext(
     b: BotInstance,
@@ -1427,6 +1475,9 @@ export async function startRuntime(options: RuntimeOptions) {
               assistant.content = await executeModel(
                 {
                   ...(await modelContext(b, task.id, signal)),
+                  ...(b.template.id === "socius/main"
+                    ? { briefing: workspaceBriefing() }
+                    : {}),
                   messages: store
                     .messages(b.id)
                     .slice(-40)

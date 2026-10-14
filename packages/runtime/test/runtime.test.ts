@@ -947,3 +947,62 @@ test("group budgets, @mentions and repeated requests steer coordination", async 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Socius orchestrates from a live roster and upgrades to its latest instructions", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-orchestrator-"));
+  const seen: { bot: string; briefing: string }[] = [];
+  const runner: ModelRunner = async (request, onText) => {
+    seen.push({ bot: request.bot.name, briefing: request.briefing ?? "" });
+    onText("Ok.");
+    return "Ok.";
+  };
+  let r = await paired(dir, runner);
+  try {
+    await connectModel(r);
+    const writer = await (
+      await r.request("bots", {
+        name: "Writer",
+        role: "Drafts and edits",
+        instructions: "Write.",
+      })
+    ).json();
+    await r.request("categories", { name: "Work", botIds: [writer.id] });
+    await r.request("groups", { name: "Launch crew", memberIds: [writer.id] });
+    const state = (await (await r.request("state")).json()) as Snapshot;
+    const main = state.bots.find((b) => b.template.id === "socius/main")!;
+    assert.equal(main.role, "Master orchestrator");
+    await (
+      await r.request("chat", { botId: main.id, content: "Who should help?" })
+    ).text();
+    await (
+      await r.request("chat", { botId: writer.id, content: "Draft it." })
+    ).text();
+    const [socius, specialist] = seen;
+    assert.match(socius!.briefing, /- Writer: Drafts and edits \[Work\]/);
+    assert.match(socius!.briefing, /- Launch crew: Writer/);
+    assert.match(socius!.briefing, /- Copy Humanizer: /);
+    // Specialists keep the plain framing; only Socius gets the roster.
+    assert.doesNotMatch(
+      specialist!.briefing,
+      /Specialist bots in this workspace/,
+    );
+
+    // An older Socius is refreshed on restart.
+    r.store.put("bot", main.id, {
+      ...main,
+      template: { id: main.template.id, version: "0.1.0" },
+      role: "Personal coordinator",
+      instructions: "Old instructions.",
+    });
+    await r.close();
+    r = await paired(dir, runner);
+    const after = (await (await r.request("state")).json()) as Snapshot;
+    const upgraded = after.bots.find((b) => b.id === main.id)!;
+    assert.equal(upgraded.role, "Master orchestrator");
+    assert.match(upgraded.instructions, /orchestrator of their bots/);
+    assert.notEqual(upgraded.template.version, "0.1.0");
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

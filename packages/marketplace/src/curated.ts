@@ -39,6 +39,7 @@ export const curatedCatalog: Manifest[] = [
   {
     ...mainBot,
     id: "socius/researcher",
+    version: "0.1.0",
     name: "Researcher",
     role: "Research specialist",
     description:
@@ -51,6 +52,7 @@ export const curatedCatalog: Manifest[] = [
   {
     ...mainBot,
     id: "socius/writer",
+    version: "0.1.0",
     name: "Writer",
     role: "Writing specialist",
     description:

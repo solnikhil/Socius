@@ -49,6 +49,24 @@ export class Store {
       this.put("bot", bot.id, bot);
       this.event("bot.created", "Socius is ready. Connect a model to begin.");
     }
+    // Socius's instructions are not user-editable, so a newer release replaces them.
+    for (const bot of this.all<BotInstance>("bot")) {
+      if (
+        bot.template.id !== mainBot.id ||
+        bot.template.version === mainBot.version
+      )
+        continue;
+      this.put("bot", bot.id, {
+        ...bot,
+        template: { id: mainBot.id, version: mainBot.version },
+        role: mainBot.role,
+        instructions: mainBot.instructions,
+      });
+      this.event(
+        "bot.updated",
+        "Socius was updated to its latest instructions.",
+      );
+    }
     for (const task of this.all<Task>("task")) {
       if (task.state === "running") {
         task.state = "failed";
