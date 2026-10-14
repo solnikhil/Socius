@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
 import type { Category } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { Avatar, ErrorNote, Modal } from "../components/ui.js";
+import { Avatar, ErrorNote, Modal } from "../components/chrome.js";
 
 /** Creates a sidebar category, or edits one when `category` is given. */
 export function EditCategory({

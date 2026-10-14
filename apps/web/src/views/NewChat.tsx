@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FolderPlus, Plus, Users, X } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
 import type { GroupChat } from "@socius/contracts/app";
-import { Avatar, GroupAvatar } from "../components/ui.js";
+import { Avatar, GroupAvatar } from "../components/chrome.js";
 
 type Option = { key: string; label: string; icon: ReactNode; run: () => void };
 

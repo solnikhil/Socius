@@ -1,5 +1,5 @@
 import { Monitor, Moon, Sun } from "lucide-react";
-import type { ThemePreference } from "../../components/ui.js";
+import type { ThemePreference } from "../../components/chrome.js";
 
 const themes = [
   { value: "system", label: "System", icon: Monitor },

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, ShieldCheck } from "lucide-react";
 import type { Approval, BotDraft } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { ErrorNote } from "./ui.js";
+import { ErrorNote } from "./chrome.js";
 
 export function ApprovalCard({
   approval: a,

@@ -26,7 +26,7 @@ import {
   type ProviderConnection,
 } from "@socius/contracts/providers";
 import { api } from "../../api.js";
-import { Avatar, ErrorNote, MAIN_BOT_TEMPLATE } from "../../components/ui.js";
+import { Avatar, ErrorNote, MAIN_BOT_TEMPLATE } from "../../components/chrome.js";
 import { ProviderMark } from "../../components/ProviderMark.js";
 import { modelKey, sameModel, type OpenSettings } from "../../models.js";
 

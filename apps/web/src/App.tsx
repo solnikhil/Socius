@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   BookOpen,
@@ -22,10 +22,21 @@ import {
   ErrorNote,
   GroupAvatar,
   MAIN_BOT_TEMPLATE,
-  useDismiss,
   useTheme,
   type ThemePreference,
-} from "./components/ui.js";
+} from "./components/chrome.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { AppIcon } from "./components/AppIcon.js";
 import { Chat } from "./views/Chat.js";
 import { NewChat } from "./views/NewChat.js";
@@ -63,22 +74,11 @@ export function App() {
     [page, setPage] = useState<Page>("chat"),
     [creating, setCreating] = useState(false),
     [folded, setFolded] = useState<Set<string>>(readFolded),
-    [botMenu, setBotMenu] = useState<{
-      id: string;
-      x: number;
-      y: number;
-    } | null>(null),
-    [categoryMenu, setCategoryMenu] = useState<{
-      id: string;
-      x: number;
-      y: number;
-    } | null>(null),
     [editingCategory, setEditingCategory] = useState<{
       category?: Category;
     } | null>(null),
     [apps, setApps] = useState(false),
     [collapsed, setCollapsed] = useState(false),
-    [menu, setMenu] = useState(false),
     [settings, setSettings] = useState<{
       tab: SettingsTab;
       connectionId?: string | undefined;
@@ -147,9 +147,6 @@ export function App() {
       else next.add(key);
       return next;
     });
-  const closeMenu = useCallback(() => setMenu(false), []);
-  const menuRef = useDismiss(menu, closeMenu);
-
   const current = state?.bots.find((b) => b.id === selected) ?? state?.bots[0];
   if (!state || !current)
     return (
@@ -209,43 +206,46 @@ export function App() {
   const botRow = (b: BotInstance, nested: boolean, role = b.role) => {
     const flagged = running(b) || waiting(b) || !!layoutOf(b.id)?.unread;
     return (
-      <button
+      <BotMenu
         key={b.id}
-        className={`bot-row ${nested ? "nested" : ""} ${page === "chat" && !group && b.id === current.id ? "active" : ""}`}
-        onClick={() => open(b)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setCategoryMenu(null);
-          setBotMenu({ id: b.id, x: e.clientX, y: e.clientY });
-        }}
+        bot={b}
+        main={false}
+        layout={layoutOf(b.id)}
+        categories={state.categories}
+        onRefresh={refresh}
       >
-        <Avatar name={b.name} size={nested ? 30 : 34} />
-        <span className="bot-text">
-          <strong>{b.name}</strong>
-          <small>{running(b) ? "Working…" : role}</small>
-        </span>
-        {(layoutOf(b.id)?.pinned || flagged) && (
-          <span className="row-flags">
-            {layoutOf(b.id)?.pinned && (
-              <span className="pin-mark" aria-label="Pinned">
-                <Pin size={13} />
-              </span>
-            )}
-            {flagged && (
-              <span
-                className={`unread ${running(b) ? "pulse" : ""}`}
-                aria-label={
-                  running(b)
-                    ? "Working"
-                    : waiting(b)
-                      ? "Needs review"
-                      : "Unread"
-                }
-              />
-            )}
+        <button
+          className={`bot-row ${nested ? "nested" : ""} ${page === "chat" && !group && b.id === current.id ? "active" : ""}`}
+          onClick={() => open(b)}
+        >
+          <Avatar name={b.name} size={nested ? 30 : 34} />
+          <span className="bot-text">
+            <strong>{b.name}</strong>
+            <small>{running(b) ? "Working…" : role}</small>
           </span>
-        )}
-      </button>
+          {(layoutOf(b.id)?.pinned || flagged) && (
+            <span className="row-flags">
+              {layoutOf(b.id)?.pinned && (
+                <span className="pin-mark" aria-label="Pinned">
+                  <Pin size={13} />
+                </span>
+              )}
+              {flagged && (
+                <span
+                  className={`unread ${running(b) ? "pulse" : ""}`}
+                  aria-label={
+                    running(b)
+                      ? "Working"
+                      : waiting(b)
+                        ? "Needs review"
+                        : "Unread"
+                  }
+                />
+              )}
+            </span>
+          )}
+        </button>
+      </BotMenu>
     );
   };
   // Everything is created from the top + menu; headings only fold.
@@ -253,23 +253,21 @@ export function App() {
     key: string,
     label: string,
     count: number,
-    onContextMenu?: (e: MouseEvent) => void,
+    wrap?: (button: ReactNode) => ReactNode,
   ) => {
     const open = !folded.has(`section:${key}`);
-    return (
-      <h3>
-        <button
-          className="section-toggle"
-          aria-expanded={open}
-          onClick={() => toggleFold(`section:${key}`)}
-          onContextMenu={onContextMenu}
-        >
-          {label}
-          {!open && count > 0 && <span className="section-count">{count}</span>}
-          <ChevronRight size={12} />
-        </button>
-      </h3>
+    const button = (
+      <button
+        className="section-toggle"
+        aria-expanded={open}
+        onClick={() => toggleFold(`section:${key}`)}
+      >
+        {label}
+        {!open && count > 0 && <span className="section-count">{count}</span>}
+        <ChevronRight size={12} />
+      </button>
     );
+    return <h3>{wrap ? wrap(button) : button}</h3>;
   };
   // Categories only group rows in the sidebar; bots outside one are Unassigned.
   const filed = new Set(state.categories.flatMap((f) => f.botIds));
@@ -288,11 +286,15 @@ export function App() {
     const key = `category:${f.id}`;
     return (
       <section key={f.id} className="bot-group" aria-label={f.name}>
-        {sectionHeading(key, f.name, bots.length, (e) => {
-          e.preventDefault();
-          setBotMenu(null);
-          setCategoryMenu({ id: f.id, x: e.clientX, y: e.clientY });
-        })}
+        {sectionHeading(key, f.name, bots.length, (button) => (
+          <CategoryMenu
+            category={f}
+            onRefresh={refresh}
+            onEdit={() => setEditingCategory({ category: f })}
+          >
+            {button}
+          </CategoryMenu>
+        ))}
         {!folded.has(`section:${key}`) && (
           <>
             {bots.map((b) => botRow(b, false))}
@@ -306,42 +308,48 @@ export function App() {
       </section>
     );
   };
-  const menuCategory = categoryMenu
-    ? state.categories.find((f) => f.id === categoryMenu.id)
-    : undefined;
-  const menuBot = botMenu
-    ? state.bots.find((b) => b.id === botMenu.id)
-    : undefined;
   const connected = state.catalog.filter((p) =>
     state.installations.some((i) => i.id === p.id && p.kind !== "bot"),
   );
 
+  const tip = (label: string, control: ReactNode) => (
+    <Tooltip>
+      <TooltipTrigger asChild>{control}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
   const toolbar = (
     <div className="window-tools">
-      <button
-        className="icon ghost"
-        aria-label="Hide sidebar"
-        title={"Hide sidebar  ⌘\\"}
-        onClick={() => setCollapsed((c) => !c)}
-      >
-        <PanelLeft size={17} />
-      </button>
-      <button
-        className="icon round"
-        aria-label="Search bots"
-        title="Search  ⌘K"
-        onClick={() => setPage("new")}
-      >
-        <Search size={17} />
-      </button>
-      <button
-        className="icon round"
-        aria-label="Create"
-        title="New chat, group chat, bot or category  ⌘N"
-        onClick={() => setPage("new")}
-      >
-        <Plus size={19} />
-      </button>
+      {tip(
+        "Hide sidebar  ⌘\\",
+        <button
+          className="icon ghost"
+          aria-label="Hide sidebar"
+          onClick={() => setCollapsed((c) => !c)}
+        >
+          <PanelLeft size={17} />
+        </button>,
+      )}
+      {tip(
+        "Search  ⌘K",
+        <button
+          className="icon round"
+          aria-label="Search bots"
+          onClick={() => setPage("new")}
+        >
+          <Search size={17} />
+        </button>,
+      )}
+      {tip(
+        "New chat, group chat, bot or category  ⌘N",
+        <button
+          className="icon round"
+          aria-label="Create"
+          onClick={() => setPage("new")}
+        >
+          <Plus size={19} />
+        </button>,
+      )}
     </div>
   );
   const themes: { value: ThemePreference; label: string; icon: typeof Sun }[] =
@@ -358,13 +366,16 @@ export function App() {
         <div className="sidebar-scroll">
           {!hiddenBot(main) && (
             <div className="featured">
+              <BotMenu
+                bot={main}
+                main
+                layout={layoutOf(main.id)}
+                categories={state.categories}
+                onRefresh={refresh}
+              >
               <button
                 className={`featured-bot ${page === "chat" && !group && current.id === main.id ? "active" : ""}`}
                 onClick={() => open(main)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setBotMenu({ id: main.id, x: e.clientX, y: e.clientY });
-                }}
               >
                 <Avatar name={main.name} main size={66} badge />
                 <span>{main.name}</span>
@@ -383,6 +394,7 @@ export function App() {
                   />
                 )}
               </button>
+              </BotMenu>
             </div>
           )}
           <section className="bot-group" aria-label="Group chats">
@@ -442,48 +454,36 @@ export function App() {
           )}
         </div>
         <div className="sidebar-bottom">
-          <div className="account" ref={menuRef}>
-            <button
-              className="account-button"
-              aria-label="Account and settings"
-              aria-expanded={menu}
-              onClick={() => setMenu((m) => !m)}
-            >
-              <User size={16} />
-            </button>
-            {menu && (
-              <div className="popover account-menu" role="menu">
+          <div className="account">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
-                  role="menuitem"
-                  onClick={() => {
-                    setSettings({ tab: "general" });
-                    setMenu(false);
-                  }}
+                  className="account-button"
+                  aria-label="Account and settings"
+                >
+                  <User size={16} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                side="top"
+                align="start"
+                className="menu-panel account-panel"
+              >
+                <DropdownMenuItem
+                  onSelect={() => setSettings({ tab: "general" })}
                 >
                   <Settings size={15} />
                   Settings
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMemoryBot(current.id);
-                    setMenu(false);
-                  }}
-                >
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setMemoryBot(current.id)}>
                   <BookOpen size={15} />
                   Memory
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setPage("activity");
-                    setMenu(false);
-                  }}
-                >
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setPage("activity")}>
                   <Activity size={15} />
                   Activity
-                </button>
-                <div className="menu-divider" />
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="menu-divider" />
                 <div className="menu-label">Appearance</div>
                 <div className="segmented" role="radiogroup" aria-label="Theme">
                   {themes.map((t) => (
@@ -499,8 +499,8 @@ export function App() {
                     </button>
                   ))}
                 </div>
-              </div>
-            )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <button className="connect-apps" onClick={() => setApps(true)}>
             Connect apps
@@ -515,16 +515,18 @@ export function App() {
         </div>
       </aside>
       <main>
-        <button
-          className="sidebar-reveal icon ghost"
-          aria-label="Show sidebar"
-          title={"Show sidebar  ⌘\\"}
-          tabIndex={collapsed ? 0 : -1}
-          aria-hidden={!collapsed}
-          onClick={() => setCollapsed(false)}
-        >
-          <PanelLeft size={17} />
-        </button>
+        {tip(
+          "Show sidebar  ⌘\\",
+          <button
+            className="sidebar-reveal icon ghost"
+            aria-label="Show sidebar"
+            tabIndex={collapsed ? 0 : -1}
+            aria-hidden={!collapsed}
+            onClick={() => setCollapsed(false)}
+          >
+            <PanelLeft size={17} />
+          </button>,
+        )}
         <ErrorNote error={error} />
         {page === "chat" && group && (
           <Chat
@@ -622,31 +624,6 @@ export function App() {
           state={state}
           onRefresh={refresh}
           onClose={() => setApps(false)}
-        />
-      )}
-      {botMenu && menuBot && (
-        <BotMenu
-          bot={menuBot}
-          main={menuBot.id === main.id}
-          layout={layoutOf(menuBot.id)}
-          categories={state.categories}
-          x={botMenu.x}
-          y={botMenu.y}
-          onClose={() => setBotMenu(null)}
-          onRefresh={refresh}
-        />
-      )}
-      {categoryMenu && menuCategory && (
-        <CategoryMenu
-          category={menuCategory}
-          x={categoryMenu.x}
-          y={categoryMenu.y}
-          onClose={() => setCategoryMenu(null)}
-          onEdit={() => {
-            setEditingCategory({ category: menuCategory });
-            setCategoryMenu(null);
-          }}
-          onRefresh={refresh}
         />
       )}
       {editingCategory && (

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { BotInstance } from "@socius/contracts";
 import type { BotExportDraft, ExportPreview } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { ErrorNote, Modal } from "../components/ui.js";
+import { ErrorNote, Modal } from "../components/chrome.js";
 import { ExportReview } from "./PackageDetail.js";
 
 /** Reusable template from an explicit field allowlist, reviewed before export. */

@@ -9,7 +9,7 @@ import type {
   Snapshot,
 } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { ErrorNote, Modal } from "../components/ui.js";
+import { ErrorNote, Modal } from "../components/chrome.js";
 import { AppIcon } from "../components/AppIcon.js";
 
 export const trustLabel: Record<Release["trust"], string> = {

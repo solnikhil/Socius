@@ -1,6 +1,6 @@
 import { BookOpen, FileText } from "lucide-react";
 import type { Manifest } from "@socius/contracts";
-import { Avatar } from "./ui.js";
+import { Avatar } from "./chrome.js";
 
 /** A square app tile for catalog entries; bots use their character avatar. */
 export function AppIcon({

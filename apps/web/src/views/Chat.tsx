@@ -30,8 +30,12 @@ import {
   GroupAvatar,
   Markdown,
   Modal,
-  useDismiss,
-} from "../components/ui.js";
+} from "../components/chrome.js";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ApprovalCard } from "../components/ApprovalCard.js";
 import { useSmoothText, useStickToBottom } from "../components/streaming.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
@@ -105,7 +109,6 @@ export function Chat({
     setDetails(false);
     setConfirmDelete(false);
   }, []);
-  const detailsRef = useDismiss(details, closeDetails);
   const conversation = group?.id ?? bot.id;
   const title = group?.name ?? bot.name;
   const messagesPath = group
@@ -338,12 +341,18 @@ export function Chat({
   return (
     <div className="chat">
       <header className="chat-head drag">
-        <div className="bot-pill-wrap" ref={detailsRef}>
+        <div className="bot-pill-wrap">
+          <Popover
+            open={details}
+            onOpenChange={(next) => {
+              setDetails(next);
+              if (!next) setConfirmDelete(false);
+            }}
+          >
+          <PopoverTrigger asChild>
           <button
             className="bot-pill"
-            aria-expanded={details}
             aria-label={`${title} details`}
-            onClick={() => setDetails((d) => !d)}
           >
             {group ? (
               <GroupAvatar names={faces} size={24} />
@@ -352,8 +361,13 @@ export function Chat({
             )}
             {title}
           </button>
-          {details && group && (
-            <div className="popover bot-details">
+          </PopoverTrigger>
+          {group && (
+            <PopoverContent
+              side="bottom"
+              align="center"
+              className="floating-panel bot-details"
+            >
               <div className="bot-details-head">
                 <GroupAvatar names={faces} size={40} />
                 <div>
@@ -399,10 +413,14 @@ export function Chat({
                 Members see the recent group conversation when {bot.name} asks
                 them, and each uses its own permissions.
               </p>
-            </div>
+            </PopoverContent>
           )}
-          {details && !group && (
-            <div className="popover bot-details">
+          {!group && (
+            <PopoverContent
+              side="bottom"
+              align="center"
+              className="floating-panel bot-details"
+            >
               <div className="bot-details-head">
                 <Avatar name={bot.name} main={main} size={40} />
                 <div>
@@ -444,8 +462,9 @@ export function Chat({
                   ? destinationNote(owner.descriptor, owner.connection.label)
                   : "No model is selected yet."}
               </p>
-            </div>
+            </PopoverContent>
           )}
+          </Popover>
         </div>
       </header>
       <div className="chat-scroll" ref={scroller} tabIndex={-1}>

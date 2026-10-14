@@ -3,7 +3,7 @@ import { Check, Plus } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
 import type { GroupChat } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { Avatar, ErrorNote, Modal } from "../components/ui.js";
+import { Avatar, ErrorNote, Modal } from "../components/chrome.js";
 
 /** Creates a group chat, or edits one when `group` is given. */
 export function CreateGroup({

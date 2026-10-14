@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Boxes, Plug, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
 import type { Snapshot } from "@socius/contracts/app";
-import { closeOnBackdrop, type ThemePreference } from "../../components/ui.js";
+import {
+  useDialogMotion,
+  type ThemePreference,
+} from "../../components/chrome.js";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { SettingsTab } from "../../models.js";
 import { GeneralPane } from "./GeneralPane.js";
 import { ModelsPane } from "./ModelsPane.js";
@@ -35,14 +39,11 @@ export function SettingsDialog({
   onTheme: (theme: ThemePreference) => void;
   onOpenActivity: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState(initialTab),
     [focus, setFocus] = useState(initialConnection);
   // Nested views (forms, pickers) register a back step so Escape unwinds them first.
   const back = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
+  const motion = useDialogMotion(onClose);
   useEffect(() => {
     setTab(initialTab);
     setFocus(initialConnection);
@@ -53,19 +54,22 @@ export function SettingsDialog({
     setTab(next);
   };
   return (
-    <dialog
-      ref={ref}
-      className="settings-dialog"
-      aria-labelledby="settings-title"
-      onCancel={(e) => {
-        e.preventDefault();
-        if (back.current) back.current();
-        else onClose();
-      }}
-      onClick={(e) => closeOnBackdrop(e, onClose)}
-    >
+    <Dialog modal={false} open={motion.open} onOpenChange={motion.onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className="dialog-surface settings-dialog"
+        aria-labelledby="settings-title"
+        onAnimationEnd={motion.onAnimationEnd}
+        onInteractOutside={motion.onInteractOutside}
+        onEscapeKeyDown={(e) => {
+          if (back.current) {
+            e.preventDefault();
+            back.current();
+          }
+        }}
+      >
       <nav className="settings-nav" aria-label="Settings sections">
-        <h2 id="settings-title">Settings</h2>
+        <DialogTitle id="settings-title">Settings</DialogTitle>
         <div role="tablist" aria-orientation="vertical">
           {tabs.map((t) => (
             <button
@@ -98,7 +102,7 @@ export function SettingsDialog({
         <button
           className="icon ghost dialog-close"
           aria-label="Close settings"
-          onClick={onClose}
+          onClick={motion.requestClose}
         >
           <X size={18} />
         </button>
@@ -129,6 +133,7 @@ export function SettingsDialog({
         )}
         {tab === "privacy" && <PrivacyPane state={state} />}
       </section>
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }

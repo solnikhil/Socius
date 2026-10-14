@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Plus } from "lucide-react";
 import type { BotInstance, BotManifest } from "@socius/contracts";
 import { api } from "../api.js";
-import { Modal, ErrorNote } from "../components/ui.js";
+import { Modal, ErrorNote } from "../components/chrome.js";
 
 export function CreateBot({
   templates,

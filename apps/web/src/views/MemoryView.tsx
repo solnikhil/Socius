@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { BookOpen, Plus, Search, Trash2, X } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
 import type { Memory } from "@socius/contracts/app";
 import { api } from "../api.js";
 import {
   Avatar,
-  closeOnBackdrop,
   ErrorNote,
   MAIN_BOT_TEMPLATE,
-} from "../components/ui.js";
+  useDialogMotion,
+} from "../components/chrome.js";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 /** Memory floats over the workspace, the same way Settings does. */
 export function MemoryView({
@@ -22,16 +23,13 @@ export function MemoryView({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
   const bot = bots.find((b) => b.id === botId) ?? bots[0];
+  const motion = useDialogMotion(onClose);
   const [records, setRecords] = useState<Memory[]>([]),
     [query, setQuery] = useState(""),
     [editing, setEditing] = useState<Memory | "new" | null>(null),
     [content, setContent] = useState(""),
     [error, setError] = useState("");
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
   async function load(id: string, q: string) {
     try {
       setRecords(
@@ -72,19 +70,22 @@ export function MemoryView({
   }
   if (!bot) return null;
   return (
-    <dialog
-      ref={ref}
-      className="settings-dialog memory-dialog"
-      aria-labelledby="memory-title"
-      onCancel={(e) => {
-        e.preventDefault();
-        if (editing) closeEditor();
-        else onClose();
-      }}
-      onClick={(e) => closeOnBackdrop(e, onClose)}
-    >
+    <Dialog modal={false} open={motion.open} onOpenChange={motion.onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className="dialog-surface settings-dialog memory-dialog"
+        aria-labelledby="memory-title"
+        onAnimationEnd={motion.onAnimationEnd}
+        onInteractOutside={motion.onInteractOutside}
+        onEscapeKeyDown={(e) => {
+          if (editing) {
+            e.preventDefault();
+            closeEditor();
+          }
+        }}
+      >
       <nav className="settings-nav" aria-label="Memory bots">
-        <h2 id="memory-title">Memory</h2>
+        <DialogTitle id="memory-title">Memory</DialogTitle>
         <div role="tablist" aria-orientation="vertical">
           {bots.map((b) => (
             <button
@@ -119,7 +120,7 @@ export function MemoryView({
         <button
           className="icon ghost dialog-close"
           aria-label="Close memory"
-          onClick={onClose}
+          onClick={motion.requestClose}
         >
           <X size={18} />
         </button>
@@ -224,6 +225,7 @@ export function MemoryView({
           </>
         )}
       </section>
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }

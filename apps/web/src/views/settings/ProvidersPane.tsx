@@ -27,7 +27,7 @@ import {
   type ProviderId,
 } from "@socius/contracts/providers";
 import { api } from "../../api.js";
-import { ErrorNote } from "../../components/ui.js";
+import { ErrorNote } from "../../components/chrome.js";
 import { ProviderMark } from "../../components/ProviderMark.js";
 import { destinationNote, type OpenSettings } from "../../models.js";
 

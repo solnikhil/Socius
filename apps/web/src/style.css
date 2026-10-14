@@ -639,7 +639,8 @@ main > .error {
   animation: pop 0.12s ease-out;
 }
 .popover > button,
-.menu-sub > button {
+.menu-sub > button,
+.bot-details > button {
   width: 100%;
   justify-content: flex-start;
   gap: 10px;
@@ -650,8 +651,48 @@ main > .error {
   font-size: 13.5px;
 }
 .popover > button:hover,
-.menu-sub > button:hover {
+.menu-sub > button:hover,
+.bot-details > button:hover {
   background: var(--surface-2);
+}
+.menu-panel {
+  background: var(--elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  min-width: 230px;
+}
+.menu-panel [role="menuitem"],
+.menu-panel [role="menuitemradio"],
+.menu-panel [role="menuitemcheckbox"] {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+.menu-panel [role="menuitem"]:hover,
+.menu-panel [role="menuitem"]:focus,
+.menu-panel [role="menuitem"][data-highlighted],
+.menu-panel [role="menuitemradio"]:hover,
+.menu-panel [role="menuitemradio"]:focus,
+.menu-panel [role="menuitemradio"][data-highlighted] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.menu-panel [data-variant="destructive"],
+.menu-panel [data-variant="destructive"] svg {
+  color: var(--danger);
+}
+.account-panel {
+  width: 250px;
 }
 .account-menu {
   bottom: 50px;
@@ -745,10 +786,8 @@ main > .error {
   background: var(--surface-2);
 }
 .bot-details {
-  top: 48px;
-  left: 50%;
-  transform: translateX(-50%);
   width: 280px;
+  max-width: 280px;
 }
 .bot-details-head {
   display: flex;
@@ -1241,20 +1280,32 @@ main > .error {
 }
 
 /* ---------- Dialogs ---------- */
-dialog {
+dialog,
+.dialog-surface {
   background: var(--elevated);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 18px;
   padding: 22px 26px 24px;
   width: min(480px, 92vw);
+  max-width: min(480px, 92vw);
   box-shadow: var(--shadow);
+  display: block;
+  gap: 0;
 }
 dialog[open] {
   animation: pop 0.16s ease-out;
 }
-dialog::backdrop {
+dialog::backdrop,
+[data-slot="dialog-overlay"] {
   background: var(--backdrop);
+}
+.modal-head h2,
+.modal-head [data-slot="dialog-title"] {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.3;
 }
 .modal-head {
   display: flex;
@@ -1287,6 +1338,7 @@ button.member-row:hover {
   background: var(--surface);
 }
 .member-row.fixed {
+  position: static;
   opacity: 0.85;
 }
 .member-check {
@@ -1320,9 +1372,15 @@ button.member-row:hover {
   height: min(820px, 86vh);
   padding: 0;
 }
+.connect-apps-dialog,
 .connect-apps-dialog[open] {
   display: flex;
   flex-direction: column;
+  width: min(936px, 94vw);
+  max-width: min(936px, 94vw);
+  height: min(820px, 86vh);
+  padding: 0;
+  gap: 0;
 }
 .dialog-close {
   position: absolute;
@@ -1908,8 +1966,13 @@ button.member-row:hover {
     transform: translateY(4px) scale(0.985);
   }
 }
-.bot-details {
-  animation-name: pop-centered;
+.floating-panel {
+  background: var(--elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 6px;
 }
 @keyframes pop-centered {
   from {
@@ -2087,9 +2150,15 @@ button.member-row:hover {
   padding: 0;
   overflow: hidden;
 }
+.settings-dialog,
 .settings-dialog[open] {
   display: grid;
   grid-template-columns: 220px 1fr;
+  width: min(980px, 94vw);
+  max-width: min(980px, 94vw);
+  height: min(760px, 88vh);
+  padding: 0;
+  gap: 0;
 }
 .settings-nav {
   background: var(--sidebar);
@@ -2574,16 +2643,22 @@ h4.with-mark {
   position: relative;
 }
 .model-menu {
-  bottom: 42px;
-  right: 0;
   width: 300px;
+}
+.model-menu [data-slot="dropdown-menu-radio-item"] {
+  padding-left: 8px;
+}
+.model-menu [data-slot="dropdown-menu-radio-item"] > span:first-child {
+  display: none;
 }
 .model-menu-list {
   max-height: 300px;
   overflow-y: auto;
 }
 .model-menu-list > button,
-.model-menu > button {
+.model-menu > button,
+.model-menu [role="menuitem"],
+.model-menu [role="menuitemradio"] {
   width: 100%;
   justify-content: flex-start;
   gap: 9px;
@@ -2617,6 +2692,7 @@ h4.with-mark {
 }
 
 @media (max-width: 860px) {
+  .settings-dialog,
   .settings-dialog[open] {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
@@ -3093,8 +3169,10 @@ h4.with-mark {
   }
 }
 /* Bot template picker in Create bot */
-dialog.create-bot {
+dialog.create-bot,
+.dialog-surface.create-bot {
   width: min(620px, calc(100vw - 32px));
+  max-width: min(620px, calc(100vw - 32px));
 }
 .templates {
   margin: 4px 0 14px;

@@ -9,6 +9,7 @@ Owner: **You**. These tasks are separate from teammates' backend implementation.
 - [ ] Refine New Chat and custom-bot creation/editing; clarify the main bot versus specialists.
 - [ ] Refine Connect Apps search, skill/connector/bot categories, detail views and install/setup states.
 - [x] Settings is a floating dialog (General, Models, Providers, Privacy & data); `SettingsView.tsx` was replaced by `views/settings`. OpenRouter is now a first-class provider, superseding Luna's hint.
+- [x] Dialogs, menus, the model picker, chat details, and shell tooltips use shadcn/ui (Radix plus `tw-animate-css`). Colors stay on the Socius tokens. Form controls and page layout stay in `style.css`.
 - [x] Multi-provider connections, model discovery/testing, default and per-bot model picker, classified setup errors with a Settings action (branch `model-enhancements`).
 - [ ] Visual review of the Settings dialog and model picker in light/dark; live checks against real provider accounts.
 - [ ] Polish waiting states and inline approvals.

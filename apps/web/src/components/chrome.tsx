@@ -1,13 +1,21 @@
 import {
   Fragment,
+  useCallback,
   useEffect,
   useId,
   useRef,
   useState,
+  type AnimationEvent as ReactAnimationEvent,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 import { Star, X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export const MAIN_BOT_TEMPLATE = "socius/main";
 
@@ -143,49 +151,95 @@ export function initials(name: string) {
     .toUpperCase();
 }
 
+/** Keeps a dialog mounted through its shadcn exit animation, then tells the parent. */
+export function useDialogMotion(onClose: () => void) {
+  const [open, setOpen] = useState(true);
+  const done = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const finish = useCallback(() => {
+    if (done.current) return;
+    done.current = true;
+    onCloseRef.current();
+  }, []);
+  const requestClose = useCallback(() => setOpen(false), []);
+  const openedAt = useRef(0);
+  useEffect(() => {
+    if (open) openedAt.current = performance.now();
+  }, [open]);
+  useEffect(() => {
+    if (open) return;
+    const timer = window.setTimeout(finish, 280);
+    return () => window.clearTimeout(timer);
+  }, [open, finish]);
+  const onAnimationEnd = (e: ReactAnimationEvent<HTMLElement>) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.currentTarget.dataset.state === "closed") finish();
+  };
+  // The click that opened the dialog can land on the new overlay. Ignore it.
+  const onInteractOutside = (e: { preventDefault: () => void }) => {
+    if (performance.now() - openedAt.current < 400) e.preventDefault();
+  };
+  return {
+    open,
+    requestClose,
+    onOpenChange: (next: boolean) => {
+      if (!next) requestClose();
+    },
+    onAnimationEnd,
+    onInteractOutside,
+  };
+}
+
 export function Modal({
   title,
   children,
   onClose,
   className = "",
   hideTitle = false,
+  dismissRef,
+  onEscape,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   className?: string;
   hideTitle?: boolean;
+  /** Lets the dialog's own buttons play the close animation. */
+  dismissRef?: MutableRefObject<(() => void) | null>;
+  /** Return true to keep the dialog open (for example, to close an in-pane editor). */
+  onEscape?: () => boolean;
 }) {
-  const ref = useRef<HTMLDialogElement>(null),
-    id = useId();
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
+  const id = useId();
+  const motion = useDialogMotion(onClose);
+  if (dismissRef) dismissRef.current = motion.requestClose;
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby={id}
-      className={className}
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
-      onClick={(e) => closeOnBackdrop(e, onClose)}
-    >
-      <div className="modal-head">
-        <h2 id={id} className={hideTitle ? "sr-only" : ""}>
-          {title}
-        </h2>
-        <button
-          className="icon ghost"
-          aria-label="Close dialog"
-          onClick={onClose}
-        >
-          <X size={18} />
-        </button>
-      </div>
-      {children}
-    </dialog>
+    <Dialog modal={false} open={motion.open} onOpenChange={motion.onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        aria-labelledby={id}
+        className={`dialog-surface ${className}`.trim()}
+        onAnimationEnd={motion.onAnimationEnd}
+        onInteractOutside={motion.onInteractOutside}
+        onEscapeKeyDown={(e) => {
+          if (onEscape?.()) e.preventDefault();
+        }}
+      >
+        <div className="modal-head">
+          <DialogTitle id={id} {...(hideTitle ? { className: "sr-only" } : {})}>
+            {title}
+          </DialogTitle>
+          <button
+            className="icon ghost"
+            aria-label="Close dialog"
+            onClick={motion.requestClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -267,6 +321,7 @@ export function useTheme() {
       // Swap every colour at once instead of animating stale button colours.
       root.classList.add("theme-switching");
       root.dataset.theme = dark ? "dark" : "light";
+      root.classList.toggle("dark", dark);
       requestAnimationFrame(() =>
         requestAnimationFrame(() => root.classList.remove("theme-switching")),
       );

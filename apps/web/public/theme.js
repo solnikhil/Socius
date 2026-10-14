@@ -9,4 +9,5 @@
       ? "dark"
       : "light";
   document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle("dark", theme === "dark");
 })();

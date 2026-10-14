@@ -12,6 +12,9 @@
       "node"
     ],
     "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./apps/web/src/*"]
+    },
     "lib": [
       "ES2023",
       "DOM",

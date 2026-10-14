@@ -18,10 +18,11 @@ import type { RegistryPage, Snapshot } from "@socius/contracts/app";
 import { api } from "../api.js";
 import {
   Avatar,
-  closeOnBackdrop,
   ErrorNote,
   MAIN_BOT_TEMPLATE,
-} from "../components/ui.js";
+  useDialogMotion,
+} from "../components/chrome.js";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AppIcon } from "../components/AppIcon.js";
 import { connectorStatus, PackageDetail } from "./PackageDetail.js";
 
@@ -57,7 +58,6 @@ export function ConnectApps({
   onRefresh: () => Promise<void>;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
   const folder = useRef<HTMLInputElement>(null);
   const template = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState<Filter>("all"),
@@ -67,9 +67,7 @@ export function ConnectApps({
     ),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
+  const motion = useDialogMotion(onClose);
   // One row per package: the installed release, or the newest compatible one.
   const latest = new Map<string, Manifest>();
   for (const r of state.releases) {
@@ -255,25 +253,26 @@ export function ConnectApps({
       ? added.filter((p) => matches.includes(p))
       : matches.filter((p) => filter === "all" || p.kind === filter);
   return (
-    <dialog
-      ref={ref}
-      className="connect-apps-dialog"
-      aria-labelledby="connect-apps-title"
-      onCancel={(e) => {
-        e.preventDefault();
-        if (!detail) onClose();
-      }}
-      onClick={(e) => closeOnBackdrop(e, onClose)}
-    >
+    <Dialog modal={false} open={motion.open} onOpenChange={motion.onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className="dialog-surface connect-apps-dialog"
+        aria-labelledby="connect-apps-title"
+        onAnimationEnd={motion.onAnimationEnd}
+        onInteractOutside={motion.onInteractOutside}
+        onEscapeKeyDown={(e) => {
+          if (detail) e.preventDefault();
+        }}
+      >
       <button
         className="icon ghost dialog-close"
         aria-label="Close dialog"
-        onClick={onClose}
+        onClick={motion.requestClose}
       >
         <X size={18} />
       </button>
       <header className="connect-head">
-        <h2 id="connect-apps-title">Connect Apps</h2>
+        <DialogTitle id="connect-apps-title">Connect Apps</DialogTitle>
         <button
           className="connected-count"
           onClick={() => setFilter(filter === "added" ? "all" : "added")}
@@ -419,7 +418,8 @@ export function ConnectApps({
           }}
         />
       )}
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 

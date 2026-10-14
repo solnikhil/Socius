@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import type { ActionRecord, Snapshot } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { ErrorNote } from "./ui.js";
+import { ErrorNote } from "./chrome.js";
 
 const heading: Record<ActionRecord["state"], string> = {
   pending: "Review a change",
