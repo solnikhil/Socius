@@ -687,9 +687,11 @@ test("text-only models get preloaded procedures and an honest note, never skill 
     assert.match(system(0), /left out because they did not fit.*late/);
     // Tool-capable: the on-demand catalog and loader appear alongside the procedure.
     assert.deepEqual(payloads[1]!.tools!.map((t) => t.function.name).sort(), [
+      "getCurrentTime",
       "loadSkill",
       "readSkillResource",
     ]);
+    assert.doesNotMatch(system(0), /getCurrentTime/);
     assert.match(system(1), /Skills assigned to you.*\n- local\/extra: extra/);
     assert.match(system(1), /Always cite sources\./);
   } finally {
