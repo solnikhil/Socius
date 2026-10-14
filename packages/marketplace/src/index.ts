@@ -184,7 +184,7 @@ export function instantiateBot(input: unknown, name?: string): BotInstance {
 
 const PATTERNS: { kind: ReviewFinding["kind"]; re: RegExp }[] = [
   { kind: "email", re: /[\w.+-]+@[\w-]+\.[\w.-]+/g },
-  { kind: "phone", re: /(?<![\w.])\+?\d[\d ()-]{8,}\d(?![\w.])/g },
+  { kind: "phone", re: /(?<![\w.])\+?\d[\d ()-]{8,}\d(?!\w)/g },
   { kind: "url", re: /https?:\/\/[^\s)>\]]+/g },
   {
     kind: "secret",

@@ -8,5 +8,8 @@
     "@modelcontextprotocol/sdk": "1.32.1",
     "@socius/contracts": "0.1.0",
     "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@socius/marketplace": "0.1.0"
   }
 }

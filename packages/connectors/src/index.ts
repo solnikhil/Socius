@@ -22,8 +22,10 @@ export interface ConnectorAction<A extends Record<string, unknown> = Record<stri
   /** Human-readable description of the exact effect, shown for approval. */
   describe(args: A): string;
   execute(client: McpToolClient, args: A): Promise<ActionOutput>;
+  /** For writes: observe state before writing, so reconciliation can detect a new effect. */
+  prepare?(client: McpToolClient, args: A): Promise<string>;
   /** For writes: look for the effect after an ambiguous outcome. Null means not found. */
-  reconcile?(client: McpToolClient, args: A): Promise<ActionOutput | null>;
+  reconcile?(client: McpToolClient, args: A, baseline: string | null): Promise<ActionOutput | null>;
 }
 export interface ReviewedConnector {
   id: string;
@@ -70,6 +72,13 @@ const call = async (client: McpToolClient, name: string, args: Record<string, un
   if (result.isError) throw new ConnectorError("rejected", "Notion rejected the request.");
   return result.text;
 };
+/** URLs of child pages with exactly this title in notion-fetch output. */
+function childPages(text: string, title: string): (string | null)[] {
+  const pages: (string | null)[] = [];
+  for (const match of text.matchAll(/<page(\s[^>]*)?>([\s\S]*?)<\/page>/g))
+    if (match[2]!.trim() === title) pages.push((match[1] ?? "").match(/url="([^"]+)"/)?.[1] ?? null);
+  return pages;
+}
 const firstNotionUrl = (text: string) =>
   text.match(/https:\/\/(?:www\.)?notion\.(?:so|site)\/[^\s"'<>)\]]+/)?.[0] ?? null;
 
@@ -133,13 +142,17 @@ const createPage: ConnectorAction<{ parentPage: string; title: string; content: 
     });
     return { summary: `Created Notion page “${title}”.`, url: firstNotionUrl(text) };
   },
-  async reconcile(client, { parentPage, title }) {
-    // Notion has no idempotency keys, so look for the page under its parent.
-    const text = await call(client, "notion-fetch", { id: parentPage });
-    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = text.match(new RegExp(`<page[^>]*?(?:url="([^"]+)")?[^>]*>\\s*${escaped}\\s*</page>`));
-    return match
-      ? { summary: `Found Notion page “${title}” under its parent.`, url: match[1] ?? null }
+  async prepare(client, { parentPage, title }) {
+    return String(childPages(await call(client, "notion-fetch", { id: parentPage }), title).length);
+  },
+  async reconcile(client, { parentPage, title }, baseline) {
+    // Notion has no idempotency keys. A page counts as ours only if the number of
+    // same-titled children grew since just before the write; without a baseline we
+    // cannot tell, so we report "not found" and leave the decision to the user.
+    if (baseline === null) return null;
+    const pages = childPages(await call(client, "notion-fetch", { id: parentPage }), title);
+    return pages.length > Number(baseline)
+      ? { summary: `Found the new Notion page “${title}” under its parent.`, url: pages.at(-1) ?? null }
       : null;
   },
 };

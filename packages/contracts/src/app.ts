@@ -111,6 +111,8 @@ export interface ActionAttempt {
   finishedAt: string | null;
   outcome: "succeeded" | "failed" | "rate-limited" | "ambiguous" | null;
   detail: string | null;
+  /** Remote state observed just before the write, used only for reconciliation. */
+  baseline: string | null;
 }
 /** A durable external write proposal bound to actor, release, action and exact arguments. */
 export interface ActionRecord {

@@ -4,6 +4,7 @@ import {
   dialog,
   nativeTheme,
   safeStorage,
+  shell,
   utilityProcess,
 } from "electron";
 import { join, resolve } from "node:path";
@@ -111,6 +112,16 @@ app
               error: "Secure credential storage unavailable",
             });
           }
+        }
+        if (message.type === "open-external" && message.url) {
+          // Only HTTPS provider sign-in pages may leave the app.
+          try {
+            if (new URL(message.url).protocol === "https:")
+              void shell.openExternal(message.url);
+          } catch {
+            /* Ignore malformed URLs. */
+          }
+          return;
         }
         if (message.type === "startup-error") {
           clearTimeout(timeout);

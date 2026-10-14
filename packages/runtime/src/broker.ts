@@ -235,7 +235,9 @@ export class ActionBroker {
     let client: McpToolClient | undefined;
     try {
       client = await this.connections.client(record.connectionId);
-      const output = await this.withTimeout(action.reconcile(client, args));
+      const output = await this.withTimeout(
+        action.reconcile(client, args, record.attempts.at(-1)?.baseline ?? null),
+      );
       if (!output) return false;
       this.succeed(record, output, "Confirmed by checking the service after an unclear response.");
       return true;
@@ -264,6 +266,7 @@ export class ActionBroker {
       finishedAt: null as string | null,
       outcome: null as ActionRecord["attempts"][number]["outcome"],
       detail: null as string | null,
+      baseline: null as string | null,
     };
     // Persist intent before any remote call, so a crash leaves an "unknown", never a replay.
     this.save(record, { state: "executing", attempts: [...record.attempts, attempt], error: null, retryable: false });
@@ -271,6 +274,19 @@ export class ActionBroker {
     let client: McpToolClient | undefined;
     try {
       client = await this.connections.client(record.connectionId);
+      if (action.prepare) {
+        try {
+          current.baseline = await this.withTimeout(action.prepare(client, args));
+        } catch (error) {
+          // Nothing was written yet, so any failure here is a definite non-execution.
+          const failure = error instanceof ConnectorError ? error : null;
+          throw new ConnectorError(
+            failure?.kind === "auth" || failure?.kind === "rate-limited" ? failure.kind : "rejected",
+            failure?.message ?? "Socius could not check the page before writing.",
+          );
+        }
+        this.save(record, {});
+      }
       const output = await this.withTimeout(action.execute(client, args));
       current.finishedAt = new Date(this.now()).toISOString();
       this.succeed(record, output);
