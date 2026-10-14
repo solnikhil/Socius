@@ -282,6 +282,10 @@ export class ConnectionService {
     connection: ConnectorConnection,
     patch: Partial<ConnectorConnection>,
   ) {
+    // Late OAuth/verification responses must never resurrect a revoked connection.
+    const current = this.get(connection.id);
+    if (current?.state === "disconnected" && patch.state !== "disconnected")
+      return current;
     Object.assign(connection, patch, { updatedAt: new Date().toISOString() });
     this.store.put("connection", connection.id, connection);
     return connection;
@@ -467,7 +471,15 @@ export class ConnectionService {
         message: "Sign-in failed. Return to Socius and try again.",
       };
     }
+    // A disconnect can land after the token exchange; report it, never "connected".
+    const revoked = {
+      ok: false,
+      message:
+        "This connection was disconnected during sign-in. Nothing is connected.",
+    };
+    if (this.get(connection.id)?.state === "disconnected") return revoked;
     const verified = await this.verify(connection.id);
+    if (verified.state === "disconnected") return revoked;
     if (verified.state !== "ready")
       return {
         ok: true,
@@ -502,6 +514,10 @@ export class ConnectionService {
     try {
       const client = await this.open(connectionId);
       try {
+        if (this.get(connectionId)?.state === "disconnected")
+          throw new OpenError(
+            new ConnectorError("auth", "This connection was revoked."),
+          );
         return await fn(client);
       } finally {
         await client.close().catch(() => undefined);

@@ -161,3 +161,136 @@ test("Linear OAuth, connector-specific grants and approval revocation cross the 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("disconnect during OAuth token persistence cannot resurrect credentials or a ready connection", async () => {
+  const { Store } = await import("../src/store.js");
+  const { ConnectionService } = await import("../src/connections.js");
+  const fixture = await startNotionFixture({
+    tools: {
+      list_issues: { query: z.string(), limit: z.number() },
+      get_issue: { id: z.string() },
+      save_issue: {
+        team: z.string(),
+        title: z.string(),
+        description: z.string(),
+      },
+    },
+  });
+  const dir = await mkdtemp(join(tmpdir(), "socius-oauth-revoke-"));
+  const store = new Store(dir);
+  let entered!: () => void;
+  let release!: () => void;
+  const saving = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const service = new ConnectionService(
+    store,
+    {
+      endpoints: { "socius/linear": `${fixture.url}/mcp` },
+      secretBox: {
+        encrypt: async (s) => {
+          if (JSON.parse(s).tokens) {
+            entered();
+            await gate;
+          }
+          return `sealed:${s}`;
+        },
+        decrypt: async (s) => s.slice(7),
+      },
+    },
+    () => "http://127.0.0.1:1",
+  );
+  let finishing: ReturnType<typeof service.callback> | undefined;
+  try {
+    const start = await service.connect("socius/linear");
+    const consent = await fetch(start.authorizationUrl, { redirect: "manual" });
+    finishing = service.callback(
+      new URL(consent.headers.get("location")!).searchParams,
+    );
+    await saving;
+    await service.disconnect(start.connection.id);
+    release();
+    assert.equal((await finishing).ok, false);
+    assert.equal(service.get(start.connection.id)?.state, "disconnected");
+    assert.equal(store.connectionSecret(start.connection.id), undefined);
+  } finally {
+    release();
+    await finishing;
+    await service.close();
+    store.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("disconnect during post-sign-in verification reports failure and stays disconnected", async () => {
+  const { Store } = await import("../src/store.js");
+  const { ConnectionService } = await import("../src/connections.js");
+  const fixture = await startNotionFixture({
+    tools: {
+      list_issues: { query: z.string(), limit: z.number() },
+      get_issue: { id: z.string() },
+      save_issue: {
+        team: z.string(),
+        title: z.string(),
+        description: z.string(),
+      },
+    },
+  });
+  const dir = await mkdtemp(join(tmpdir(), "socius-oauth-verify-revoke-"));
+  const store = new Store(dir);
+  let entered!: () => void;
+  let release!: () => void;
+  const verifying = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let gated = false;
+  const service = new ConnectionService(
+    store,
+    {
+      endpoints: { "socius/linear": `${fixture.url}/mcp` },
+      secretBox: {
+        encrypt: async (s) => `sealed:${s}`,
+        // The first read of saved tokens is verification opening its session.
+        decrypt: async (s) => {
+          if (!gated && JSON.parse(s.slice(7)).tokens) {
+            gated = true;
+            entered();
+            await gate;
+          }
+          return s.slice(7);
+        },
+      },
+    },
+    () => "http://127.0.0.1:1",
+  );
+  let finishing: ReturnType<typeof service.callback> | undefined;
+  try {
+    const start = await service.connect("socius/linear");
+    const consent = await fetch(start.authorizationUrl, { redirect: "manual" });
+    finishing = service.callback(
+      new URL(consent.headers.get("location")!).searchParams,
+    );
+    await verifying;
+    await service.disconnect(start.connection.id);
+    release();
+    const result = await finishing;
+    assert.equal(result.ok, false);
+    assert.match(result.message, /disconnected during sign-in/);
+    assert.equal(service.get(start.connection.id)?.state, "disconnected");
+    assert.equal(store.connectionSecret(start.connection.id), undefined);
+  } finally {
+    release();
+    await finishing?.catch(() => undefined);
+    await service.close();
+    store.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
