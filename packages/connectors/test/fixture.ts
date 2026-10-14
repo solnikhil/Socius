@@ -39,7 +39,9 @@ const read = async (req: IncomingMessage) => {
 const dashed = (hex: string) =>
   `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 
-export async function startNotionFixture(): Promise<NotionFixture> {
+export async function startNotionFixture(
+  options: { tools?: Record<string, z.ZodRawShape> } = {},
+): Promise<NotionFixture> {
   const clients = new Map<string, string[]>();
   const codes = new Map<string, { challenge: string; clientId: string }>();
   const tokens = new Set<string>();
@@ -75,6 +77,21 @@ export async function startNotionFixture(): Promise<NotionFixture> {
   };
   const mcp = () => {
     const server = new McpServer({ name: "notion-fixture", version: "1.0.1" });
+    if (options.tools) {
+      for (const [name, inputSchema] of Object.entries(options.tools))
+        server.registerTool(name, { inputSchema }, async (args) => {
+          state.calls.push({ tool: name, args });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ id: "fixture-result", ...args }),
+              },
+            ],
+          };
+        });
+      return server;
+    }
     const record = (tool: string, args: Record<string, unknown>) =>
       state.calls.push({ tool, args });
     server.registerTool(

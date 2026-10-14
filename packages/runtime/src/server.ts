@@ -184,6 +184,7 @@ export async function startRuntime(options: RuntimeOptions) {
     store,
     {
       secretBox: options.secretBox,
+      env: options.env ?? process.env,
       endpoints: options.connectorEndpoints,
       fetch: options.connectorFetch,
       openExternal: options.openExternal,
@@ -230,6 +231,14 @@ export async function startRuntime(options: RuntimeOptions) {
       if (connections.forConnector(connector.id)?.state !== "ready") continue;
       for (const action of connector.actions) {
         if (!b.grantedCapabilities.includes(action.capability)) continue;
+        if (
+          connector.id !== "socius/notion" &&
+          !store.get(
+            "connector-grant",
+            `${b.id}:${connector.id}:${action.capability}`,
+          )
+        )
+          continue;
         tools.push({
           name: action.toolName,
           description: action.description,
@@ -863,6 +872,7 @@ export async function startRuntime(options: RuntimeOptions) {
             releases: packages.releases(),
             installations: store.all("installation"),
             connectorConnections: connections.list(),
+            connectorGrants: store.all("connector-grant"),
             actions: store.all("action").slice(-100),
             activity: store.all("activity").slice(-100).reverse(),
             approvals: store.all("approval"),
@@ -1260,6 +1270,56 @@ export async function startRuntime(options: RuntimeOptions) {
               cursor: url.searchParams.get("cursor") ?? "",
             }),
           );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/connectors/grants") {
+          const input = z
+            .strictObject({
+              botId: uuid,
+              connectorId: z.string().max(130),
+              capability: Capability,
+              granted: z.boolean(),
+            })
+            .parse(await body(req));
+          const b = bot(input.botId);
+          const connector =
+            reviewedConnectors.find((c) => c.id === input.connectorId) ??
+            fail(404, "Unknown connector");
+          const receipt = store.get<Installation>(
+            "installation",
+            input.connectorId,
+          );
+          if (!connector.actions.some((a) => a.capability === input.capability))
+            fail(400, "Capability does not belong to this connector");
+          if (
+            input.granted &&
+            (!receipt?.enabled ||
+              !receipt.consentedCapabilities.includes(input.capability))
+          )
+            fail(409, "Install and consent to this connector capability first");
+          const id = `${b.id}:${input.connectorId}:${input.capability}`;
+          store.transaction(() => {
+            if (input.granted) {
+              store.put("connector-grant", id, {
+                botId: b.id,
+                connectorId: input.connectorId,
+                capability: input.capability,
+              });
+              if (!b.grantedCapabilities.includes(input.capability))
+                store.put("bot", b.id, {
+                  ...b,
+                  grantedCapabilities: [
+                    ...b.grantedCapabilities,
+                    input.capability,
+                  ],
+                });
+            } else store.delete("connector-grant", id);
+            store.event(
+              "permissions.updated",
+              `Connector access ${input.granted ? "granted" : "revoked"} for ${b.name}.`,
+            );
+          });
+          json(res, 200, { ok: true });
           return;
         }
         if (req.method === "POST" && path === "/api/connectors/connect") {
@@ -1780,6 +1840,7 @@ export async function startRuntime(options: RuntimeOptions) {
       await new Promise<void>((resolve, reject) =>
         server.close((e) => (e ? reject(e) : resolve())),
       );
+      await connections.close();
       store.close();
     },
   };

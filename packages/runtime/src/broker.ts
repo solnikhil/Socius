@@ -119,6 +119,14 @@ export class ActionBroker {
       fail(403, `The installation was not consented for ${action.capability}`);
     if (!bot.grantedCapabilities.includes(action.capability))
       fail(403, `${bot.name} has not been granted ${action.capability}`);
+    if (
+      connector.id !== "socius/notion" &&
+      !this.store.get(
+        "connector-grant",
+        `${bot.id}:${connector.id}:${action.capability}`,
+      )
+    )
+      fail(403, `${bot.name} has no access to this connector`);
     const connection = this.connections.forConnector(connector.id);
     if (!connection) fail(409, `${release!.manifest.name} is not connected`);
     if (connection!.state !== "ready")

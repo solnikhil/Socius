@@ -312,6 +312,12 @@ export class PackageService {
     if (dependents.length)
       fail(409, `Required by ${dependents.join(", ")}. Uninstall those first.`);
     this.store.delete("installation", id);
+    for (const row of this.store.db
+      .prepare("SELECT id,data FROM records WHERE kind=?")
+      .all("connector-grant")) {
+      if (JSON.parse(row.data as string).connectorId === id)
+        this.store.delete("connector-grant", row.id as string);
+    }
     this.store.event(
       "package.uninstalled",
       `Uninstalled ${id} ${receipt.version}.`,

@@ -65,6 +65,10 @@ export function connectorStatus(state: Snapshot, id: string) {
 const capabilityText: Partial<Record<Capability, string>> = {
   "documents.read": "Read documents and pages",
   "documents.write": "Propose document changes (each needs approval)",
+  "messages.read": "Read messages",
+  "messages.send": "Propose messages or drafts (each needs approval)",
+  "calendar.read": "Read calendar events",
+  "calendar.write": "Propose event changes (each needs approval)",
   "memory.read": "Read its private memory",
   "memory.write": "Propose memory saves",
   "tasks.delegate": "Delegate tasks",
@@ -487,22 +491,41 @@ function ConnectorSetup({
           {state.bots.map((b) => (
             <div key={b.id} className="grant-row">
               <span>{b.name}</span>
-              {(["documents.read", "documents.write"] as const).map((c) => (
-                <input
-                  key={c}
-                  type="checkbox"
-                  aria-label={`${b.name} ${c}`}
-                  checked={b.grantedCapabilities.includes(c)}
-                  disabled={busy}
-                  onChange={(e) =>
-                    void run("grants", {
-                      botId: b.id,
-                      capability: c,
-                      granted: e.target.checked,
-                    })
-                  }
-                />
-              ))}
+              {[...new Set(item.tools?.map((t) => t.capability) ?? [])].map(
+                (c) => (
+                  <input
+                    key={c}
+                    type="checkbox"
+                    aria-label={`${b.name} ${c}`}
+                    checked={
+                      b.grantedCapabilities.includes(c) &&
+                      (item.id === "socius/notion" ||
+                        state.connectorGrants.some(
+                          (g) =>
+                            g.botId === b.id &&
+                            g.connectorId === item.id &&
+                            g.capability === c,
+                        ))
+                    }
+                    disabled={busy}
+                    onChange={(e) =>
+                      void run(
+                        item.id === "socius/notion"
+                          ? "grants"
+                          : "connectors/grants",
+                        {
+                          ...(item.id === "socius/notion"
+                            ? {}
+                            : { connectorId: item.id }),
+                          botId: b.id,
+                          capability: c,
+                          granted: e.target.checked,
+                        },
+                      )
+                    }
+                  />
+                ),
+              )}
             </div>
           ))}
         </div>
