@@ -245,7 +245,40 @@ export class ActionBroker {
       updatedAt: new Date(this.now()).toISOString(),
     });
     this.store.put("action", record.id, record);
+    for (const listener of this.listeners) listener(record);
     return record;
+  }
+  private readonly listeners = new Set<(record: ActionRecord) => void>();
+  /**
+   * Resolves once the user has decided and any approved change has finished,
+   * or with null when the signal aborts or `maxMs` passes first. The proposal
+   * itself stays reviewable either way.
+   */
+  waitForDecision(
+    id: string,
+    signal: AbortSignal,
+    maxMs: number,
+  ): Promise<ActionRecord | null> {
+    const settled = (r: ActionRecord | undefined) =>
+      !!r && r.state !== "pending" && r.state !== "executing";
+    const current = this.store.get<ActionRecord>("action", id);
+    if (settled(current)) return Promise.resolve(current!);
+    return new Promise((resolve) => {
+      const done = (record: ActionRecord | null) => {
+        clearTimeout(timer);
+        this.listeners.delete(listener);
+        signal.removeEventListener("abort", abort);
+        resolve(record);
+      };
+      const listener = (r: ActionRecord) => {
+        if (r.id === id && settled(r)) done(r);
+      };
+      const abort = () => done(null);
+      const timer = setTimeout(() => done(null), maxMs);
+      this.listeners.add(listener);
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    });
   }
   private load(id: string) {
     return (
@@ -286,7 +319,12 @@ export class ActionBroker {
     }
   }
 
-  async resolve(input: { id: string; digest: string; approve: boolean }) {
+  async resolve(input: {
+    id: string;
+    digest: string;
+    approve: boolean;
+    feedback?: string | undefined;
+  }) {
     const record = this.load(input.id);
     if (record.state !== "pending")
       fail(409, "This proposal was already resolved");
@@ -295,7 +333,10 @@ export class ActionBroker {
     if (!input.approve) {
       if (record.digest !== this.recordDigest(record))
         fail(409, "Proposal content changed");
-      this.save(record, { state: "denied" });
+      this.save(record, {
+        state: "denied",
+        ...(input.feedback ? { feedback: input.feedback } : {}),
+      });
       this.store.event("action.denied", `Declined: ${record.summary}`);
       return record;
     }

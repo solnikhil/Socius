@@ -294,3 +294,25 @@ test("disconnect during post-sign-in verification reports failure and stays disc
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("deleting a bot removes its connector grants and keeps other bots' grants", async () => {
+  const { Store } = await import("../src/store.js");
+  const dir = await mkdtemp(join(tmpdir(), "socius-grant-delete-"));
+  const store = new Store(dir);
+  try {
+    for (const botId of ["bot-a", "bot-b"])
+      store.put("connector-grant", `${botId}:socius/linear:documents.read`, {
+        botId,
+        connectorId: "socius/linear",
+        capability: "documents.read",
+      });
+    store.deleteBot("bot-a");
+    assert.deepEqual(
+      store.all<{ botId: string }>("connector-grant").map((g) => g.botId),
+      ["bot-b"],
+    );
+  } finally {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
