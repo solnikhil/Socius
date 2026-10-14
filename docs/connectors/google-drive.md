@@ -1,0 +1,15 @@
+# Google Drive connector
+
+Draft implementation, last in the six-connector stack. Searches eligible files, fetches their text representation and proposes a new document from plain text in an explicitly approved folder. No overwrite, deletion, sharing, permission changes, arbitrary binary upload or background indexing is exposed.
+
+Enroll in Google Workspace MCP Developer Preview, enable Drive and Drive MCP APIs and register a Web OAuth client marked as an AI agent. Exact redirect: `http://127.0.0.1:37377/oauth/callback`. Configure `SOCIUS_DRIVE_CLIENT_ID` and `SOCIUS_DRIVE_CLIENT_SECRET` on the runtime host; never bundle a shared client secret. Scopes are drive.readonly (broad read of eligible files the user can access) and drive.file (creation); offline access and explicit consent support refresh. This account and its bot grants are independent of Gmail/Calendar. Google verification/admin policy can restrict availability.
+
+Fixed endpoint: `https://drivemcp.googleapis.com/mcp/v1`. Reviewed tools: search_files, read_file_content, create_file. Search uses Google's structured query syntax, at most fifty results; fetch excludes comments and returns provider-generated text, which may be incomplete for large or unsupported files. File eligibility restrictions are enforced by Google; this is not a promise to read every Drive format. Socius caps returned text at 12,000 characters.
+
+Creation requires parentId, title and bounded textContent. The adapter fixes contentMimeType=text/plain and enables conversion to a Google document. No file ID, permission or alternate content fields can be supplied. Existing parent-folder permissions can expose a new document to collaborators; the approval explicitly names that folder and inheritance. Unknown outcomes require manual inspection before a fresh proposal; no automatic replay/reconciliation is claimed.
+
+Tests verify target/content validation, blocked overwrite/share/MIME fields and exact upstream mapping. Batch conformance checks manifest parity, model input JSON schemas and fail-closed missing-tool checks for all reviewed adapters. Shared runtime fixtures cover authorization, approvals, registered-client OAuth, refresh and revocation.
+
+Before merge: eligible preview account and OAuth setup; live schema verification; search/fetch supported and unsupported formats; deny/approve one document in a disposable folder; confirm conversion, content and inherited access; verify drive.file parent-folder behavior, large-file truncation, refresh/restart and provider/local revocation in Electron. No live Drive change or acceptance is claimed.
+
+Sources: [Google MCP setup](https://developers.google.com/workspace/guides/configure-mcp-servers), [search](https://developers.google.com/workspace/drive/api/reference/mcp/tools_list/search_files), [read content](https://developers.google.com/workspace/drive/api/reference/mcp/tools_list/read_file_content), [create](https://developers.google.com/workspace/drive/api/reference/mcp/tools_list/create_file).

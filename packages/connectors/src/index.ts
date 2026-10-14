@@ -1,3 +1,4 @@
+import { googleDrive } from "./google-drive.js";
 import { slack } from "./slack.js";
 import { googleCalendar } from "./google-calendar.js";
 import { gmail } from "./gmail.js";
@@ -248,6 +249,7 @@ export const reviewedConnectors: ReviewedConnector[] = [
   gmail,
   googleCalendar,
   slack,
+  googleDrive,
 ];
 export const reviewedConnector = (id: string) =>
   reviewedConnectors.find((c) => c.id === id);
