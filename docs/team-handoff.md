@@ -76,6 +76,8 @@ Boards were retired on 2026-10-14. Group chats are the single collaboration surf
 
 ### Teammate: Skills & Connectors Marketplace
 
+Next connector batch, in the user-selected order: **Linear → GitHub → Gmail and Google Calendar → Slack → Google Drive**. Gmail/Calendar share a stage but need separate adapters and permission scopes. See the [connector roadmap](architecture/skills-and-connectors.md#next-connector-batch--user-selected-priority); existing Notion and the Indian-service discovery backlog remain separate. No new connector is implemented by recording this order.
+
 - [ ] Standard SKILL.md import/export and progressive loading.
 - [ ] Enable/disable/update/uninstall, verified releases and safe staging/rollback.
 - [ ] Curated MCP discovery and one real Notion/calendar connector.

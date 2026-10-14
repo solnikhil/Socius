@@ -156,6 +156,22 @@ New record kinds: `release`, `connection`, `action`, `registry-cache`. The curat
 - Release trust has no publisher signatures yet. `curated`/`reviewed` reflect Socius review; registry metadata is not cryptographically verified.
 - Only Notion is implemented. Calendar and other connectors follow the same `ReviewedConnector` contract.
 
+## Next connector batch — user-selected priority
+
+Implement the productivity connectors in this order. These are requirements for the next batch, not installed/reviewed adapters or verified account access.
+
+| Stage | Connector(s) |
+| --- | --- |
+| 1 | Linear |
+| 2 | GitHub |
+| 3 | Gmail and Google Calendar |
+| 4 | Slack |
+| 5 | Google Drive |
+
+Gmail and Google Calendar share one priority stage but remain separate connectors, with separate reviewed scopes and setup. Reuse the existing connection, bot-grant and action-approval services. Each adapter needs supported-access/authentication review, strict action contracts, cancellation/recovery tests and real-account acceptance before being labelled connectable. This order does not imply that all providers support the same MCP or OAuth flow.
+
+The Indian-service discovery directory remains a separate backlog; these priorities do not remove its entries or turn catalog listings into working integrations. Existing Notion support remains in place.
+
 ## Requested connector directory
 
 Connect Apps hides the Skills catalog and skill import for now. Skill packages, import and export remain in the runtime for a later release.
