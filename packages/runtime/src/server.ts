@@ -60,6 +60,14 @@ import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
 
 import { DeviceService } from "./devices.js";
+import {
+  requestOrigin,
+  remoteSettings,
+  RemoteSettingsSchema,
+  cookieToken,
+  sessionCookie,
+  remoteSafe,
+} from "./remote.js";
 
 export type { SecretBox };
 export interface RuntimeOptions {
@@ -812,12 +820,36 @@ export async function startRuntime(options: RuntimeOptions) {
       "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     );
     try {
-      const expectedHost = new URL(origin).host;
-      if (req.headers.host !== expectedHost) fail(403, "Invalid host");
-      const url = new URL(req.url ?? "/", origin);
+      const context = requestOrigin(req, origin, remoteSettings(store));
+      const url = new URL(req.url ?? "/", context.origin);
+      if (
+        req.method === "POST" &&
+        url.pathname === "/api/remote/pair" &&
+        context.kind === "remote"
+      ) {
+        const input = z
+          .strictObject({
+            challenge: z.string().min(6).max(64),
+            label: z.string().trim().min(1).max(80),
+          })
+          .parse(await body(req));
+        requestOrigin(req, origin, remoteSettings(store));
+        const paired = devices.exchange(input.challenge, input.label);
+        res.writeHead(303, {
+          "Set-Cookie": sessionCookie(paired.token, true),
+          Location: "/",
+          "Cache-Control": "no-store",
+        });
+        res.end();
+        return;
+      }
       // OAuth redirects arrive from the system browser without the app session; the
       // one-time state created by an explicit sign-in authenticates them instead.
-      if (req.method === "GET" && url.pathname === "/oauth/callback") {
+      if (
+        req.method === "GET" &&
+        url.pathname === "/oauth/callback" &&
+        context.kind === "local"
+      ) {
         const result = await connections.callback(url.searchParams);
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "text/html; charset=utf-8",
@@ -826,14 +858,18 @@ export async function startRuntime(options: RuntimeOptions) {
         res.end(callbackPage(result.message));
         return;
       }
-      if (req.method === "GET" && url.pathname === "/pair") {
+      if (
+        req.method === "GET" &&
+        url.pathname === "/pair" &&
+        context.kind === "local"
+      ) {
         const token = url.searchParams.get("token") ?? "";
         if (!pairingToken || !same(token, pairingToken))
           fail(403, "Invalid or expired pairing token");
         pairingToken = "";
         const { token: session } = devices.create("Desktop browser", "local");
         res.writeHead(303, {
-          "Set-Cookie": `socius_session=${session}; HttpOnly; SameSite=Strict; Path=/`,
+          "Set-Cookie": sessionCookie(session, false),
           Location: "/",
           "Cache-Control": "no-store",
         });
@@ -841,26 +877,74 @@ export async function startRuntime(options: RuntimeOptions) {
         return;
       }
       if (url.pathname.startsWith("/api/")) {
-        const cookie =
-          (req.headers.cookie ?? "")
-            .split(";")
-            .map((s) => s.trim())
-            .find((s) => s.startsWith("socius_session="))
-            ?.slice(15) ?? "";
-        const device = devices.authenticate(cookie, "local");
+        const cookie = cookieToken(req, context.kind === "remote");
+        const device = devices.authenticate(cookie, context.kind);
+        res.setHeader(
+          "Set-Cookie",
+          sessionCookie(cookie, context.kind === "remote"),
+        );
         const untrack = devices.track(device.id, () => res.destroy());
-        res.once("close", untrack);
-        if (req.headers.origin && req.headers.origin !== origin)
-          fail(403, "Invalid origin");
-        if (req.headers["sec-fetch-site"] === "cross-site")
-          fail(403, "Cross-site request blocked");
-        if (req.method !== "GET" && req.headers.origin !== origin)
-          fail(403, "Mutation requires the paired application origin");
+        const expiry = setInterval(() => {
+          try {
+            devices.authenticate(cookie, context.kind, false);
+            requestOrigin(req, origin, remoteSettings(store));
+          } catch {
+            res.destroy();
+          }
+        }, 1000);
+        expiry.unref();
+        res.once("close", () => {
+          untrack();
+          clearInterval(expiry);
+        });
+        const localOnly = () => {
+          if (context.kind !== "local") fail(403, "Do this on your laptop");
+        };
+        if (
+          context.kind === "remote" &&
+          !remoteSafe(req.method ?? "GET", url.pathname)
+        )
+          fail(403, "Do this on your laptop");
         const path = url.pathname;
+        if (req.method === "GET" && path === "/api/remote/status") {
+          json(res, 200, {
+            ...remoteSettings(store),
+            localOwner: context.kind === "local",
+          });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/remote/settings") {
+          localOnly();
+          const input = RemoteSettingsSchema.parse(await body(req));
+          devices.authenticate(cookie, "local");
+          const previous = remoteSettings(store);
+          if (!input.enabled || input.origin !== previous.origin)
+            devices.revokeRemote();
+          store.put("remote-settings", "owner", {
+            ...input,
+            configuredPort: new URL(origin).port
+              ? Number(new URL(origin).port)
+              : 80,
+          });
+          store.event(
+            "remote.configured",
+            input.enabled
+              ? "Private remote access enabled."
+              : "Private remote access disabled.",
+          );
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/devices/signout") {
+          json(res, 200, { ok: true });
+          devices.revoke(device.id);
+          return;
+        }
+
         if (req.method === "GET" && path === "/api/devices") {
           json(res, 200, {
             currentDeviceId: device.id,
-            devices: devices.list(),
+            devices: context.kind === "local" ? devices.list() : [device],
           });
           return;
         }
@@ -878,6 +962,9 @@ export async function startRuntime(options: RuntimeOptions) {
           return;
         }
         if (req.method === "POST" && path === "/api/devices/pair") {
+          localOnly();
+          if (!remoteSettings(store).enabled)
+            fail(409, "Enable remote access on your laptop first");
           json(res, 201, devices.pairing());
           return;
         }
