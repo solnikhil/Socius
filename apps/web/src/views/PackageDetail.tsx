@@ -36,10 +36,12 @@ const statusLabel: Record<ConnectorStatus, string> = {
 };
 export function connectorStatus(state: Snapshot, id: string) {
   const receipt = state.installations.find((i) => i.id === id);
-  const connection = state.connections
+  const connection = state.connectorConnections
     .filter((c) => c.connectorId === id && c.state !== "disconnected")
     .at(-1);
-  const revoked = state.connections.filter((c) => c.connectorId === id).at(-1);
+  const revoked = state.connectorConnections
+    .filter((c) => c.connectorId === id)
+    .at(-1);
   const status: ConnectorStatus = !receipt
     ? "not-installed"
     : !receipt.enabled

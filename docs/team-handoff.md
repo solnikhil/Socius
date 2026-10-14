@@ -4,12 +4,12 @@ Use Node.js 24, `npm ci`, then `npm run desktop`. The user owns UI/refinement. T
 
 ## Ownership
 
-| Owner | Assignment | Code boundary | Current status |
-| --- | --- | --- | --- |
-| Teammate working on Teams & Boards | [Issue #2](https://github.com/solnikhil/Socius/issues/2) | New packages/teams, board/team contracts, orchestration, queue, persistence and tests | Assigned workstream; acceptance evidence still pending |
-| Teammate working on Skills & Connectors Marketplace | [Issue #3](https://github.com/solnikhil/Socius/issues/3) | packages/marketplace, new packages/skills and packages/connectors, installation/auth/action services and tests | Assigned workstream; acceptance evidence still pending |
-| You | [UI and refinement checklist](ui-refinement.md) | apps/web/src plus desktop visual/presentation changes | UI refinement ongoing; new backend integration follows contracts |
-| Luna testing handoff | API-provider and chat reliability | Runtime adapter/test changes; Settings hint handed to you | Interrupted; uncommitted changes need final verification |
+| Owner                                               | Assignment                                               | Code boundary                                                                                                  | Current status                                                                                                                      |
+| --------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Teammate working on Teams & Boards                  | [Issue #2](https://github.com/solnikhil/Socius/issues/2) | New packages/teams, board/team contracts, orchestration, queue, persistence and tests                          | Assigned workstream; acceptance evidence still pending                                                                              |
+| Teammate working on Skills & Connectors Marketplace | [Issue #3](https://github.com/solnikhil/Socius/issues/3) | packages/marketplace, new packages/skills and packages/connectors, installation/auth/action services and tests | Assigned workstream; acceptance evidence still pending                                                                              |
+| You                                                 | [UI and refinement checklist](ui-refinement.md)          | apps/web/src plus desktop visual/presentation changes                                                          | UI refinement ongoing; new backend integration follows contracts                                                                    |
+| Luna testing handoff                                | API-provider and chat reliability                        | Runtime adapter/test changes; Settings hint handed to you                                                      | Superseded by branch `model-enhancements` (multi-provider connections); the uncommitted drafts on main need no separate integration |
 
 Issues [#2 specification](issues/teams-boards.md) and [#3 specification](issues/skills-connectors-marketplace.md) contain the full winning workflows, PR sequence and closure criteria. Agents can read the public repository/issues without Notion access. Do not guess GitHub assignees or dates.
 
@@ -26,6 +26,7 @@ Issues [#2 specification](issues/teams-boards.md) and [#3 specification](issues/
 ## In progress / draft evidence
 
 Luna left uncommitted changes in:
+
 - packages/runtime/src/model.ts: injectable provider fetch for tests, explicit retry budget and suppressed raw provider error logging.
 - packages/runtime/test/model.test.ts: OpenAI/Anthropic/compatible boundary coverage plus an OpenRouter endpoint case.
 - packages/runtime/test/runtime.test.ts: document-summary persistence, approved-memory restart/replay handling, cancellation and sanitized failure/retry tests.
@@ -37,7 +38,7 @@ Reported checks: baseline full check passed with 19 tests; targeted runtime test
 
 ### Teammate: Teams & Boards
 
-> Direction change (2026-10-14): the user replaced boards with group chats coordinated by Socius, now on `main` ([Group chats](architecture/group-chats.md)). PR #4 (boards) is not merged. Coordinate before building further board work; reusable pieces such as budgets or recovery should extend group chats.
+> Update (2026-10-14): boards (PR #4) were merged alongside the user's group chats ([Group chats](architecture/group-chats.md)), where Socius coordinates a shared conversation. Both share the model adapter and runtime; coordinate changes to `model.ts` and `server.ts`.
 
 - [ ] Persistent boards, objectives, membership and coordinator.
 - [ ] Scoped delegation, attributed contributions, task graph and consolidated result.
@@ -56,15 +57,15 @@ Reported checks: baseline full check passed with 19 tests; targeted runtime test
 ### You: UI and refinement
 
 - [ ] Polish chat, New Chat/bot management, Connect Apps, memory and settings.
-- [ ] Review the pending OpenRouter Settings hint.
+- [x] OpenRouter Settings hint superseded: OpenRouter is a first-class provider in the Settings dialog (`model-enhancements`).
 - [ ] Refine rich response/attachment states, inline approvals and error/empty/loading behavior.
 - [x] Group chat screens: create/edit/delete, roster popover, attributed replies (replaces board screens).
 - [ ] Accessibility, responsive behavior, visual consistency and final workflow review.
 
 ### Testing / integration next
 
-- [ ] Review Luna's draft backend changes; run the final OpenRouter case and complete checks.
-- [ ] Configure OpenRouter in Settings and choose an available tool-capable model; keys stay outside chat/issues.
+- [ ] Run full checks on `model-enhancements` (runtime suites, build, end-to-end) before merging; Luna's drafts are superseded.
+- [ ] Live check: connect OpenRouter (and one local provider) in Settings → Providers, add a tool-capable model, run Test, and chat; keys stay outside chat/issues.
 - [ ] Live check: document summary, bot proposal and approved memory save.
 - [ ] Commit/push the verified testing unit separately from unrelated UI work.
 - [ ] Jointly verify the two issue workflows when backend and your screens are ready.

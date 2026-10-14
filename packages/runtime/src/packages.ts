@@ -311,7 +311,7 @@ export class PackageService {
     const dependents = this.dependents(id);
     if (dependents.length)
       fail(409, `Required by ${dependents.join(", ")}. Uninstall those first.`);
-    this.store.remove("installation", id);
+    this.store.delete("installation", id);
     this.store.event(
       "package.uninstalled",
       `Uninstalled ${id} ${receipt.version}.`,

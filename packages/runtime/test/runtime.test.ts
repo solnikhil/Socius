@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startRuntime } from "../src/server.js";
 import { Store } from "../src/store.js";
 import type {
   Snapshot,
@@ -13,36 +12,12 @@ import type {
   GroupChat,
 } from "@socius/contracts/app";
 import type { ModelRunner } from "../src/model.js";
+import { paired, connectModel } from "./helpers.js";
 
-async function paired(dataDir: string, runner?: ModelRunner) {
-  const runtime = await startRuntime({
-    dataDir,
-    ...(runner ? { runner } : {}),
-  });
-  const pairing = await fetch(runtime.pairingURL, { redirect: "manual" });
-  const cookie = pairing.headers.get("set-cookie")!.split(";")[0]!;
-  async function request(
-    path: string,
-    data?: unknown,
-    method = data === undefined ? "GET" : "POST",
-    origin = runtime.origin,
-  ) {
-    return fetch(`${runtime.origin}/api/${path}`, {
-      method,
-      headers: {
-        Cookie: cookie,
-        Origin: origin,
-        ...(data === undefined ? {} : { "Content-Type": "application/json" }),
-      },
-      ...(data === undefined ? {} : { body: JSON.stringify(data) }),
-    });
-  }
-  return { ...runtime, request };
-}
 const fake: ModelRunner = async (request, onText) => {
   const message = request.messages.at(-1)?.content;
   if (typeof message === "string" && message.includes("create bot"))
-    request.proposeBot({
+    request.proposeBot?.({
       name: "Planner",
       role: "Planning specialist",
       instructions: "Make clear plans from supplied context.",
@@ -171,11 +146,7 @@ test("main bot proposals survive restart and create exactly one fresh specialist
   try {
     let state = (await (await r.request("state")).json()) as Snapshot;
     const main = state.bots[0]!;
-    await r.request("settings", {
-      provider: "ollama",
-      model: "test-model",
-      baseURL: "http://127.0.0.1:11434/v1",
-    });
+    await connectModel(r);
     const chat = await r.request("chat", {
       botId: main.id,
       content: "create bot",
@@ -265,11 +236,7 @@ test("revoking memory authority blocks pending model proposals", async () => {
   try {
     const state = (await (await r.request("state")).json()) as Snapshot,
       botId = state.bots[0]!.id;
-    await r.request("settings", {
-      provider: "ollama",
-      model: "test-model",
-      baseURL: "http://127.0.0.1:11434/v1",
-    });
+    await connectModel(r);
     await r.request("grants", { botId, memory: true });
     await (await r.request("chat", { botId, content: "remember" })).text();
     const approval = ((await (await r.request("state")).json()) as Snapshot)
@@ -333,11 +300,7 @@ test("a bounded document summary persists the attachment and streamed result", a
   try {
     const state = (await (await r.request("state")).json()) as Snapshot;
     const botId = state.bots[0]!.id;
-    await r.request("settings", {
-      provider: "compatible",
-      model: "fixture-model",
-      baseURL: "http://127.0.0.1:1234/v1",
-    });
+    await connectModel(r);
     const response = await r.request("chat", {
       botId,
       content: "Summarize this report in three points.",
@@ -372,11 +335,7 @@ test("memory proposals persist through restart and cannot be applied twice", asy
   try {
     const initial = (await (await r.request("state")).json()) as Snapshot;
     const botId = initial.bots[0]!.id;
-    await r.request("settings", {
-      provider: "compatible",
-      model: "fixture-model",
-      baseURL: "http://127.0.0.1:1234/v1",
-    });
+    await connectModel(r);
     await r.request("grants", { botId, memory: true });
     const chat = await r.request("chat", { botId, content: "remember this" });
     assert.match(await chat.text(), /"type":"done"/);
@@ -431,11 +390,7 @@ test("cancellation reaches a running model and leaves an explicit cancelled task
   try {
     const initial = (await (await r.request("state")).json()) as Snapshot;
     const botId = initial.bots[0]!.id;
-    await r.request("settings", {
-      provider: "compatible",
-      model: "fixture-model",
-      baseURL: "http://127.0.0.1:1234/v1",
-    });
+    await connectModel(r);
     const response = await r.request("chat", { botId, content: "wait" });
     const reader = response.body!.getReader();
     const started = await reader.read();
@@ -453,10 +408,10 @@ test("cancellation reaches a running model and leaves an explicit cancelled task
       output += new TextDecoder().decode(part.value);
     }
     assert.match(output, /"type":"error"/);
-    assert.match(output, /Task cancelled or timed out/);
+    assert.match(output, /Task cancelled/);
     const state = (await (await r.request("state")).json()) as Snapshot;
     assert.equal(state.tasks[0]!.state, "cancelled");
-    assert.equal(state.tasks[0]!.error, "Task cancelled or timed out.");
+    assert.equal(state.tasks[0]!.error, "Task cancelled.");
   } finally {
     await r.close();
     await rm(dir, { recursive: true, force: true });
@@ -476,14 +431,10 @@ test("provider failures are redacted, persisted, and require an explicit new run
   try {
     const initial = (await (await r.request("state")).json()) as Snapshot;
     const botId = initial.bots[0]!.id;
-    await r.request("settings", {
-      provider: "compatible",
-      model: "fixture-model",
-      baseURL: "http://127.0.0.1:1234/v1",
-    });
+    await connectModel(r);
     const failed = await r.request("chat", { botId, content: "try this" });
     const failedOutput = await failed.text();
-    assert.match(failedOutput, /Model request failed/);
+    assert.match(failedOutput, /request to Ollama failed/);
     assert.doesNotMatch(failedOutput, /secret-provider-response-body/);
     let state = (await (await r.request("state")).json()) as Snapshot;
     assert.equal(state.tasks[0]!.state, "failed");
@@ -535,19 +486,13 @@ test("group chats let the main bot ask members, who answer with their own instru
       onText("Combined plan built on the research.");
       return "Combined plan built on the research.";
     }
-    assert.throws(() =>
-      request.proposeBot({ name: "X", role: "Y", instructions: "Z" }),
-    );
+    assert.equal(request.proposeBot, undefined);
     onText("Risks: cost, time, scope.");
     return "Risks: cost, time, scope.";
   };
   const r = await paired(dir, runner);
   try {
-    await r.request("settings", {
-      provider: "compatible",
-      model: "fixture-model",
-      baseURL: "http://127.0.0.1:1234/v1",
-    });
+    await connectModel(r);
     const researcher = await (
       await r.request("bots", {
         name: "Researcher",

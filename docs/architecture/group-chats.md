@@ -1,6 +1,6 @@
 # Group chats
 
-Status: implemented on `main`. This replaces the Boards direction from [PR #4](https://github.com/solnikhil/Socius/pull/4). On 2026-10-14 the user chose a group chat instead of boards. PR #4 is not merged.
+Status: implemented. Group chats are the conversational way bots work together. [Boards](teams.md) are the structured alternative, with planned task graphs and budgets. Both ship together.
 
 ![A group chat where Socius brings in Planner](../assets/socius-group-chat.png)
 
@@ -17,9 +17,11 @@ When the user sends a message (`POST /api/groups/chat`):
    - with the coordinator's request.
 
    Its reply streams into the thread under its own name and is returned to Socius. Members have no `askMember` or `createBot` tool, so they cannot delegate or recurse.
+
 3. Socius writes the **final reply**, which builds on the members' replies rather than repeating them.
 
 Limits:
+
 - Up to 6 member requests per user message; further requests are refused with a message telling Socius to answer.
 - 10 tool-loop steps for the coordinator.
 - A 5-minute wall-clock limit for the whole turn.
@@ -32,6 +34,7 @@ Approvals from group work, such as a member's memory proposal or Socius proposin
 ## UI
 
 Group chats use the same chat view as direct chats: floating name pill, bubbles and composer. The differences:
+
 - A small avatar and name label marks each run of replies from one bot.
 - The pill opens the roster, **Edit members** and **Delete group chat**.
 - Create a group from **New group chat** in the sidebar, or press ⌘2 in the `To:` palette. Groups are listed under **Group chats** in the sidebar.
@@ -47,6 +50,7 @@ POST   /api/groups/chat     {"groupId", "content", "attachment"?}   → NDJSON s
 ```
 
 Stream events:
+
 - `started` (`taskId`)
 - `text` (`botId` of whoever is writing, plus the text so far)
 - `message`: a member's finished reply

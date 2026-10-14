@@ -17,10 +17,10 @@ import type {
   Message,
   Memory,
   Activity,
-  Installation,
   Task,
-  ModelSettings,
 } from "@socius/contracts/app";
+import { migrate } from "./migrations.js";
+import { ProviderStore } from "./provider-store.js";
 
 export class Store {
   readonly db: DatabaseSync;
@@ -30,6 +30,7 @@ export class Store {
   /** Scratch space for imports; never active, cleared on start. */
   readonly stagingDir: string;
   readonly exportsDir: string;
+  readonly providers: ProviderStore;
   constructor(readonly dir: string) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     this.memoryDir = join(dir, "memory");
@@ -40,13 +41,9 @@ export class Store {
     for (const d of [this.releasesDir, this.stagingDir, this.exportsDir])
       mkdirSync(d, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(join(dir, "socius.sqlite"));
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
-      CREATE TABLE IF NOT EXISTS migrations(version INTEGER PRIMARY KEY);
-      CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id));
-      CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, secret TEXT);
-      CREATE VIRTUAL TABLE IF NOT EXISTS memory_search USING fts5(id UNINDEXED, botId UNINDEXED, content);
-      INSERT OR IGNORE INTO migrations VALUES(1);`);
-    this.migrate();
+    this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
+    migrate(this.db);
+    this.providers = new ProviderStore(this.db);
     if (!this.all<BotInstance>("bot").length) {
       const bot = instantiateBot(mainBot);
       this.put("bot", bot.id, bot);
@@ -85,38 +82,6 @@ export class Store {
     this.cleanPackages();
     this.reconcileMemory();
   }
-  private migrate() {
-    const applied = new Set(
-      this.db
-        .prepare("SELECT version FROM migrations")
-        .all()
-        .map((r) => r.version as number),
-    );
-    if (!applied.has(2))
-      this.transaction(() => {
-        // v2: connector credentials live outside general records and snapshots.
-        this.db.exec(`CREATE TABLE IF NOT EXISTS connector_secrets(
-          connection_id TEXT PRIMARY KEY, secret TEXT NOT NULL, updated_at TEXT NOT NULL)`);
-        // v2: installation receipts gain lifecycle, provenance and consent fields.
-        for (const old of this.all<Partial<Installation> & { id: string }>(
-          "installation",
-        )) {
-          const receipt: Installation = {
-            id: old.id,
-            version: old.version!,
-            digest: old.digest!,
-            installedAt: old.installedAt!,
-            enabled: old.enabled ?? true,
-            source: old.source ?? { type: "bundled" },
-            trust: old.trust ?? "curated",
-            consentedCapabilities: old.consentedCapabilities ?? [],
-            history: old.history ?? [],
-          };
-          this.put("installation", receipt.id, receipt);
-        }
-        this.db.exec("INSERT INTO migrations VALUES(2)");
-      });
-  }
   /** Removes interrupted imports: staging leftovers and release files without a record. */
   cleanPackages() {
     for (const entry of readdirSync(this.stagingDir))
@@ -144,9 +109,6 @@ export class Store {
     this.db
       .prepare("DELETE FROM connector_secrets WHERE connection_id=?")
       .run(connectionId);
-  }
-  remove(kind: string, id: string) {
-    this.db.prepare("DELETE FROM records WHERE kind=? AND id=?").run(kind, id);
   }
   all<T>(kind: string): T[] {
     return this.db
@@ -197,42 +159,6 @@ export class Store {
   }
   delete(kind: string, id: string) {
     this.db.prepare("DELETE FROM records WHERE kind=? AND id=?").run(kind, id);
-  }
-  settings(): ModelSettings {
-    const row = this.db
-      .prepare("SELECT data, secret FROM settings WHERE id=1")
-      .get();
-    return {
-      ...(row
-        ? JSON.parse(row.data as string)
-        : {
-            provider: "ollama",
-            model: "",
-            baseURL: "http://127.0.0.1:11434/v1",
-          }),
-      hasApiKey: !!row?.secret,
-    };
-  }
-  secret(): string | undefined {
-    return this.db.prepare("SELECT secret FROM settings WHERE id=1").get()
-      ?.secret as string | undefined;
-  }
-  saveSettings(
-    settings: Omit<ModelSettings, "hasApiKey">,
-    secret?: string | null,
-  ) {
-    this.db
-      .prepare(
-        "INSERT INTO settings VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data, secret=excluded.secret",
-      )
-      .run(
-        JSON.stringify(settings),
-        secret === undefined ? (this.secret() ?? null) : secret,
-      );
-    this.event(
-      "settings.updated",
-      `Model provider changed to ${settings.provider}.`,
-    );
   }
   private indexMemory(memory: Memory) {
     this.db.prepare("DELETE FROM memory_search WHERE id=?").run(memory.id);

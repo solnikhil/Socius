@@ -158,14 +158,22 @@ async function connect(r: Runtime) {
   assert.match(await page.text(), /Connected/);
   // The one-time state cannot be replayed.
   assert.equal((await fetch(callback)).status, 400);
-  return (await r.state()).connections.find((c) => c.state !== "disconnected")!;
+  return (await r.state()).connectorConnections.find(
+    (c) => c.state !== "disconnected",
+  )!;
 }
 async function setModel(r: Runtime) {
-  await r.ok("settings", {
-    provider: "ollama",
-    model: "fixture",
-    baseURL: "http://127.0.0.1:11434/v1",
+  const connection = (await (
+    await r.request("providers", {
+      provider: "ollama",
+      config: { baseURL: "http://127.0.0.1:11434/v1" },
+    })
+  ).json()) as { id: string };
+  const added = await r.request("models", {
+    connectionId: connection.id,
+    modelId: "fixture",
   });
+  assert.equal(added.status, 201);
 }
 async function chat(r: Runtime, botId: string, content: string) {
   const response = await r.request("chat", { botId, content });
@@ -484,7 +492,7 @@ test("board and delegated requests go through the same broker and are blocked af
     });
     assert.equal(write.status, "awaiting-approval");
     // Revoking the connection blocks reads and the pending write.
-    const connection = (await r.state()).connections.find(
+    const connection = (await r.state()).connectorConnections.find(
       (c) => c.state === "ready",
     )!;
     const disconnected = await r.ok<ConnectorConnection>(
@@ -523,7 +531,9 @@ test("board and delegated requests go through the same broker and are blocked af
     await r.ok("installations/uninstall", { id: "socius/notion" });
     await assert.rejects(r.broker.request(boardRequest), /not installed/);
     assert.ok(
-      (await r.state()).connections.every((c) => c.state === "disconnected"),
+      (await r.state()).connectorConnections.every(
+        (c) => c.state === "disconnected",
+      ),
     );
   } finally {
     await r.close();
@@ -1074,8 +1084,9 @@ test("review fixes: parallel calls share one token refresh; a decrypt failure ke
       "one refresh, reused by queued sessions",
     );
     assert.equal(
-      (await r.state()).connections.find((c) => c.state !== "disconnected")!
-        .state,
+      (await r.state()).connectorConnections.find(
+        (c) => c.state !== "disconnected",
+      )!.state,
       "ready",
     );
     // A transient decrypt failure fails that call but must not overwrite the tokens.

@@ -10,7 +10,6 @@ import {
   ArrowUp,
   BookOpen,
   Check,
-  ChevronDown,
   Copy,
   Download,
   FileText,
@@ -35,6 +34,14 @@ import {
 import { ApprovalCard } from "../components/ApprovalCard.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
+import { ModelPicker } from "../components/ModelPicker.js";
+import {
+  connectionOf,
+  destinationNote,
+  resolvedModel,
+  SETUP_CODES,
+  type OpenSettings,
+} from "../models.js";
 
 const suggestions = [
   "Create a research bot that turns my supplied sources into evidence-based briefs.",
@@ -66,7 +73,7 @@ export function Chat({
   group?: GroupChat;
   state: Snapshot;
   onRefresh: () => Promise<void>;
-  onSettings: () => void;
+  onSettings: OpenSettings;
   onEditGroup?: () => void;
   onDeleteGroup?: () => void;
 }) {
@@ -79,6 +86,7 @@ export function Chat({
     [busy, setBusy] = useState(false),
     [taskId, setTaskId] = useState(""),
     [error, setError] = useState(""),
+    [errorCode, setErrorCode] = useState(""),
     [attachment, setAttachment] = useState<{
       name: string;
       text: string;
@@ -113,6 +121,12 @@ export function Chat({
       (group ? t.groupId === group.id : t.botId === bot.id && !t.groupId),
   );
   const memory = bot.grantedCapabilities.includes("memory.read");
+  const model = resolvedModel(state, bot.id);
+  const owner = model && connectionOf(state, model.entry.connectionId);
+  const fail = (message: string, code = "") => {
+    setError(message);
+    setErrorCode(code);
+  };
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -120,7 +134,7 @@ export function Chat({
         const next = await api<Message[]>(messagesPath);
         if (mounted) setMessages(next);
       } catch (e) {
-        if (mounted) setError((e as Error).message);
+        if (mounted) fail((e as Error).message);
       }
     }
     if (!busy) void load();
@@ -148,7 +162,7 @@ export function Chat({
     e?.preventDefault();
     if (!text.trim() || busy || running) return;
     setBusy(true);
-    setError("");
+    fail("");
     setStream(null);
     const content = text;
     setText("");
@@ -164,7 +178,9 @@ export function Chat({
       });
       if (!response.ok) {
         const result = await response.json();
-        throw new Error(result.error);
+        throw Object.assign(new Error(result.error), {
+          code: result.code ?? "",
+        });
       }
       setAttachment(null);
       setMessages(await api<Message[]>(messagesPath));
@@ -183,21 +199,25 @@ export function Chat({
           if (event.type === "text")
             setStream({ botId: event.botId ?? bot.id, content: event.content });
           // A member finished its reply in a group chat.
-          // The reload above can already include it, so append by ID only once.
-          if (event.type === "message")
-            setMessages((m) =>
-              m.some((x) => x.id === event.message.id)
-                ? m
-                : [...m, event.message as Message],
+          if (event.type === "message") {
+            const message = event.message as Message;
+            setMessages((messages) =>
+              messages.some((m) => m.id === message.id)
+                ? messages.map((m) => (m.id === message.id ? message : m))
+                : [...messages, message],
             );
-          if (event.type === "error") setError(event.error);
+            setStream((current) =>
+              current?.botId === message.botId ? null : current,
+            );
+          }
+          if (event.type === "error") fail(event.error, event.code ?? "");
         }
       }
       setStream(null);
       setMessages(await api<Message[]>(messagesPath));
       await onRefresh();
     } catch (e) {
-      setError((e as Error).message);
+      fail((e as Error).message, (e as { code?: string }).code ?? "");
       setText(content);
     } finally {
       setBusy(false);
@@ -214,9 +234,9 @@ export function Chat({
       if (file.size > 200000)
         throw new Error("Use a text document smaller than 200 KB.");
       setAttachment({ name: file.name, text: await file.text() });
-      setError("");
+      fail("");
     } catch (e) {
-      setError((e as Error).message);
+      fail((e as Error).message);
     }
   }
   function download(content: string) {
@@ -235,7 +255,7 @@ export function Chat({
       setCopied(m.id);
       setTimeout(() => setCopied((c) => (c === m.id ? "" : c)), 1500);
     } catch {
-      setError("Clipboard access is unavailable.");
+      fail("Clipboard access is unavailable.");
     }
   }
   async function grant(allow: boolean) {
@@ -244,7 +264,7 @@ export function Chat({
       setConsent(false);
       await onRefresh();
     } catch (e) {
-      setError((e as Error).message);
+      fail((e as Error).message);
     }
   }
   const groupTasks = new Set(
@@ -256,10 +276,16 @@ export function Chat({
       a.state === "pending" &&
       Date.parse(a.expiresAt) > Date.now(),
   );
+  // Group work raises its changes in the group; direct chats show only their own.
+  const groupOf = new Map(state.tasks.map((t) => [t.id, t.groupId ?? null]));
   const actions = state.actions
     .filter(
       (a) =>
-        a.actor.botId === bot.id &&
+        (group
+          ? groupOf.get(a.actor.taskId) === group.id
+          : a.actor.botId === bot.id &&
+            !a.actor.boardId &&
+            !groupOf.get(a.actor.taskId)) &&
         (needsAttention(a) || a.state === "succeeded"),
     )
     .slice(-5);
@@ -354,10 +380,15 @@ export function Chat({
                   <small>{bot.role}</small>
                 </div>
               </div>
-              <button onClick={onSettings}>
+              <button
+                onClick={() => {
+                  setDetails(false);
+                  onSettings("models");
+                }}
+              >
                 <Settings size={15} />
                 <span>Model</span>
-                <em>{state.settings.model || "Not set"}</em>
+                <em>{model?.entry.label ?? "Not set"}</em>
               </button>
               <button
                 onClick={() => {
@@ -379,11 +410,9 @@ export function Chat({
                 <span>Export as template</span>
               </button>
               <p>
-                {state.settings.provider === "ollama"
-                  ? "Uses a local model connection."
-                  : state.settings.provider === "compatible"
-                    ? "Uses a custom model endpoint."
-                    : "Context is sent to your selected cloud provider."}
+                {owner
+                  ? destinationNote(owner.descriptor, owner.connection.label)
+                  : "No model is selected yet."}
               </p>
             </div>
           )}
@@ -423,8 +452,15 @@ export function Chat({
                   </button>
                 ))}
               </div>
-              {!state.settings.model && (
-                <button className="setup-notice" onClick={onSettings}>
+              {!model && (
+                <button
+                  className="setup-notice"
+                  onClick={() =>
+                    onSettings(
+                      state.connections.length ? "models" : "providers",
+                    )
+                  }
+                >
                   <Settings size={16} />
                   <span>Connect a model to start your first conversation</span>
                   <strong>Set up →</strong>
@@ -519,7 +555,25 @@ export function Chat({
         </div>
       </div>
       <div className="composer-wrap">
-        <ErrorNote error={error} />
+        <ErrorNote
+          error={error}
+          action={
+            SETUP_CODES.has(errorCode) || (!errorCode && /Settings/.test(error))
+              ? {
+                  label: "Open Settings",
+                  onClick: () =>
+                    // Wrong model or missing tools are fixed in Models; credentials
+                    // and endpoints on the connection itself.
+                    ["model_not_found", "tools_unsupported"].includes(
+                      errorCode,
+                    ) ||
+                    (!errorCode && state.connections.length > 0)
+                      ? onSettings("models")
+                      : onSettings("providers", model?.entry.connectionId),
+                }
+              : undefined
+          }
+        />
         {attachment && (
           <div className="attachment">
             <FileText size={15} />
@@ -570,10 +624,13 @@ export function Chat({
               }
             }}
           />
-          <button type="button" className="model-chip" onClick={onSettings}>
-            {state.settings.model || "Choose model"}
-            <ChevronDown size={12} />
-          </button>
+          <ModelPicker
+            bot={bot}
+            state={state}
+            onRefresh={onRefresh}
+            onSettings={onSettings}
+            onError={(m) => fail(m)}
+          />
           {busy || running ? (
             <button
               type="button"
@@ -581,7 +638,7 @@ export function Chat({
               aria-label="Stop task"
               onClick={() =>
                 void api("tasks/cancel", { id: taskId || running?.id }).catch(
-                  (e) => setError(e.message),
+                  (e) => fail(e.message),
                 )
               }
             >
@@ -591,7 +648,7 @@ export function Chat({
             <button
               className="send"
               aria-label="Send message"
-              disabled={!text.trim() || !state.settings.model}
+              disabled={!text.trim() || !model}
             >
               <ArrowUp size={18} strokeWidth={2.4} />
             </button>

@@ -11,7 +11,7 @@ npm ci
 npm run desktop
 ```
 
-In Settings, choose a provider and enter a model ID available on it. For local inference, start Ollama and download your chosen tool-capable model first. The default endpoint is `http://127.0.0.1:11434/v1`. LM Studio and llama.cpp use the OpenAI-compatible option. OpenAI and Anthropic have direct adapters. Users supply model access; no subscription or key is bundled.
+Open Settings (account menu or ⌘,). It floats over the workspace. Under **Providers**, connect one or more of 29 AI SDK providers: Ollama, LM Studio, llama.cpp and any OpenAI-compatible server; OpenAI, Anthropic, Google Gemini, Mistral, xAI, Groq, DeepSeek, Cerebras, Fireworks, Together AI, Perplexity, Cohere, DeepInfra, Baseten, Hugging Face, Moonshot AI, Alibaba Qwen, MiniMax and Z.ai; Azure OpenAI, Amazon Bedrock, Google Vertex AI and Claude on Vertex; and the Vercel AI Gateway and OpenRouter. Several accounts per provider are allowed. Under **Models**, add models from each connection's live model list (where the provider publishes one) or by ID, test them, and set the default. Pick a different model for a single bot from the composer. Users supply model access; no subscription or key is bundled.
 
 Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The renderer receives no stored key. Storage refuses unavailable encryption and Linux's insecure `basic_text` fallback.
 
@@ -29,11 +29,12 @@ Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The 
 - Memory is private per bot: editable Markdown files plus SQLite FTS5 search. External file edits reconcile when memory is read.
 - Enable memory per bot explicitly; model-proposed saves require review and recheck permissions.
 - Messaging-style interface: bot sidebar with the main bot featured, a `To:` new-chat palette (⌘N/⌘K, ⌘1–9 to pick), chat bubbles with safe Markdown rendering, and a Connect Apps modal. Appearance (System/Light/Dark) is in Settings and the account menu; the choice is stored locally.
-- Group chats: pick two or more bots and Socius coordinates. It knows each member's role and instructions, asks members for help with an `askMember` tool, and replies last. Members answer under their own name with their own permissions. See [Group chats](docs/architecture/group-chats.md).
-- Approvals (proposed bots and memory saves) are reviewed inline in the proposing bot's chat; a blue dot marks that bot in the sidebar. There is no separate review screen.
+- Group chats: pick bots and Socius coordinates a conversation. It knows each member's role and instructions, asks members for help with an `askMember` tool, and replies last. Members answer under their own name with their own permissions. See [Group chats](docs/architecture/group-chats.md).
+- Boards: put any number of bots on a shared board with an objective and shared sources. The coordinator plans a bounded task graph, specialists contribute in parallel under configurable concurrency and budgets, and one consolidated result comes back. Stop, cancel and retry are explicit. See [Teams & Boards](docs/architecture/teams.md).
+- Approvals (proposed bots and memory saves) are reviewed inline in the proposing bot's chat, group chat or board; a blue dot marks it in the sidebar.
 - Activity keeps a local record of chats, reviews, memory changes, and installs. Provider keys and exception bodies are omitted. The Activity page and Settings show that record. Analytics and remote crash reporting are off.
 
-Pending approvals survive restart and cannot be approved twice. An interrupted running task is marked failed and requires explicit retry; model execution is not checkpoint-resumed. Socius delegates only inside group chats; direct chats with specialists stay independent.
+Pending approvals survive restart and cannot be approved twice. An interrupted running task is marked failed and requires explicit retry; model execution is not checkpoint-resumed. Delegation happens in group chats and on boards; direct chats do not delegate.
 
 ## Browser mode and packaging
 
@@ -42,7 +43,7 @@ npm run web        # build; start localhost:3030; print a one-time pairing link
 npm run package    # build an unsigned application directory for this platform
 ```
 
-Browser mode uses `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` environment variables and does not persist keys entered through a browser. Desktop mode also accepts these environment variables. Never store credentials in URLs or repository files.
+Browser mode does not persist keys entered through a browser; it uses each provider's standard environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENROUTER_API_KEY`, `AWS_*`, …), which Settings reports by name only. Desktop mode also accepts these environment variables. Never store credentials in URLs or repository files.
 
 Desktop data is under Electron's per-user app-data directory in `workspace/`. Browser mode uses `.socius/`. `SOCIUS_DATA_DIR` and `SOCIUS_PORT` configure browser mode; `SOCIUS_USER_DATA` selects a separate desktop profile. Shut down Socius before backing up the whole workspace, including SQLite/WAL files.
 
@@ -50,7 +51,7 @@ The API binds loopback and uses one-time pairing, an HttpOnly same-site cookie, 
 
 ## Remaining workstreams
 
-Public publishing and signed releases, arbitrary executable skills, connectors beyond Notion, browser automation, scheduling, delegation outside group chats, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
+Public publishing and signed releases, arbitrary executable skills, connectors beyond Notion, browser automation, scheduling, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
 
 Skill scripts are stored inert; there is no executable sandbox. Digest checks bind review to content, not publisher identity: imported releases are labelled unverified. Connecting accounts requires the desktop app's OS-backed encryption. The interface currently uses shared CSS tokens and native dialogs; Tailwind/shadcn adoption can occur inside the UI workstream without altering runtime contracts.
 
@@ -73,6 +74,7 @@ Browser end-to-end tests use a deterministic model fixture only in test code and
 - [Group chats](docs/architecture/group-chats.md): coordinator model, limits and API.
 - [Team handoff](docs/team-handoff.md): independent work packages and acceptance criteria.
 - [Local API](docs/architecture/local-api.md): transport, endpoints and extension boundaries.
+- [Teams & Boards](docs/architecture/teams.md): board model, budgets, cancellation, restart behaviour and API examples.
 - [Skills and connectors](docs/architecture/skills-and-connectors.md): skill format, release lifecycle, MCP Registry, Notion setup and scopes, the action broker and known limitations.
 - `packages/contracts`: strict manifest schemas and shared domain types.
 - `packages/marketplace`: releases and trust, dependency planning, MCP Registry adapter, export review and the bundled Socius bot template.
