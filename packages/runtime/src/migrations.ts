@@ -102,6 +102,32 @@ const migrations: { version: number; up: (db: DatabaseSync) => void }[] = [
   },
   {
     version: 5,
+    up: (db) => {
+      // Skills become per-bot assignments. Before this, every bot saw every installed
+      // skill. Nothing is assigned automatically: each existing bot gets a review marker
+      // instead, so the user chooses its skills. Chats, memory and grants are untouched.
+      // The runtime fills `suggested` from the installed catalog on first start.
+      if (!db.prepare("SELECT 1 FROM records WHERE kind='installation'").get())
+        return;
+      const insert = db.prepare(
+        "INSERT OR IGNORE INTO records VALUES('skill-review',?,?)",
+      );
+      const now = new Date().toISOString();
+      for (const row of db
+        .prepare("SELECT id FROM records WHERE kind='bot'")
+        .all())
+        insert.run(
+          row.id as string,
+          JSON.stringify({
+            botId: row.id,
+            reason: "migration",
+            createdAt: now,
+          }),
+        );
+    },
+  },
+  {
+    version: 6,
     up: (db) =>
       // Routines (A03–A05). Occurrence keys are unique per routine, so a duplicate
       // tick or a second runtime cannot claim the same occurrence twice. Manual runs

@@ -105,7 +105,10 @@ async function boot(
   const ok = async <T = unknown>(path: string, data?: unknown): Promise<T> => {
     const response = await request(path, data);
     const body = await response.json();
-    assert.equal(response.status, 200, `${path}: ${JSON.stringify(body)}`);
+    assert.ok(
+      response.status === 200 || response.status === 201,
+      `${path}: ${response.status} ${JSON.stringify(body)}`,
+    );
     return body as T;
   };
   const state = () => ok<Snapshot>("state");
@@ -181,6 +184,49 @@ async function chat(r: Runtime, botId: string, content: string) {
   assert.match(events, /"type":"done"/);
   return events;
 }
+/** Starts a chat whose reply waits on a review card; resolves with its stream. */
+function startChat(r: Runtime, botId: string, content: string) {
+  return r.request("chat", { botId, content }).then((res) => res.text());
+}
+async function pendingAction(r: Runtime) {
+  for (let i = 0; i < 200; i++) {
+    const action = (await r.state()).actions.find((a) => a.state === "pending");
+    if (action) return action;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("No pending proposal appeared");
+}
+/** Stops the waiting reply, as the Stop button does; the proposal stays pending. */
+async function stopWaiting(r: Runtime, chatting: Promise<string>) {
+  const task = (await r.state()).tasks.find((t) => t.state === "running");
+  if (task) await r.ok("tasks/cancel", { id: task.id });
+  return chatting;
+}
+/**
+ * Sends a chat that may propose a write. If a new review card appears, the
+ * waiting reply is stopped (the card stays pending); otherwise the chat just
+ * finishes. Resolves with the stream either way.
+ */
+async function proposeAndStop(r: Runtime, botId: string, content: string) {
+  const before = new Set(
+    (await r.state()).actions
+      .filter((a) => a.state === "pending")
+      .map((a) => a.id),
+  );
+  let finished = false;
+  const chatting = startChat(r, botId, content).then((text) => {
+    finished = true;
+    return text;
+  });
+  for (let i = 0; i < 400 && !finished; i++) {
+    const fresh = (await r.state()).actions.some(
+      (a) => a.state === "pending" && !before.has(a.id),
+    );
+    if (fresh) return stopWaiting(r, chatting);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return chatting;
+}
 async function grant(
   r: Runtime,
   botId: string,
@@ -244,7 +290,15 @@ test("winning flow: import skill, connect Notion, read, approve one exact write,
     // 3. Without a grant, the bot gets no connector tools at all.
     await setModel(r);
     const main = (await r.state()).bots[0]!;
+    // Installing makes the skill available to the workspace, not to any bot.
     let events = await chat(r, main.id, "Make a brief");
+    assert.match(events, /skills:\\n/);
+    assert.doesNotMatch(events, /brief-template/);
+    await r.ok("skills/assign", {
+      botId: main.id,
+      skillId: "local/document-brief",
+    });
+    events = await chat(r, main.id, "Make a brief");
     assert.match(events, /no-search/);
     assert.match(events, /skill:references\/brief-template.md/);
     assert.match(events, /skills:local\/document-brief/);
@@ -253,15 +307,17 @@ test("winning flow: import skill, connect Notion, read, approve one exact write,
     // 4. Grant read + write; the bot reads permitted data and proposes one page.
     await grant(r, main.id, "documents.read");
     await grant(r, main.id, "documents.write");
-    events = await chat(r, main.id, "Make a brief");
-    assert.match(events, /Q3 planning/);
-    assert.match(events, /awaiting-approval/);
+    // The reply waits on the review card instead of claiming success.
+    const chatting = startChat(r, main.id, "Make a brief");
+    let action = await pendingAction(r);
     assert.equal(
       fixture.calls.filter((c) => c.tool === "notion-create-pages").length,
       0,
     );
-    let action = (await r.state()).actions[0]!;
-    assert.equal(action.state, "pending");
+    assert.equal(
+      (await r.state()).tasks.find((t) => t.state === "running")?.botId,
+      main.id,
+    );
     assert.deepEqual(action.arguments, {
       parentPage: PARENT,
       title: "Q3 brief",
@@ -270,8 +326,13 @@ test("winning flow: import skill, connect Notion, read, approve one exact write,
     assert.equal(action.actor.botId, main.id);
     assert.equal(action.release.id, "socius/notion");
 
-    // 5. Restart: the pending write survives and still requires a matching approval.
+    // 5. Restart while the bot waits: its reply stops, but the pending write
+    // survives and still requires a matching approval.
     await r.close();
+    events = await chatting;
+    assert.match(events, /Q3 planning/);
+    assert.match(events, /"type":"approval"/);
+    assert.match(events, /still-waiting/);
     r = await boot(dir, fixture);
     action = (await r.state()).actions[0]!;
     assert.equal(action.state, "pending");
@@ -327,12 +388,78 @@ async function proposed(r: Runtime, fixture: NotionFixture) {
   const main = (await r.state()).bots[0]!;
   await grant(r, main.id, "documents.read");
   await grant(r, main.id, "documents.write");
-  await chat(r, main.id, "brief please");
-  const action = (await r.state()).actions.find((a) => a.state === "pending")!;
-  assert.ok(action, "a pending proposal exists");
+  const chatting = startChat(r, main.id, "brief please");
+  const action = await pendingAction(r);
+  await stopWaiting(r, chatting);
   void fixture;
   return { main, action };
 }
+
+test("the bot waits for review, then continues with the real outcome or the user's reply", async () => {
+  const fixture = await startNotionFixture();
+  const dir = await mkdtemp(join(tmpdir(), "socius-wait-"));
+  const r = await boot(dir, fixture);
+  try {
+    await install(r, "socius/notion", "0.2.0");
+    await connect(r);
+    await setModel(r);
+    const main = (await r.state()).bots[0]!;
+    await grant(r, main.id, "documents.read");
+    await grant(r, main.id, "documents.write");
+
+    // Approve: the same reply resumes and reports the confirmed change.
+    let chatting = startChat(r, main.id, "Make a brief");
+    let action = await pendingAction(r);
+    await r.ok("actions/resolve", {
+      id: action.id,
+      digest: action.digest,
+      approve: true,
+    });
+    let events = await chatting;
+    assert.match(events, /"type":"approval"/);
+    assert.match(events, /\\"status\\":\\"done\\"/);
+    assert.match(events, /"type":"done"/);
+    assert.equal(
+      fixture.calls.filter((c) => c.tool === "notion-create-pages").length,
+      1,
+    );
+
+    // Reply instead: nothing is written and the bot receives the user's words.
+    chatting = startChat(r, main.id, "Make a brief");
+    action = await pendingAction(r);
+    assert.equal(
+      (
+        await r.request("actions/resolve", {
+          id: action.id,
+          digest: action.digest,
+          approve: true,
+          feedback: "Both",
+        })
+      ).status,
+      400,
+    );
+    await r.ok("actions/resolve", {
+      id: action.id,
+      digest: action.digest,
+      approve: false,
+      feedback: "Call it Q4 brief instead",
+    });
+    events = await chatting;
+    assert.match(events, /declined-with-feedback/);
+    assert.match(events, /Call it Q4 brief instead/);
+    assert.equal(
+      fixture.calls.filter((c) => c.tool === "notion-create-pages").length,
+      1,
+    );
+    const declined = (await r.state()).actions.find((a) => a.id === action.id)!;
+    assert.equal(declined.state, "denied");
+    assert.equal(declined.feedback, "Call it Q4 brief instead");
+  } finally {
+    await r.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("tampering, expiry, revoked grants and disabled connectors block writes", async () => {
   const fixture = await startNotionFixture();
@@ -367,7 +494,7 @@ test("tampering, expiry, revoked grants and disabled connectors block writes", a
     );
 
     // Expiry.
-    await chat(r, main.id, "brief again");
+    await proposeAndStop(r, main.id, "brief again");
     let next = (await r.state()).actions.find(
       (a) => a.state === "pending" && a.id !== action.id,
     )!;
@@ -389,7 +516,7 @@ test("tampering, expiry, revoked grants and disabled connectors block writes", a
     now = Date.now();
 
     // Revoked bot grant blocks a pending write at execution time.
-    await chat(r, main.id, "brief three");
+    await proposeAndStop(r, main.id, "brief three");
     next = (await r.state()).actions.find(
       (a) => a.state === "pending" && a.id !== action.id,
     )!;
@@ -411,7 +538,7 @@ test("tampering, expiry, revoked grants and disabled connectors block writes", a
     await grant(r, main.id, "documents.write");
 
     // Disabling the connector blocks pending writes and removes the tools.
-    await chat(r, main.id, "brief four");
+    await proposeAndStop(r, main.id, "brief four");
     next = (await r.state()).actions.find(
       (a) => a.state === "pending" && a.id !== action.id,
     )!;
@@ -569,7 +696,7 @@ test("rate limits and timeouts never trigger blind repeats; ambiguous writes are
     assert.equal(creates(), 2);
 
     // Timeout after the remote effect happened: reconciled to success, not repeated.
-    await chat(r, main.id, "brief again");
+    await proposeAndStop(r, main.id, "brief again");
     const second = (await r.state()).actions.find(
       (a) => a.state === "pending",
     )!;
@@ -591,7 +718,7 @@ test("rate limits and timeouts never trigger blind repeats; ambiguous writes are
 
     // Ambiguous with no visible effect: stays unknown, not retryable until checked.
     fixture.createMode = "ok";
-    await chat(r, main.id, "brief three");
+    await proposeAndStop(r, main.id, "brief three");
     const third = (await r.state()).actions.find((a) => a.state === "pending")!;
     fixture.createMode = "hang-after-create";
     const before = fixture.pages.length;
@@ -838,13 +965,18 @@ test("skill lifecycle: integrity, immutable releases, permission expansion, disa
     // Disabling removes the skill from bots.
     await setModel(r);
     const main = (await r.state()).bots[0]!;
+    assert.doesNotMatch(await chat(r, main.id, "hello"), /local\/digest/);
+    await r.ok("skills/assign", { botId: main.id, skillId: "local/digest" });
     assert.match(await chat(r, main.id, "hello"), /skills:.*local\/digest/);
     await r.ok("installations/enable", { id: "local/digest", enabled: false });
     assert.doesNotMatch(await chat(r, main.id, "hello"), /local\/digest/);
     await r.ok("installations/enable", { id: "local/digest", enabled: true });
 
-    // Rollback restores the previous release and narrows consent.
+    // Rollback restores the previous release and narrows consent. The bot stays
+    // pinned to 1.1.0 and needs review instead of silently switching.
     receipt = await r.ok("installations/rollback", { id: "local/digest" });
+    assert.equal((await r.state()).skillAssignments[0]!.status, "needs-review");
+    assert.doesNotMatch(await chat(r, main.id, "hello"), /local\/digest/);
     assert.equal(receipt.version, "1.0.0");
     assert.deepEqual(receipt.consentedCapabilities, []);
     assert.equal(
@@ -863,7 +995,14 @@ test("skill lifecycle: integrity, immutable releases, permission expansion, disa
       (await blocked.json()).error,
       /Required by socius\/researcher/,
     );
-    await r.ok("installations/uninstall", { id: "local/digest" });
+    // Uninstalling an assigned skill needs confirmation to detach it.
+    assert.equal(
+      (await r.request("installations/uninstall", { id: "local/digest" }))
+        .status,
+      409,
+    );
+    await r.ok("installations/uninstall", { id: "local/digest", detach: true });
+    assert.deepEqual((await r.state()).skillAssignments, []);
     assert.ok(
       !(await r.state()).installations.some((i) => i.id === "local/digest"),
     );
@@ -1017,7 +1156,7 @@ test("review fixes: unreachable checks stay unknown, offline approvals fail defi
     assert.equal(creates(), 1);
 
     // Ambiguous write, then a check that cannot reach the service: never retryable.
-    await chat(r, main.id, "brief again");
+    await proposeAndStop(r, main.id, "brief again");
     const second = (await r.state()).actions.find(
       (a) => a.state === "pending",
     )!;

@@ -152,20 +152,28 @@ test("configure a model, create bots manually and through Socius, install skills
   await page.getByRole("button", { name: "Connect apps" }).click();
   await expect(page.getByRole("tab", { name: "Skills" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Skills" })).toHaveCount(0);
+  // Only installable connectors are listed; planned rows are gone.
   await expect(
     page.getByRole("heading", { name: "Razorpay", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await page.screenshot({
     path: "test-results/socius-connect-apps.png",
     animations: "disabled",
   });
   await page.getByRole("tab", { name: "Connectors", exact: true }).click();
+  const notionRow = page.locator(".app-row").filter({
+    has: page.getByRole("heading", { name: "Notion", exact: true }),
+  });
+  await expect(notionRow.locator(".app-icon img")).toBeVisible();
+  // Every reviewed connector shows its logo, never a letter fallback.
+  await expect(page.locator(".app-row .monogram")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Payments", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "IRCTC", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /: planned$/ })).toHaveCount(0);
   await page.getByRole("tab", { name: "Bots", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Researcher", exact: true }),
@@ -250,7 +258,10 @@ test("configure a model, create bots manually and through Socius, install skills
   const plannerReply = page
     .locator(".message")
     .filter({ hasText: "Planner here. 1. Research" });
-  const reactTo = plannerReply.getByRole("button", { name: "React", exact: true });
+  const reactTo = plannerReply.getByRole("button", {
+    name: "React",
+    exact: true,
+  });
   await plannerReply.hover();
   await reactTo.click();
   await page.getByRole("menuitemradio", { name: /React ❤️/ }).click();
@@ -389,11 +400,13 @@ test("configure a model, create bots manually and through Socius, install skills
   await college.click();
   await expect(college.getByLabel("Unread")).toHaveCount(0);
   await college.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Rename bot" }).click();
-  await page
-    .getByRole("dialog", { name: "Rename bot" })
-    .getByLabel("Name")
-    .fill("Course helper");
+  await page.getByRole("menuitem", { name: "Edit name and look" }).click();
+  const editBot = page.getByRole("dialog", { name: "Edit bot" });
+  await editBot.getByLabel("Name").fill("Course helper");
+  await editBot.getByRole("radio", { name: "Sleepy eyes" }).click();
+  await expect(
+    editBot.getByRole("radio", { name: "Sleepy eyes" }),
+  ).toHaveAttribute("aria-checked", "true");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   const helper = page.getByRole("button", {
     name: "Course helper College planning",
@@ -525,25 +538,47 @@ test("connect Notion, read, approve one exact page and see the result", async ({
     .getByRole("textbox", { name: "Message Socius" })
     .fill("Make a brief from my Q3 planning page");
   await page.getByRole("button", { name: "Send message" }).click();
+  // The reply pauses on a review card instead of claiming the change is made.
+  await expect(page.getByText("Socius is waiting for you")).toBeVisible();
+  const card = page.locator(".action-card");
   await expect(
-    page.getByText("From Q3 planning: ship connectors."),
+    card.getByText("Create Notion page “Q3 brief”?", { exact: true }),
   ).toBeVisible();
-  const card = page
-    .locator(".action-card")
-    .filter({ hasText: "Review a change" });
-  await expect(card.getByText("Create Notion page “Q3 brief”")).toBeVisible();
-  await expect(card.getByText("## Findings")).toBeVisible();
+  // Only what matters: the page body reads as text; IDs and package details stay hidden.
+  await expect(card.getByText("Findings", { exact: true })).toBeVisible();
+  await expect(
+    card.locator(".decision-prose").getByText("## Findings"),
+  ).toHaveCount(0);
+  await expect(card.getByText(/socius\/notion|documents\.write/)).toHaveCount(
+    0,
+  );
+  // The card never takes focus by itself, so typing cannot answer it.
+  await expect(card).not.toBeFocused();
+  // Hidden IDs keep a short reference, and the exact arguments are one click away.
+  await expect(card.getByText("…111111")).toBeVisible();
+  await card.getByText("Exact details").click();
+  await expect(
+    card.getByText("11111111-1111-1111-1111-111111111111"),
+  ).toBeVisible();
+  await card.getByText("Exact details").click();
   await page.screenshot({
     path: "test-results/socius-action-review.png",
     animations: "disabled",
   });
-  await card.getByRole("button", { name: "Approve this change" }).click();
-  const done = page.locator(".action-card").filter({ hasText: "Change made" });
-  await expect(done.getByText("Created Notion page “Q3 brief”.")).toBeVisible();
-  await expect(done.getByRole("link", { name: "Open" })).toHaveAttribute(
+  // Once the user focuses the card, "A" answers; the same reply then reports the outcome.
+  await card.focus();
+  await page.keyboard.press("a");
+  await expect(
+    page.getByText("Done, the “Q3 brief” page is in Notion."),
+  ).toBeVisible();
+  await expect(
+    card.getByText(/Done · Created Notion page “Q3 brief”/),
+  ).toBeVisible();
+  await expect(card.getByRole("link", { name: "Open" })).toHaveAttribute(
     "href",
     /notion\.so/,
   );
+  await expect(page.getByRole("button", { name: "Stop task" })).toHaveCount(0);
   await page.screenshot({
     path: "test-results/socius-action-done.png",
     animations: "disabled",
@@ -555,6 +590,400 @@ test("connect Notion, read, approve one exact page and see the result", async ({
   await expect(
     page.getByText("Created Notion page “Q3 brief”.").first(),
   ).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+test("assign a skill to one bot, share it, turn it off for one bot and review an update", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    storageState: "test-results/paired-state.json",
+  });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://127.0.0.1:3137/");
+  const dir = "examples/skills/document-brief";
+  const skill = await readFile(`${dir}/SKILL.md`, "utf8");
+  const reference = await readFile(
+    `${dir}/references/brief-template.md`,
+    "utf8",
+  );
+  // Skill import is hidden in Connect Apps for now, so install through the API.
+  const installRelease = (markdown: string, version: string) =>
+    page.evaluate(
+      async ({ markdown, reference, version }) => {
+        const post = async (path: string, body: unknown) => {
+          const response = await fetch(`/api/${path}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!response.ok) throw new Error(await response.text());
+          return response.json();
+        };
+        await post("skills/import", {
+          files: [
+            { path: "document-brief/SKILL.md", content: markdown },
+            {
+              path: "document-brief/references/brief-template.md",
+              content: reference,
+            },
+          ],
+        });
+        const id = "local/document-brief";
+        const preview = await post("install/preview", { id, version });
+        await post("install", {
+          id,
+          version,
+          digest: preview.digest,
+          consent: preview.newCapabilities,
+        });
+      },
+      {
+        markdown: Buffer.from(markdown).toString("base64"),
+        reference: Buffer.from(reference).toString("base64"),
+        version,
+      },
+    );
+  await installRelease(skill, "1.0.0");
+  for (const name of ["Draft Writer", "Week Planner"])
+    await page.evaluate(async (name) => {
+      await fetch("/api/bots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          role: `${name} role`,
+          instructions: "Work carefully.",
+        }),
+      });
+    }, name);
+  await page.reload();
+  const sidebar = page.getByRole("complementary", { name: "Bots" });
+  async function open(name: string) {
+    await sidebar.getByText(name, { exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: `${name} details` }),
+    ).toBeVisible();
+  }
+  async function skills(name: string) {
+    await page.getByRole("button", { name: `${name} details` }).click();
+    await page
+      .locator(".bot-details")
+      .getByRole("button", { name: /^Skills/ })
+      .click();
+    const dialog = page.getByRole("dialog", { name: `Skills for ${name}` });
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+  async function ask(name: string, expected: string, count = 1) {
+    await page
+      .getByRole("textbox", { name: `Message ${name}` })
+      .fill("which skills can you use?");
+    await page.keyboard.press("Enter");
+    await expect(page.getByText(expected, { exact: true })).toHaveCount(count);
+  }
+  const LOADED = "Skills: local/document-brief. Document brief loaded.";
+  const BLOCKED = "Skills: none. Document brief blocked.";
+
+  // Assign document-brief only to the writer.
+  await open("Draft Writer");
+  let dialog = await skills("Draft Writer");
+  await expect(dialog.getByText("No skills assigned yet.")).toBeVisible();
+  await dialog
+    .getByRole("listitem")
+    .filter({ hasText: "document-brief" })
+    .getByRole("button", { name: "Assign" })
+    .click();
+  await expect(dialog.getByText("Ready", { exact: true })).toBeVisible();
+  await page.screenshot({
+    path: "test-results/socius-bot-skills.png",
+    animations: "disabled",
+  });
+  await page.keyboard.press("Escape");
+  await ask("Draft Writer", LOADED);
+
+  // The planner cannot see or load it, even by its exact ID.
+  await open("Week Planner");
+  await ask("Week Planner", BLOCKED);
+
+  // Share it explicitly with the planner.
+  dialog = await skills("Week Planner");
+  await dialog.getByRole("button", { name: "Assign" }).click();
+  await expect(dialog.getByText("Ready", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await ask("Week Planner", LOADED);
+
+  // Turning it off for the writer leaves the planner's assignment alone.
+  await open("Draft Writer");
+  dialog = await skills("Draft Writer");
+  await dialog.getByRole("checkbox", { name: "Use document-brief" }).click();
+  await expect(dialog.getByText("Off", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await ask("Draft Writer", BLOCKED);
+  await open("Week Planner");
+  await ask("Week Planner", LOADED, 2);
+
+  // A new release needs review before the planner uses it.
+  await installRelease(
+    skill.replace("version: 1.0.0", "version: 1.1.0"),
+    "1.1.0",
+  );
+  await page.reload();
+  await open("Week Planner");
+  dialog = await skills("Week Planner");
+  await expect(dialog.getByText("Needs review", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Use 1.1.0" }).click();
+  await expect(dialog.getByText("Ready", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Choices persist across reloads. The writer's pin is still 1.0.0 and turned off,
+  // so it waits for its own review instead of following the planner.
+  await page.reload();
+  await open("Draft Writer");
+  dialog = await skills("Draft Writer");
+  await expect(dialog.getByText("Needs review", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("1.0.0", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByRole("checkbox", { name: "Use document-brief" }),
+  ).not.toBeChecked();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test("dream over a direct chat, read its evidence, recall it, correct and forget it", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    storageState: "test-results/paired-state.json",
+  });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://127.0.0.1:3137/");
+  // A dedicated bot keeps this direct chat apart from the earlier tests.
+  await page
+    .getByRole("button", { name: "Create", exact: true })
+    .first()
+    .click();
+  await page.getByRole("option", { name: /Create new bot/ }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Tutor");
+  await page.getByLabel("Role", { exact: true }).fill("Study planning");
+  await page
+    .getByLabel("Instructions", { exact: true })
+    .fill("Plan study sessions.");
+  await page.getByRole("button", { name: "Create bot", exact: true }).click();
+  await page.getByRole("button", { name: /Tutor Study planning/ }).click();
+  const tutor = page.getByRole("textbox", { name: "Message Tutor" });
+  // Waits for this reply to land and the task to finish, so dreaming is not blocked.
+  const say = async (text: string, reply: string | RegExp) => {
+    const before = await page.getByText(reply).count();
+    await tutor.fill(text);
+    await page.getByRole("button", { name: "Send message" }).click();
+    await expect(page.getByText(reply)).toHaveCount(before + 1);
+    await expect(page.getByRole("button", { name: "Stop task" })).toHaveCount(
+      0,
+    );
+  };
+  const memoryAccess = async (button: "Allow memory" | "Revoke access") => {
+    await page.getByRole("button", { name: "Tutor details" }).click();
+    await page
+      .locator(".bot-details")
+      .getByRole("button", { name: /Memory/ })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Memory permissions" })
+      .getByRole("button", { name: button })
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: "Memory permissions" }),
+    ).toHaveCount(0);
+  };
+  await memoryAccess("Allow memory");
+  await say(
+    "Remember: I study chemistry on Tuesday evenings.",
+    /summary of your supplied document/,
+  );
+
+  // Dreaming takes its own model and consent, separate from chat.
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const openSettings = async (tab: string) => {
+    await page.getByRole("button", { name: "Account and settings" }).click();
+    await page.getByRole("menuitem", { name: "Settings" }).click();
+    await settings.getByRole("tab", { name: tab }).click();
+  };
+  await openSettings("Models");
+  await settings
+    .getByRole("button", { name: "Add models from Ollama" })
+    .click();
+  await settings.getByLabel("Model ID").fill("dream-model");
+  await settings.getByRole("button", { name: "Add model" }).click();
+  await settings.getByRole("button", { name: "Models", exact: true }).click();
+  await expect(settings.getByLabel("Default model")).toHaveValue(
+    /fixture-model/,
+  );
+  await settings.getByRole("tab", { name: "Dreaming" }).click();
+  await expect(settings.getByText("Dreaming is off.")).toBeVisible();
+  await expect(
+    settings.getByRole("button", { name: "Dream now" }),
+  ).toBeDisabled();
+  await settings
+    .getByLabel("Dreaming model")
+    .selectOption({ label: "dream-model · Ollama" });
+  await expect(
+    settings.getByText(
+      "Direct-chat excerpts and private memories go to your configured Ollama endpoint. It is local only if hosted on this computer.",
+    ),
+  ).toBeVisible();
+  await settings.getByLabel("Enable background dreaming").check();
+  await settings
+    .getByRole("button", { name: "Save dreaming settings" })
+    .click();
+  await expect(settings.getByText("Dreaming settings saved.")).toBeVisible();
+  await page.reload();
+  await openSettings("Dreaming");
+  await expect(settings.getByLabel("Enable background dreaming")).toBeChecked();
+  await expect(settings.getByLabel("Dreaming model")).toHaveValue(
+    /dream-model/,
+  );
+  await settings.getByRole("tab", { name: "Models" }).click();
+  await expect(settings.getByLabel("Default model")).toHaveValue(
+    /fixture-model/,
+  );
+  await settings.getByRole("tab", { name: "Dreaming" }).click();
+
+  // Dream now saves a private note whose evidence reads as the original message.
+  await settings
+    .getByLabel("Bot to dream for")
+    .selectOption({ label: "Tutor" });
+  await settings.getByRole("button", { name: "Dream now" }).click();
+  const completed = settings
+    .locator("article")
+    .filter({ hasText: "Tutor · completed" });
+  await expect(completed).toBeVisible();
+  await expect(completed).toContainText("dream-model · 1 sources · 1 saved");
+  // Evidence disclosure works from the keyboard.
+  await completed.getByText("Source messages").focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    completed.getByText("Remember: I study chemistry on Tuesday evenings."),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/socius-dreaming.png",
+    animations: "disabled",
+  });
+  await page.keyboard.press("Escape");
+
+  const memory = page.getByRole("dialog", { name: "Memory" });
+  const openMemory = async () => {
+    await page.getByRole("button", { name: "Account and settings" }).click();
+    await page.getByRole("menuitem", { name: "Memory" }).click();
+    await memory.getByRole("tab", { name: "Tutor" }).click();
+  };
+  await openMemory();
+  const dreamed = memory.locator(".memory-card").filter({
+    hasText: "I study chemistry on Tuesday evenings.",
+  });
+  await expect(dreamed).toContainText("Dreaming ·");
+  await dreamed.getByText("Source messages").click();
+  await expect(
+    dreamed.getByText("Remember: I study chemistry on Tuesday evenings."),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(memory).toHaveCount(0);
+  // The reload above returned to Socius.
+  await page.getByRole("button", { name: /Tutor Study planning/ }).click();
+
+  // Later chats recall the note; a manual correction replaces what is recalled.
+  await say(
+    "What do you recall about chemistry?",
+    "I recall: I study chemistry on Tuesday evenings.",
+  );
+  await openMemory();
+  await memory.getByRole("button", { name: "Edit", exact: true }).click();
+  await memory
+    .getByRole("textbox", { name: "What should Tutor remember?" })
+    .fill("I study chemistry on Thursday evenings.");
+  await memory
+    .getByRole("button", { name: "Save memory", exact: true })
+    .click();
+  await expect(
+    memory.getByText("I study chemistry on Thursday evenings."),
+  ).toBeVisible();
+  await expect(memory.getByText(/User editor ·/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await say(
+    "What do you recall about chemistry?",
+    "I recall: I study chemistry on Thursday evenings.",
+  );
+
+  // Deleting the note stops recall.
+  await openMemory();
+  await memory.getByRole("button", { name: "Edit", exact: true }).click();
+  await memory.getByRole("button", { name: "Delete memory" }).click();
+  await expect(
+    memory.getByText("I study chemistry on Thursday evenings."),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await say(
+    "What do you recall about chemistry?",
+    "I have nothing recalled for that.",
+  );
+
+  // Stop ends a running dream without saving.
+  await say("Slow dream: take your time.", /summary of your supplied document/);
+  await openSettings("Dreaming");
+  await settings
+    .getByLabel("Bot to dream for")
+    .selectOption({ label: "Tutor" });
+  await settings.getByRole("button", { name: "Dream now" }).click();
+  await settings.getByRole("button", { name: "Stop dreaming" }).click();
+  await expect(
+    settings.locator("article").filter({ hasText: "Tutor · cancelled" }),
+  ).toBeVisible();
+  await expect(
+    settings.getByRole("button", { name: "Stop dreaming" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  // Revoked memory access blocks dreaming for that bot.
+  await memoryAccess("Revoke access");
+  await openSettings("Dreaming");
+  await settings
+    .getByLabel("Bot to dream for")
+    .selectOption({ label: "Tutor" });
+  await settings.getByRole("button", { name: "Dream now" }).click();
+  await expect(
+    settings.getByText(
+      "This bot needs memory read and write access for dreaming",
+    ),
+  ).toBeVisible();
+
+  // Removing the dreaming model leaves dreaming visibly unavailable, with no fallback.
+  await settings.getByRole("tab", { name: "Models" }).click();
+  await settings.getByRole("button", { name: "Remove dream-model" }).click();
+  await expect(
+    settings.getByRole("button", { name: "Remove dream-model" }),
+  ).toHaveCount(0);
+  await settings.getByRole("tab", { name: "Dreaming" }).click();
+  await expect(
+    settings.getByText(
+      "The saved dreaming model is unavailable. Choose another and save.",
+    ),
+  ).toBeVisible();
+  await expect(
+    settings.getByRole("option", {
+      name: "Selected model unavailable — choose another",
+    }),
+  ).toBeAttached();
+  await expect(
+    settings.getByRole("button", { name: "Dream now" }),
+  ).toBeDisabled();
+  await page.screenshot({
+    path: "test-results/socius-dreaming-unavailable.png",
+    animations: "disabled",
+  });
   expect(errors).toEqual([]);
   await context.close();
 });

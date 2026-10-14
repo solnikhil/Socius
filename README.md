@@ -28,6 +28,7 @@ Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The 
 - Browse the official MCP Registry from Connect Apps. Listings are metadata only; only Socius-reviewed servers are installable.
 - Memory is private per bot: editable Markdown files plus SQLite FTS5 search. External file edits reconcile when memory is read.
 - Enable memory per bot explicitly; model-proposed saves require review and recheck permissions.
+- **Dreaming** (opt-in, Settings → Dreaming): while Socius is idle, a separately chosen model consolidates completed direct-chat user messages into each bot's private memory, citing its sources. Later chats recall relevant notes. Correct or delete notes in Memory; deleting one also stops its sources being reused. No tools or external actions. See [Dreaming](docs/architecture/dreaming.md).
 - Messaging-style interface: bot sidebar with the main bot featured, a `To:` new-chat palette (⌘N/⌘K, ⌘1–9 to pick), chat bubbles with safe Markdown rendering, and a Connect Apps modal. Appearance (System/Light/Dark) is in Settings and the account menu; the choice is stored locally.
 - Group chats: pick bots and Socius coordinates a conversation. It knows each member's role and instructions, asks members for help with an `askMember` tool, and replies last. Members answer under their own name with their own permissions. See [Group chats](docs/architecture/group-chats.md).
 - Approvals (proposed bots and memory saves) are reviewed inline in the proposing bot's chat or group chat; a blue dot marks it in the sidebar.
@@ -65,7 +66,7 @@ npm run build
 npm run test:e2e
 ```
 
-Browser end-to-end tests use a deterministic model fixture only in test code and a temporary workspace. A separate test exercises the real AI SDK provider/stream/tool pipeline against a controlled HTTP endpoint. Desktop tests verify launch and restart persistence. Live cloud/local inference requires provider access and is a separate check.
+Browser end-to-end tests use a deterministic model fixture only in test code and a temporary workspace. A separate test exercises the real AI SDK provider/stream/tool pipeline against a controlled HTTP endpoint. Desktop tests verify launch and restart persistence. Live cloud/local inference requires provider access and is a separate check. `npm run test:live` and `npm run test:live:dreaming` are opt-in. They send synthetic prompts to your default provider from an isolated temporary profile, which uses its quota.
 
 ## Where to start
 

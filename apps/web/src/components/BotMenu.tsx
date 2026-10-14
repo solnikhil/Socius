@@ -12,10 +12,11 @@ import {
   PinOff,
   Trash2,
 } from "lucide-react";
-import type { BotInstance } from "@socius/contracts";
+import type { BotAppearance, BotInstance } from "@socius/contracts";
 import type { BotLayout, Category } from "@socius/contracts/app";
 import { api } from "../api.js";
 import { ErrorNote, Modal } from "./chrome.js";
+import { AvatarPicker, appearanceOf } from "./avatar.js";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -48,6 +49,7 @@ export function BotMenu({
     [open, setOpen] = useState(false),
     [renaming, setRenaming] = useState(false),
     [name, setName] = useState(bot.name),
+    [look, setLook] = useState<BotAppearance>(),
     [confirmDelete, setConfirmDelete] = useState(false);
   const dismissRef = useRef<(() => void) | null>(null);
   const pinned = !!layout?.pinned,
@@ -69,7 +71,11 @@ export function BotMenu({
     e.preventDefault();
     setError("");
     try {
-      await api("bots/update", { id: bot.id, name });
+      await api("bots/update", {
+        id: bot.id,
+        name,
+        ...(look ? { appearance: look } : {}),
+      });
       await onRefresh();
       (dismissRef.current ?? (() => setRenaming(false)))();
     } catch (err) {
@@ -115,7 +121,9 @@ export function BotMenu({
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="menu-panel menu-flyout">
               {main && (
-                <small className="menu-note">Socius stays above the lists.</small>
+                <small className="menu-note">
+                  Socius stays above the lists.
+                </small>
               )}
               {!main &&
                 destinations.map((f) => (
@@ -166,12 +174,13 @@ export function BotMenu({
             onSelect={(e) => {
               e.preventDefault();
               setName(bot.name);
+              setLook(undefined);
               setOpen(false);
               setRenaming(true);
             }}
           >
             <Pencil size={15} />
-            Rename bot
+            {main ? "Rename bot" : "Edit name and look"}
           </ContextMenuItem>
           <ContextMenuSeparator className="menu-divider" />
           <ContextMenuItem
@@ -214,7 +223,7 @@ export function BotMenu({
       </ContextMenu>
       {renaming && (
         <Modal
-          title="Rename bot"
+          title={main ? "Rename bot" : "Edit bot"}
           dismissRef={dismissRef}
           onClose={() => setRenaming(false)}
         >
@@ -229,6 +238,17 @@ export function BotMenu({
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
+            {/* Socius keeps its own face; specialists can change theirs. */}
+            {!main && (
+              <div className="form-field" role="group" aria-label="Look">
+                <span>Look</span>
+                <AvatarPicker
+                  name={bot.name}
+                  value={look ?? appearanceOf(bot.name, bot.appearance)}
+                  onChange={setLook}
+                />
+              </div>
+            )}
             <ErrorNote error={error} />
             <div className="modal-actions">
               <button

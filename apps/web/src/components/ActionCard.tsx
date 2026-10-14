@@ -1,29 +1,50 @@
-import { useState } from "react";
-import { Check, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
+import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { ArrowUp, Check, ExternalLink, RefreshCw } from "lucide-react";
 import type { ActionRecord, Snapshot } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { ErrorNote } from "./chrome.js";
+import { AppIcon } from "./AppIcon.js";
+import { ErrorNote, Markdown } from "./chrome.js";
 
-const heading: Record<ActionRecord["state"], string> = {
-  pending: "Review a change",
-  denied: "Change declined",
-  expired: "Approval expired",
-  blocked: "Change blocked",
-  executing: "Making the change…",
-  succeeded: "Change made",
-  failed: "Change not made",
-  unknown: "Outcome needs checking",
+/** Fields that carry the body of a change; shown as readable text. */
+const PROSE = /^(content|description|body|text|message|markdown)$/i;
+/** Internal references the user never needs to read. */
+const OPAQUE =
+  /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$|^[0-9a-f]{24,}$/i;
+/** Drops raw IDs (and the "under"/"in" that introduces them) from a summary. */
+const readable = (summary: string) =>
+  summary
+    .replace(
+      /\s+(?:under|in|on|to|from)\s+[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/gi,
+      "",
+    )
+    .replace(
+      /\s*\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/gi,
+      "",
+    )
+    .trim();
+const label = (key: string) =>
+  key
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase()
+    .replace(/^./, (c) => c.toUpperCase());
+
+/** What happened, in one line, once the user has decided. */
+const outcome: Partial<Record<ActionRecord["state"], string>> = {
+  executing: "Working on it…",
+  succeeded: "Done",
+  denied: "Declined",
+  expired: "This request expired",
+  blocked: "Blocked",
+  failed: "Didn't go through",
+  unknown: "Not sure it went through",
 };
 
-const argLabel: Record<string, string> = {
-  parentPage: "Parent page",
-  title: "Title",
-  content: "Content",
-  page: "Page",
-  query: "Search",
-};
-
-/** Exact external write proposal: the user approves these arguments and nothing else. */
+/**
+ * A connected-app change waiting for the user, laid out as a question with
+ * lettered answers. Approval covers exactly these details; a typed answer
+ * declines and goes back to the bot so it can adjust.
+ */
 export function ActionCard({
   action: a,
   state,
@@ -34,14 +55,21 @@ export function ActionCard({
   onRefresh: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const bot = state.bots.find((b) => b.id === a.actor.botId);
-  const expired = a.state === "pending" && Date.parse(a.expiresAt) < Date.now();
+    [error, setError] = useState(""),
+    [reply, setReply] = useState(""),
+    [expanded, setExpanded] = useState(false);
+  const app =
+    state.releases.find((r) => r.manifest.id === a.release.id)?.manifest.name ??
+    "the app";
+  const bot = state.bots.find((b) => b.id === a.actor.botId)?.name ?? "A bot";
+  const open = a.state === "pending" && Date.parse(a.expiresAt) > Date.now();
+  const summary = readable(a.summary);
   async function run(path: string, body: unknown) {
     setBusy(true);
     setError("");
     try {
       await api(path, body);
+      setReply("");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -49,100 +77,189 @@ export function ActionCard({
       setBusy(false);
     }
   }
-  const args = a.arguments as Record<string, string>;
+  const decide = (approve: boolean, feedback?: string) =>
+    void run("actions/resolve", {
+      id: a.id,
+      digest: a.digest,
+      approve,
+      ...(feedback ? { feedback } : {}),
+    }).then(() =>
+      // Answered: hand the keyboard back to the message box.
+      document
+        .querySelector<HTMLTextAreaElement>(".composer textarea")
+        ?.focus({ preventScroll: true }),
+    );
+  function answer(e: FormEvent) {
+    e.preventDefault();
+    if (reply.trim()) decide(false, reply.trim());
+  }
+  // Letter keys answer only once the user has focused the card themselves;
+  // repeats and modified keys never count, so stray typing cannot approve.
+  function keys(e: KeyboardEvent<HTMLDivElement>) {
+    if (
+      !open ||
+      busy ||
+      e.target !== e.currentTarget ||
+      e.repeat ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.altKey
+    )
+      return;
+    const key = e.key.toLowerCase();
+    if (key === "a") decide(true);
+    else if (key === "b") decide(false);
+  }
+  // Show what matters up front; IDs appear as a short reference, and the
+  // exact arguments being approved are always one click away.
+  const all = Object.entries(a.arguments).map(
+    ([key, value]) => [key, String(value ?? "")] as const,
+  );
+  const opaque = all.filter(([, value]) => OPAQUE.test(value.trim()));
+  const entries = all.filter(
+    ([, value]) => value && !OPAQUE.test(value.trim()),
+  );
+  const prose = entries.filter(
+    ([key, value]) => PROSE.test(key) || value.length > 160,
+  );
+  const details = entries.filter(
+    ([key, value]) =>
+      !prose.some(([k]) => k === key) && !summary.includes(value),
+  );
+  const long = prose.some(
+    ([, v]) => v.length > 360 || v.split("\n").length > 6,
+  );
   return (
-    <div className={`approval-card action-card state-${a.state}`}>
-      <div className="approval-heading">
-        <ShieldCheck size={18} />
-        <strong>{expired ? heading.expired : heading[a.state]}</strong>
-        <span>
-          {a.state === "pending" && !expired
-            ? `Needs your approval · expires ${new Date(a.expiresAt).toLocaleString()}`
-            : new Date(a.updatedAt).toLocaleString()}
-        </span>
+    <div
+      className={`decision-card action-card state-${a.state}`}
+      data-action={a.id}
+      tabIndex={open ? 0 : -1}
+      onKeyDown={keys}
+      aria-label={open ? `${summary}? Needs your approval` : summary}
+    >
+      <div className="decision-head">
+        <AppIcon
+          item={{ id: a.release.id, name: app, kind: "connector" }}
+          size={22}
+        />
+        <strong>{open ? `${summary}?` : summary}</strong>
       </div>
-      <p>{a.summary}</p>
-      <dl className="action-args">
-        {Object.entries(args).map(([key, value]) => (
-          <div key={key}>
-            <dt>{argLabel[key] ?? key}</dt>
-            <dd>
-              {String(value).length > 160 || String(value).includes("\n") ? (
-                <pre>{String(value)}</pre>
-              ) : (
-                String(value)
-              )}
-            </dd>
+      {(details.length > 0 || prose.length > 0 || opaque.length > 0) && (
+        <div className="decision-details">
+          {details.map(([key, value]) => (
+            <p key={key} className="decision-field">
+              <span>{label(key)}</span> {value}
+            </p>
+          ))}
+          {opaque.map(([key, value]) => (
+            <p key={key} className="decision-field">
+              <span>{label(key)}</span> …{value.replace(/-/g, "").slice(-6)}
+            </p>
+          ))}
+          {prose.map(([key, value]) => (
+            <div
+              key={key}
+              className={`decision-prose ${long && !expanded ? "clamped" : ""}`}
+            >
+              <Markdown text={value} />
+            </div>
+          ))}
+          {long && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "Show less" : "Show all"}
+            </button>
+          )}
+        </div>
+      )}
+      <details className="decision-exact">
+        <summary>Exact details</summary>
+        <dl>
+          {all.map(([key, value]) => (
+            <div key={key}>
+              <dt>{key}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
+      {open ? (
+        <>
+          <div className="decision-options" role="group" aria-label="Answer">
+            <button type="button" disabled={busy} onClick={() => decide(true)}>
+              <kbd>A</kbd> Yes, go ahead
+            </button>
+            <button type="button" disabled={busy} onClick={() => decide(false)}>
+              <kbd>B</kbd> No, don't
+            </button>
           </div>
-        ))}
-      </dl>
-      <p className="action-meta">
-        Requested by {bot?.name ?? "a bot"}
-        {a.actor.boardId ? ` on board ${a.actor.boardId}` : ""} · {a.release.id}{" "}
-        {a.release.version} · {a.capability}
-      </p>
-      {a.result && (
-        <p className="action-result">
-          <Check size={14} /> {a.result.summary}{" "}
-          {a.result.url && (
+          <form className="decision-reply" onSubmit={answer}>
+            <input
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              placeholder="Type your own answer"
+              aria-label={`Reply to ${bot} instead`}
+              maxLength={2000}
+              disabled={busy}
+            />
+            {reply.trim() && (
+              <button className="icon" aria-label="Send answer" disabled={busy}>
+                <ArrowUp size={15} />
+              </button>
+            )}
+          </form>
+          <p className="decision-meta">
+            {bot} is waiting · {app} changes only after you approve
+          </p>
+        </>
+      ) : (
+        <div className="decision-outcome">
+          {a.state === "succeeded" && <Check size={15} />}
+          <span>
+            {a.state === "pending" ? outcome.expired : outcome[a.state]}
+            {a.state === "succeeded" && a.result?.summary
+              ? ` · ${a.result.summary}`
+              : ""}
+            {a.state === "denied" && a.feedback
+              ? ` · you replied “${a.feedback}”`
+              : ""}
+          </span>
+          {a.result?.url && (
             <a href={a.result.url} target="_blank" rel="noreferrer noopener">
               Open <ExternalLink size={12} />
             </a>
           )}
-        </p>
+        </div>
       )}
-      {a.error && <p className="action-error">{a.error}</p>}
+      {a.error && a.state !== "succeeded" && (
+        <p className="decision-error">{a.error}</p>
+      )}
       <ErrorNote error={error} />
-      <div className="modal-actions">
-        {a.state === "pending" && !expired && (
-          <>
+      {(a.state === "unknown" || (a.state === "failed" && a.retryable)) && (
+        <div className="modal-actions">
+          {a.state === "unknown" && (
             <button
               disabled={busy}
-              onClick={() =>
-                void run("actions/resolve", {
-                  id: a.id,
-                  digest: a.digest,
-                  approve: false,
-                })
-              }
+              onClick={() => void run("actions/check", { id: a.id })}
             >
-              Decline
+              <RefreshCw size={14} />
+              Check again
             </button>
+          )}
+          {a.retryable && (
             <button
               className="primary"
               disabled={busy}
-              onClick={() =>
-                void run("actions/resolve", {
-                  id: a.id,
-                  digest: a.digest,
-                  approve: true,
-                })
-              }
+              onClick={() => void run("actions/retry", { id: a.id })}
             >
-              <Check size={15} />
-              Approve this change
+              Try again
             </button>
-          </>
-        )}
-        {a.state === "unknown" && (
-          <button
-            disabled={busy}
-            onClick={() => void run("actions/check", { id: a.id })}
-          >
-            <RefreshCw size={14} />
-            Check again
-          </button>
-        )}
-        {(a.state === "failed" || a.state === "unknown") && a.retryable && (
-          <button
-            className="primary"
-            disabled={busy}
-            onClick={() => void run("actions/retry", { id: a.id })}
-          >
-            Retry
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

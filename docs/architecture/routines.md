@@ -18,7 +18,7 @@ Socius uses **one routine engine** (`packages/runtime/src/routines/engine.ts`) w
 | `runtime_lease`         | One owner, a monotonically increasing fence, an expiry           | Single-runtime execution lock                                            |
 | `records` (`task`)      | Each attempt also creates a chat `Task` with `routineRunId`      | Existing approval/action UI links by task ID                             |
 
-Migration 5 adds these tables. Existing chats, approvals, memories, providers and historical board records are untouched.
+Migration 6 adds these tables. Existing chats, approvals, memories, providers and historical board records are untouched.
 
 ## Definitions and enablement (A03)
 
