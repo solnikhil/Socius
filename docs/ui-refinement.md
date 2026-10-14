@@ -18,8 +18,8 @@ Use existing endpoints for live behavior. Backend-specific screens can use clear
 
 ## Coordinate before wiring new backend flows
 
-- [ ] Agree board, roster, task, contribution and result DTOs/events with the Teams & Boards teammate.
-- [ ] Build board switcher, team roster, shared chat and task/result views; no hardcoded bot-count cap.
+- [ ] Coordinate group membership, attributed replies and approval events with the group-chat teammate.
+- [ ] Refine group creation, membership, shared chat, progress and result presentation.
 - [ ] Agree install/enable/update/uninstall and connector authentication states with the Marketplace teammate.
 - [ ] Connect the new screens to their APIs and validate the two GitHub issue workflows jointly.
 

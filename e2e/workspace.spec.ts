@@ -63,6 +63,12 @@ test("configure a model, create bots manually and through Socius, install skills
     page.getByRole("button", { name: "Model: fixture-model" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Create" }).first().click();
+  await expect(page.getByRole("menuitem", { name: "New board" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("region", { name: "Boards", exact: true }),
+  ).toHaveCount(0);
   await page.getByRole("menuitem", { name: "New bot" }).click();
   await page.getByLabel("Name", { exact: true }).fill("College assistant");
   await page.getByLabel("Role", { exact: true }).fill("College planning");

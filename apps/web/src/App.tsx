@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   BookOpen,
   ChevronRight,
-  LayoutGrid,
   Monitor,
   Moon,
   PanelLeft,
@@ -14,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { Board, GroupChat, Snapshot } from "@socius/contracts/app";
+import type { GroupChat, Snapshot } from "@socius/contracts/app";
 import { api } from "./api.js";
 import {
   Avatar,
@@ -35,14 +34,11 @@ import type { OpenSettings, SettingsTab } from "./models.js";
 import { ActivityView } from "./views/ActivityView.js";
 import { CreateBot } from "./views/CreateBot.js";
 import { CreateGroup } from "./views/CreateGroup.js";
-import { BoardView, type BoardTab } from "./views/BoardView.js";
-import { BoardMenu } from "./components/BoardMenu.js";
 import { BotMenu } from "./components/BotMenu.js";
 import { CreateMenu } from "./components/CreateMenu.js";
-import { CreateBoard } from "./views/CreateBoard.js";
 
 const FOLDED_KEY = "socius.sidebar.folded";
-// Collapsed sidebar sections and boards are a per-device preference.
+// Collapsed sidebar sections are a per-device preference.
 function readFolded(): Set<string> {
   try {
     const value = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? "[]");
@@ -52,7 +48,7 @@ function readFolded(): Set<string> {
   }
 }
 
-type Page = "chat" | "new" | "memory" | "activity" | "board";
+type Page = "chat" | "new" | "memory" | "activity";
 const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
@@ -62,25 +58,12 @@ export function App() {
     [groupId, setGroupId] = useState(""),
     [grouping, setGrouping] = useState<"new" | "edit" | null>(null),
     [page, setPage] = useState<Page>("chat"),
-    [creating, setCreating] = useState<{ board?: Board } | null>(null),
-    [boardId, setBoardId] = useState(""),
-    [creatingBoard, setCreatingBoard] = useState<{
-      preselect?: string[];
-    } | null>(null),
+    [creating, setCreating] = useState(false),
     [folded, setFolded] = useState<Set<string>>(readFolded),
     [createMenu, setCreateMenu] = useState<{ x: number; y: number } | null>(
       null,
     ),
     [botMenu, setBotMenu] = useState<{
-      id: string;
-      x: number;
-      y: number;
-    } | null>(null),
-    [boardTab, setBoardTab] = useState<{ tab: BoardTab; nonce: number }>({
-      tab: "thread",
-      nonce: 0,
-    }),
-    [boardMenu, setBoardMenu] = useState<{
       id: string;
       x: number;
       y: number;
@@ -204,22 +187,6 @@ export function App() {
     );
     return pending.some((a) => tasks.has(a.taskId));
   };
-  const openBoard = (id: string, tab: BoardTab = "thread") => {
-    setBoardId(id);
-    setBoardTab((t) => ({ tab, nonce: t.nonce + 1 }));
-    setPage("board");
-  };
-  const visibleBoards = state.boards.filter(
-    (b) => !b.archivedAt || b.id === boardId,
-  );
-  // A bot on no active board is unassigned; archived boards don't count.
-  const unassigned = specialists.filter(
-    (b) =>
-      !state.boards.some(
-        (board) =>
-          !board.archivedAt && board.members.some((m) => m.botId === b.id),
-      ),
-  );
   const botRow = (b: BotInstance, nested: boolean, role = b.role) => (
     <button
       key={b.id}
@@ -227,7 +194,6 @@ export function App() {
       onClick={() => open(b)}
       onContextMenu={(e) => {
         e.preventDefault();
-        setBoardMenu(null);
         setBotMenu({ id: b.id, x: e.clientX, y: e.clientY });
       }}
     >
@@ -263,9 +229,6 @@ export function App() {
   const menuBot = botMenu
     ? state.bots.find((b) => b.id === botMenu.id)
     : undefined;
-  const menuBoard = boardMenu
-    ? state.boards.find((b) => b.id === boardMenu.id)
-    : undefined;
   const connected = state.catalog.filter((p) =>
     state.installations.some((i) => i.id === p.id && p.kind !== "bot"),
   );
@@ -293,7 +256,7 @@ export function App() {
         aria-label="Create"
         aria-haspopup="menu"
         aria-expanded={!!createMenu}
-        title="New chat, group chat, bot or board"
+        title="New chat, group chat or bot"
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           setCreateMenu((m) => (m ? null : { x: r.left, y: r.bottom + 6 }));
@@ -321,7 +284,6 @@ export function App() {
               onClick={() => open(main)}
               onContextMenu={(e) => {
                 e.preventDefault();
-                setBoardMenu(null);
                 setBotMenu({ id: main.id, x: e.clientX, y: e.clientY });
               }}
             >
@@ -376,91 +338,14 @@ export function App() {
               </>
             )}
           </section>
-          <section className="bot-group" aria-label="Boards">
-            {sectionHeading("boards", "Boards", visibleBoards.length)}
-            {!folded.has("section:boards") &&
-              visibleBoards.map((b) => {
-                const expanded = !folded.has(b.id);
-                const members = b.members.flatMap((m) => {
-                  const bot = state.bots.find((x) => x.id === m.botId);
-                  return bot && bot.id !== main.id
-                    ? [{ bot, role: m.role || bot.role }]
-                    : [];
-                });
-                return (
-                  <div key={b.id} className="board-group">
-                    <div
-                      className={`board-row ${page === "board" && b.id === boardId ? "active" : ""}`}
-                    >
-                      <button
-                        className="board-toggle"
-                        aria-label={`${expanded ? "Collapse" : "Expand"} ${b.name}`}
-                        aria-expanded={expanded}
-                        onClick={() => toggleFold(b.id)}
-                      >
-                        <ChevronRight size={13} />
-                      </button>
-                      <button
-                        className="board-open"
-                        onClick={() => openBoard(b.id)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setBotMenu(null);
-                          setBoardMenu({
-                            id: b.id,
-                            x: e.clientX,
-                            y: e.clientY,
-                          });
-                        }}
-                      >
-                        <span className="board-icon" aria-hidden="true">
-                          <LayoutGrid size={15} />
-                        </span>
-                        <span className="bot-text">
-                          <strong>{b.name}</strong>
-                          <small>
-                            {b.members.length} member
-                            {b.members.length === 1 ? "" : "s"}
-                            {b.archivedAt ? " · archived" : ""}
-                          </small>
-                        </span>
-                      </button>
-                    </div>
-                    {expanded && (
-                      <div
-                        className="board-members"
-                        role="group"
-                        aria-label={`${b.name} members`}
-                      >
-                        {members.map((m) => botRow(m.bot, true, m.role))}
-                        {!members.length && (
-                          <small className="board-empty">
-                            No specialists yet
-                          </small>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            {!folded.has("section:boards") && (
-              <button
-                className="group-link"
-                onClick={() => setCreatingBoard({})}
-              >
-                New board
-                <Plus size={14} />
-              </button>
-            )}
-          </section>
-          <section className="bot-group" aria-label="Unassigned">
-            {sectionHeading("unassigned", "Unassigned", unassigned.length)}
-            {!folded.has("section:unassigned") && (
+          <section className="bot-group" aria-label="Specialist bots">
+            {sectionHeading("bots", "Bots", specialists.length)}
+            {!folded.has("section:bots") && (
               <>
-                {unassigned.map((b) => botRow(b, false))}
-                {!unassigned.length && (
-                  <small className="board-empty">
-                    Every bot is on a board. New bots land here.
+                {specialists.map((b) => botRow(b, false))}
+                {!specialists.length && (
+                  <small className="bots-empty">
+                    Create a bot or add one from Connect Apps.
                   </small>
                 )}
               </>
@@ -600,20 +485,8 @@ export function App() {
             }}
             onCreate={() => {
               setPage("chat");
-              setCreating({});
+              setCreating(true);
             }}
-          />
-        )}
-        {page === "board" && boardId && (
-          <BoardView
-            key={`${boardId}:${boardTab.nonce}`}
-            boardId={boardId}
-            initialTab={boardTab.tab}
-            state={state}
-            onRefresh={refresh}
-            onClose={() => setPage("chat")}
-            onSettings={() => openSettings("models")}
-            onCreateBot={(board) => setCreating({ board })}
           />
         )}
         {(page === "memory" || page === "activity") && (
@@ -662,24 +535,6 @@ export function App() {
           onClose={() => setApps(false)}
         />
       )}
-      {boardMenu && menuBoard && (
-        <BoardMenu
-          board={menuBoard}
-          bots={[main, ...specialists]}
-          x={boardMenu.x}
-          y={boardMenu.y}
-          onClose={() => setBoardMenu(null)}
-          onOpen={(tab) => {
-            openBoard(menuBoard.id, tab);
-            setBoardMenu(null);
-          }}
-          onCreateBot={() => {
-            setCreating({ board: menuBoard });
-            setBoardMenu(null);
-          }}
-          onRefresh={refresh}
-        />
-      )}
       {createMenu && (
         <CreateMenu
           x={createMenu.x}
@@ -687,14 +542,12 @@ export function App() {
           onClose={() => setCreateMenu(null)}
           onChat={() => setPage("new")}
           onGroup={() => setGrouping("new")}
-          onBot={() => setCreating({})}
-          onBoard={() => setCreatingBoard({})}
+          onBot={() => setCreating(true)}
         />
       )}
       {botMenu && menuBot && (
         <BotMenu
           bot={menuBot}
-          boards={state.boards}
           x={botMenu.x}
           y={botMenu.y}
           onClose={() => setBotMenu(null)}
@@ -707,23 +560,7 @@ export function App() {
             setPage("memory");
             setBotMenu(null);
           }}
-          onNewBoard={() => {
-            setCreatingBoard({ preselect: [menuBot.id] });
-            setBotMenu(null);
-          }}
           onRefresh={refresh}
-        />
-      )}
-      {creatingBoard && (
-        <CreateBoard
-          bots={[main, ...specialists]}
-          mainId={main.id}
-          preselect={creatingBoard.preselect}
-          onClose={() => setCreatingBoard(null)}
-          onCreated={(b) => {
-            openBoard(b.id);
-            void refresh();
-          }}
         />
       )}
       {grouping && (
@@ -738,18 +575,15 @@ export function App() {
           }}
           onCreateBot={() => {
             setGrouping(null);
-            setCreating({});
+            setCreating(true);
           }}
         />
       )}
       {creating && (
         <CreateBot
-          board={creating.board}
-          onClose={() => setCreating(null)}
+          onClose={() => setCreating(false)}
           onCreated={(b) => {
             void refresh();
-            // A bot made for a board stays in that board's context.
-            if (creating.board) return;
             setSelected(b.id);
             setPage("chat");
           }}
