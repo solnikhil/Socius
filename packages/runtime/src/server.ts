@@ -230,7 +230,11 @@ export async function startRuntime(options: RuntimeOptions) {
         continue;
       if (connections.forConnector(connector.id)?.state !== "ready") continue;
       for (const action of connector.actions) {
-        if (!b.grantedCapabilities.includes(action.capability)) continue;
+        if (
+          connector.id === "socius/notion" &&
+          !b.grantedCapabilities.includes(action.capability)
+        )
+          continue;
         if (
           connector.id !== "socius/notion" &&
           !store.get(
@@ -1305,14 +1309,6 @@ export async function startRuntime(options: RuntimeOptions) {
                 connectorId: input.connectorId,
                 capability: input.capability,
               });
-              if (!b.grantedCapabilities.includes(input.capability))
-                store.put("bot", b.id, {
-                  ...b,
-                  grantedCapabilities: [
-                    ...b.grantedCapabilities,
-                    input.capability,
-                  ],
-                });
             } else store.delete("connector-grant", id);
             store.event(
               "permissions.updated",
