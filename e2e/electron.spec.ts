@@ -22,6 +22,25 @@ test("Electron launches its isolated runtime and persists a manually created bot
     await expect(
       page.getByRole("heading", { name: "What shall we work on?" }),
     ).toBeVisible();
+    await page.getByRole("button", { name: "Hide sidebar" }).click();
+    await expect(page.locator(".sidebar")).toBeHidden();
+    const reveal = page.getByRole("button", { name: "Show sidebar" });
+    await expect(reveal).toBeVisible();
+    const hittable = await reveal.evaluate((el) => {
+      const style = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      const target = document.elementFromPoint(
+        box.left + box.width / 2,
+        box.top + box.height / 2,
+      );
+      return (
+        style.getPropertyValue("-webkit-app-region").trim() === "no-drag" &&
+        style.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+        (target === el || el.contains(target))
+      );
+    });
+    expect(hittable).toBe(true);
+    await reveal.click();
     await page.getByRole("button", { name: "Create" }).first().click();
     await page.getByRole("menuitem", { name: "New bot" }).click();
     await page.getByLabel("Name", { exact: true }).fill("Desktop planner");

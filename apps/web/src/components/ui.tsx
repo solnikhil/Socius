@@ -95,6 +95,45 @@ export function Avatar({
   );
 }
 
+/** Up to three member avatars tucked into one tile; the coordinator comes first. */
+export function GroupAvatar({
+  names,
+  size = 36,
+}: {
+  names: { name: string; main?: boolean }[];
+  size?: number;
+}) {
+  const shown = names.slice(0, 3);
+  const inner = Math.round(size * (shown.length > 2 ? 0.54 : 0.62));
+  const spots =
+    shown.length > 2
+      ? [
+          [0, 0],
+          [size - inner, 0],
+          [(size - inner) / 2, size - inner],
+        ]
+      : [
+          [0, 0],
+          [size - inner, size - inner],
+        ];
+  return (
+    <span
+      className="avatar group-avatar"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      {shown.map((n, i) => (
+        <span
+          key={`${n.name}-${i}`}
+          style={{ left: spots[i]![0], top: spots[i]![1] }}
+        >
+          <Avatar name={n.name} main={!!n.main} size={inner} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function initials(name: string) {
   return name
     .split(/\s+/)

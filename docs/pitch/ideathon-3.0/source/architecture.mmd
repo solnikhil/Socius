@@ -1,0 +1,13 @@
+flowchart TD
+    Desktop["Laptop: web UI or Electron"] --> API["Authenticated local API"]
+    Phone["Phone: same responsive web UI"] --> Tailscale["Tailscale Serve"]
+    Tailscale --> API
+    API --> Runtime["Agent runtime: tasks, bots, schedules"]
+    Runtime --> Models["Model adapters: local or cloud"]
+    Runtime --> Memory["Editable memory"]
+    Runtime --> Policy["Policy, approvals and activity log"]
+    Policy --> Tools["Tools and MCP connectors"]
+    Tools --> Browser["Browser worker"]
+    Tools --> Files["Approved local files"]
+    Registry["Marketplace registry"] --> Install["Reviewed installation"]
+    Install --> Runtime

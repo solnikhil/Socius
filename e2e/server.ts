@@ -10,6 +10,19 @@ const runtime = await startRuntime({
   port: 3137,
   runner: async (request, onText) => {
     const content = String(request.messages.at(-1)?.content);
+    // Group chats: the coordinator asks its first member, then sums up.
+    if (request.askMember) {
+      const member = /^- ([^:]+):/m.exec(request.briefing ?? "")?.[1] ?? "";
+      await request.askMember(member, "Outline the three launch steps.");
+      const text = `Thanks, ${member}. Start with step one this week; I'll check in after.`;
+      onText(text);
+      return text;
+    }
+    if (request.briefing?.includes("is asking you directly")) {
+      const text = `${request.bot.name} here. 1. Research the audience. 2. Draft the announcement. 3. Schedule the launch.`;
+      onText(text);
+      return text;
+    }
     if (content.toLowerCase().includes("create"))
       request.proposeBot?.({
         name: "Planner",

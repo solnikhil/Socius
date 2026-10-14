@@ -1,61 +1,89 @@
-# Teammate handoff
+# Team assignments and current status
 
-The runnable desktop base is on `main`. Use Node.js 24, `npm ci`, then `npm run desktop`. Configure a tool-capable model in Settings. Each teammate starts a `codex/<topic>` branch and opens a PR; ownership below is a workstream, not a named assignee.
+Use Node.js 24, `npm ci`, then `npm run desktop`. The user owns UI/refinement. Two teammates own the backend workstreams. Their names are intentionally left unspecified.
 
-## Two major handoff issues
+## Ownership
 
-1. [Teams & Boards — #2](https://github.com/solnikhil/Socius/issues/2): [self-contained specification](issues/teams-boards.md), board workspace and scoped bot collaboration. There is no hardcoded bot membership limit; execution concurrency and budgets are configurable separately.
-2. [Skills & Connectors Marketplace — #3](https://github.com/solnikhil/Socius/issues/3): [self-contained specification](issues/skills-connectors-marketplace.md), standard skills, verified lifecycle and a real reviewed MCP workflow.
+| Owner | Assignment | Code boundary | Current status |
+| --- | --- | --- | --- |
+| Teammate working on Teams & Boards | [Issue #2](https://github.com/solnikhil/Socius/issues/2) | New packages/teams, board/team contracts, orchestration, queue, persistence and tests | Assigned workstream; acceptance evidence still pending |
+| Teammate working on Skills & Connectors Marketplace | [Issue #3](https://github.com/solnikhil/Socius/issues/3) | packages/marketplace, new packages/skills and packages/connectors, installation/auth/action services and tests | Assigned workstream; acceptance evidence still pending |
+| You | [UI and refinement checklist](ui-refinement.md) | apps/web/src plus desktop visual/presentation changes | UI refinement ongoing; new backend integration follows contracts |
+| Luna testing handoff | API-provider and chat reliability | Runtime adapter/test changes; Settings hint handed to you | Interrupted; uncommitted changes need final verification |
 
-These are the primary assignments. The narrower workstreams below are implementation responsibilities within them. Agree the shared action-broker and DTO contracts before changing common files. The public issues/specifications are readable by teammates' agents without Notion access. Write access still uses each contributor's GitHub authentication; external contributors can use forks and PRs.
+Issues [#2 specification](issues/teams-boards.md) and [#3 specification](issues/skills-connectors-marketplace.md) contain the full winning workflows, PR sequence and closure criteria. Agents can read the public repository/issues without Notion access. Do not guess GitHub assignees or dates.
 
-## Implemented base
+## Completed and integrated
 
-Electron shell and separate utility-process runtime; responsive React views; persistent main/custom/template bots; streamed AI SDK chat; user and model-proposed bot creation; reviewed curated installations; text attachments and Markdown response export; scoped Markdown/FTS memory; exact-content approvals; encrypted desktop model keys; activity log; tests and local packaging.
+- Runnable Electron desktop shell and separate local runtime.
+- Persistent main bot, user-created specialists, reviewed main-bot creation proposals and template installation.
+- AI SDK streaming and provider adapters, bounded tasks/cancellation, SQLite history, scoped Markdown/FTS memory and exact-content approvals.
+- Curated catalog previews/install receipts, text attachments and Markdown response export.
+- OS-encrypted desktop credential bridge and backend activity records.
+- UI messaging redesign with light/dark themes (42191fa); Activity tab removed and approvals reviewed inline (01347b7).
+- Baseline checks passed before Luna's changes. Initial macOS unsigned package and restart flow were verified. This is not evidence of live OpenRouter inference or of completed issue #2/#3 workflows.
 
-The user selected AI SDK for this release. Mastra/Eve are no longer prerequisites for beginning work. Persisted approvals survive restart; interrupted model runs require explicit retry. Full workflow checkpointing remains a future decision with its own acceptance tests.
+## In progress / draft evidence
 
-## Workstream 1: connectors and action broker
+Luna left uncommitted changes in:
+- packages/runtime/src/model.ts: injectable provider fetch for tests, explicit retry budget and suppressed raw provider error logging.
+- packages/runtime/test/model.test.ts: OpenAI/Anthropic/compatible boundary coverage plus an OpenRouter endpoint case.
+- packages/runtime/test/runtime.test.ts: document-summary persistence, approved-memory restart/replay handling, cancellation and sanitized failure/retry tests.
+- apps/web/src/views/SettingsView.tsx: OpenRouter model/endpoint/privacy hint; ownership is now yours.
 
-Own new `packages/connectors` plus reviewed integration boundaries in `packages/runtime`. Coordinate changes to `server.ts` with the runtime owner.
+Reported checks: baseline full check passed with 19 tests; targeted runtime tests passed with 10 cases; targeted model tests passed with 2 cases before the last OpenRouter addition. The final OpenRouter case, full checks/build/end-to-end flow and commit/push are still outstanding. No live API call was made and no provider connection was configured at that check. The testing agent is not currently executing this work.
 
-First PR: one read-only Notion or calendar connector using MCP and a reviewed setup definition. Second PR: scoped OAuth/credential handling and a draft/write approval flow. No automatic launch of arbitrary commands discovered in registry metadata.
+## Remaining now
 
-Acceptance: real read request succeeds; access revocation blocks later calls; secrets never appear in UI/activity; a proposed write shows exact parameters, survives restart, and executes only after matching approval. Ambiguous external outcomes are reconciled before retry. Add fixture-based integration tests and document one controlled live check.
+### Teammate: Teams & Boards
 
-## Workstream 2: skills SDK and marketplace registry
+> Update (2026-10-14): boards (PR #4) were merged alongside the user's group chats ([Group chats](architecture/group-chats.md)), where Socius coordinates a shared conversation. Both share the model adapter and runtime; coordinate changes to `model.ts` and `server.ts`.
 
-Own `packages/marketplace`, new skill import/export package and future curated-registry adapter. Coordinate manifest changes in `packages/contracts` before implementations depend on them.
+- [ ] Persistent boards, objectives, membership and coordinator.
+- [ ] Scoped delegation, attributed contributions, task graph and consolidated result.
+- [ ] Any roster size with separately configurable concurrency/budgets.
+- [ ] Cancellation, failure/restart behavior and approval-broker integration.
+- [ ] Documented API/events and acceptance tests; integrate with your board UI.
 
-First PR: Agent Skills `SKILL.md` directory import/export with metadata validation and progressive instruction/resource loading. Treat allowed-tools as requests; scripts remain disabled without an enforced sandbox. Preserve upstream MCP Registry identity separately from Socius IDs.
+### Teammate: Skills & Connectors Marketplace
 
-Second PR: immutable release metadata, publisher trust/signatures, version compatibility, atomic external package staging and rollback. Public publishing must export an explicit allowlist and require review of free text; never serialize a live bot.
+- [ ] Standard SKILL.md import/export and progressive loading.
+- [ ] Enable/disable/update/uninstall, verified releases and safe staging/rollback.
+- [ ] Curated MCP discovery and one real Notion/calendar connector.
+- [ ] Scoped credential setup, exact-action approvals and external-write reconciliation.
+- [ ] Documented API/setup states and acceptance tests; integrate with your Connect Apps UI.
 
-Acceptance: valid instruction packages import; malformed manifests and path/symlink escapes fail; digest mismatch fails; updates that request more permissions require consent; uninstall removes the active capability; exported bots contain no private state or credentials.
+### You: UI and refinement
 
-## Workstream 3: runtime, delegation and routines
+- [ ] Polish chat, New Chat/bot management, Connect Apps, memory and settings.
+- [ ] Review the pending OpenRouter Settings hint.
+- [ ] Refine rich response/attachment states, inline approvals and error/empty/loading behavior.
+- [x] Group chat screens: create/edit/delete, roster popover, attributed replies (replaces board screens).
+- [ ] Accessibility, responsive behavior, visual consistency and final workflow review.
 
-Own `packages/runtime/src/model.ts`, task lifecycle and future scheduling/delegation services. Keep UI DTOs in `packages/contracts` independent of SDK internals.
+### Testing / integration next
 
-First PR: main bot delegates a bounded task to one enabled specialist with an explicit parent/child relationship, scoped context and budgets. Bot creation already works; delegation must be a separate operation.
+- [ ] Review Luna's draft backend changes; run the final OpenRouter case and complete checks.
+- [ ] Configure OpenRouter in Settings and choose an available tool-capable model; keys stay outside chat/issues.
+- [ ] Live check: document summary, bot proposal and approved memory save.
+- [ ] Commit/push the verified testing unit separately from unrelated UI work.
+- [ ] Jointly verify the two issue workflows when backend and your screens are ready.
 
-Second PR: durable routines with disabled-by-default schedules, missed-run policy and cancellation. Evaluate checkpointing versus explicit interrupted-run recovery with controlled crash tests before changing current behavior.
+## Explicitly deferred / not assigned in the current two issues
 
-Acceptance: delegated work cannot gain permissions from its parent; cancellation propagates; restarted jobs cannot repeat external writes blindly; approval revocation works across scheduled/delegated calls; one routine survives restart and records outcomes. Test model/tool capability discovery rather than assume every model supports tools.
+Ollama testing is deferred at the user's request. LM Studio/llama.cpp checks can follow. Recurring routines/proactivity, browser automation/takeover, PDF/Office parsing, Tailscale/phone pairing, Telegram, public hosting/accounts/billing, signing/updates, agent email, semantic memory, voice, India Stack and optional cloud execution remain backlog items. Do not treat these as already assigned to the two teammates or required before your immediate UI refinement.
 
-## Workstream 4: interface, browser and release
+## Coordination rules
 
-Own `apps/web/src/views` and `apps/desktop`; share UI primitives in `apps/web/src/components`. Coordinate browser tool registration with the action-broker owner.
+- You own UI; teammates deliver backend services and documented data/state contracts. Changes to shared runtime server/model/store and DTOs need coordination.
+- Team owner owns board/run/task DTOs. Marketplace owner owns release/setup/action DTOs and the external-action broker. Neither owner gets sole ownership of all shared files.
+- There is no hardcoded bot-count limit. Membership does not expand permissions; the execution queue enforces configured resource controls.
+- Start branches from latest main: codex/teams-boards and codex/skills-connectors. User UI work can use codex/ui-refinement. Agent instructions and issue specs take precedence over stale screen names.
+- Each PR gives current status, evidence, blockers and API examples. No fake production success and no secrets in comments.
+- Keep Notion boxes unchecked until verified work is integrated. A teammate assignment is not implementation evidence.
+- Integrate reviewed units to main as authorized; never force-push or accidentally commit another person's drafts.
 
-First PR: refine bot management, document parsing/attachment UX and response rendering; add supported model discovery and connection diagnostics. Extend the existing browser tests.
-
-Second PR: reviewed browser observation/actions and human takeover using Playwright and a pinned Stagehand driver. Do not allow autonomous action batches to bypass policy. Stagehand v3 is CDP-based, not built on Playwright.
-
-Release PRs: platform-specific installers, signing/notarization, verified update channels and phone pairing/Tailscale. The current app directory is unsigned. macOS runtime behavior is tested locally; Windows/Linux release verification remains required. Keep telemetry opt-in.
-
-Acceptance: one document-to-summary flow works with actual parsing; login handoff keeps secrets outside chat; consequential browser steps require exact review; packaged app starts on each supported OS; phone sessions require application pairing as well as tailnet access.
-
-## Shared checks and integration
+## Checks
 
 ```sh
 npm run check
@@ -64,6 +92,4 @@ npm run build
 npm run test:e2e
 ```
 
-Browser tests use a deterministic model fixture only in `e2e/server.ts`; production never selects it. The runtime adapter test exercises real AI SDK streaming/tool handling through a controlled compatible endpoint. Actual provider access must be tested separately.
-
-Every PR states the outcome, acceptance evidence and remaining limitations. Keep contract edits coordinated, never revert another owner's work, and do not force-push. Completed integration work is committed and pushed to `main` under the user's authorization. Human teammate branches remain separate until deliberately integrated.
+Controlled fixtures are test-only. Live model/provider checks are recorded separately. The project is ready for parallel work, but both major feature workflows remain unfinished.

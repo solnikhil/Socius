@@ -1,5 +1,9 @@
 Tracking: [GitHub issue #2](https://github.com/solnikhil/Socius/issues/2). Companion: [Skills & Connectors #3](https://github.com/solnikhil/Socius/issues/3).
 
+## Assignment
+
+Owner: **Teammate working on Teams & Boards** (name intentionally unspecified). The user owns all UI/refinement. This issue owner builds the backend, orchestration, contracts and tests; agree payloads with the user before UI integration. Completion is based on acceptance evidence, not assignment alone.
+
 ## Outcome
 Build persistent project boards where Socius and user-selected specialist bots collaborate, expose useful progress, and return one consolidated result. **Remove the three-bot product limit: a team can contain any number of bots.** Membership size is separate from configurable execution concurrency and resource budgets.
 
@@ -16,12 +20,12 @@ A user creates a Research board, adds Socius plus Researcher, Writer and Reviewe
 Read: [AGENTS.md](https://github.com/solnikhil/Socius/blob/main/AGENTS.md), [architecture](https://github.com/solnikhil/Socius/blob/main/docs/architecture/v1.md), [local API](https://github.com/solnikhil/Socius/blob/main/docs/architecture/local-api.md), [README](https://github.com/solnikhil/Socius/blob/main/README.md).
 
 ## Ownership and integration contract
-Own a new packages/teams module, board/team DTOs, team runtime services, board views and team end-to-end tests. Start from:
+Own a new packages/teams module, board/team DTOs, team runtime services and orchestration tests. The user owns board views and visual integration. Start from:
 - packages/contracts/src/app.ts and index.ts: extend DTOs/schema without importing SDK types.
 - packages/runtime/src/store.ts: versioned board/member/task/run persistence and migrations.
 - packages/runtime/src/model.ts: bounded specialist invocation through existing model adapter.
 - packages/runtime/src/server.ts: authenticated board/team endpoints.
-- apps/web/src/views and components: board switcher, roster, shared thread and task/result views.
+- apps/web/src/views and components: user-owned board switcher, roster, shared thread and task/result views. Provide documented payloads/events; coordinate changes rather than editing these views independently.
 
 The marketplace issue owns packages/marketplace, skill loading and packages/connectors. Coordinate edits to contracts, server.ts, model.ts and app navigation. You are not alone in the codebase: preserve other changes and adapt to concurrently merged PRs. The catalog UI may be renamed ConnectApps by concurrent work; inspect current main before editing it.
 
@@ -50,9 +54,9 @@ Agree a broker boundary first: team execution submits a typed tool/action reques
 - [ ] Provide screenshot/recording, test output, schema/migration notes, API examples and limitations in the PR.
 
 ## Suggested PR sequence
-1. Contracts, persistence and authenticated board CRUD with an empty UI.
+1. Contracts, persistence and authenticated board CRUD with example payloads for the user-owned UI.
 2. Team queue/delegation and progress; four-member acceptance flow.
-3. Scoped tools/approval integration, restart/cancellation coverage and final UI polish.
+3. Scoped tools/approval integration and restart/cancellation coverage; integrate with the user’s UI and verify the combined flow.
 
 Connector integration is not required for the first read-only board flow. External-write acceptance depends on the shared broker from the marketplace issue. Keep boundaries usable so the two workstreams can land independently.
 

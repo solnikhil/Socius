@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity as ActivityIcon,
   BookOpen,
   ChevronRight,
   LayoutGrid,
@@ -15,11 +14,12 @@ import {
   X,
 } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { Board, Snapshot } from "@socius/contracts/app";
+import type { Board, GroupChat, Snapshot } from "@socius/contracts/app";
 import { api } from "./api.js";
 import {
   Avatar,
   ErrorNote,
+  GroupAvatar,
   MAIN_BOT_TEMPLATE,
   useDismiss,
   useTheme,
@@ -33,6 +33,7 @@ import { MemoryView } from "./views/MemoryView.js";
 import { ActivityView } from "./views/ActivityView.js";
 import { SettingsView } from "./views/SettingsView.js";
 import { CreateBot } from "./views/CreateBot.js";
+import { CreateGroup } from "./views/CreateGroup.js";
 import { BoardView, type BoardTab } from "./views/BoardView.js";
 import { BoardMenu } from "./components/BoardMenu.js";
 import { BotMenu } from "./components/BotMenu.js";
@@ -57,6 +58,8 @@ const isMacDesktop =
 export function App() {
   const [state, setState] = useState<Snapshot | null>(null),
     [selected, setSelected] = useState(""),
+    [groupId, setGroupId] = useState(""),
+    [grouping, setGrouping] = useState<"new" | "edit" | null>(null),
     [page, setPage] = useState<Page>("chat"),
     [creating, setCreating] = useState<{ board?: Board } | null>(null),
     [boardId, setBoardId] = useState(""),
@@ -154,11 +157,33 @@ export function App() {
     state.bots[0]!;
   const specialists = state.bots.filter((b) => b.id !== main.id);
   const running = (b: BotInstance) =>
-    state.tasks.some((t) => t.botId === b.id && t.state === "running");
+    state.tasks.some(
+      (t) => t.botId === b.id && !t.groupId && t.state === "running",
+    );
   const waiting = (b: BotInstance) => pending.some((a) => a.botId === b.id);
   const open = (b: BotInstance) => {
     setSelected(b.id);
+    setGroupId("");
     setPage("chat");
+  };
+  const openGroup = (g: GroupChat) => {
+    setGroupId(g.id);
+    setPage("chat");
+  };
+  const group = state.groups.find((g) => g.id === groupId);
+  const faces = (g: GroupChat) => [
+    { name: main.name, main: true },
+    ...g.memberIds
+      .map((id) => state.bots.find((b) => b.id === id))
+      .filter((b): b is BotInstance => !!b),
+  ];
+  const groupRunning = (g: GroupChat) =>
+    state.tasks.some((t) => t.groupId === g.id && t.state === "running");
+  const groupWaiting = (g: GroupChat) => {
+    const tasks = new Set(
+      state.tasks.filter((t) => t.groupId === g.id).map((t) => t.id),
+    );
+    return pending.some((a) => tasks.has(a.taskId));
   };
   const openBoard = (id: string, tab: BoardTab = "thread") => {
     setBoardId(id);
@@ -179,7 +204,7 @@ export function App() {
   const botRow = (b: BotInstance, nested: boolean, role = b.role) => (
     <button
       key={b.id}
-      className={`bot-row ${nested ? "nested" : ""} ${page === "chat" && b.id === current.id ? "active" : ""}`}
+      className={`bot-row ${nested ? "nested" : ""} ${page === "chat" && !group && b.id === current.id ? "active" : ""}`}
       onClick={() => open(b)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -230,8 +255,8 @@ export function App() {
     <div className="window-tools">
       <button
         className="icon ghost"
-        aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
-        title={"Toggle sidebar  ⌘\\"}
+        aria-label="Hide sidebar"
+        title={"Hide sidebar  ⌘\\"}
         onClick={() => setCollapsed((c) => !c)}
       >
         <PanelLeft size={17} />
@@ -249,7 +274,7 @@ export function App() {
         aria-label="Create"
         aria-haspopup="menu"
         aria-expanded={!!createMenu}
-        title="New chat, bot or board"
+        title="New chat, group chat, bot or board"
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           setCreateMenu((m) => (m ? null : { x: r.left, y: r.bottom + 6 }));
@@ -268,12 +293,12 @@ export function App() {
 
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""}`}>
-      <aside className="sidebar" aria-label="Bots">
+      <aside className="sidebar" aria-label="Bots" inert={collapsed}>
         <div className="sidebar-top drag">{toolbar}</div>
         <div className="sidebar-scroll">
           <div className="featured">
             <button
-              className={`featured-bot ${page === "chat" && current.id === main.id ? "active" : ""}`}
+              className={`featured-bot ${page === "chat" && !group && current.id === main.id ? "active" : ""}`}
               onClick={() => open(main)}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -283,9 +308,55 @@ export function App() {
             >
               <Avatar name={main.name} main size={66} badge />
               <span>{main.name}</span>
-              {running(main) && <span className="pulse" />}
+              {(running(main) || waiting(main)) && (
+                <span
+                  className={`review-dot ${running(main) ? "pulse" : ""}`}
+                  aria-label={running(main) ? "Working" : "Needs review"}
+                />
+              )}
             </button>
           </div>
+          <section className="bot-group" aria-label="Group chats">
+            {sectionHeading("groups", "Group chats", state.groups.length)}
+            {!folded.has("section:groups") && (
+              <>
+                {state.groups.map((g) => (
+                  <button
+                    key={g.id}
+                    className={`bot-row ${page === "chat" && group?.id === g.id ? "active" : ""}`}
+                    onClick={() => openGroup(g)}
+                  >
+                    <GroupAvatar names={faces(g)} size={42} />
+                    <span className="bot-text">
+                      <strong>{g.name}</strong>
+                      <small>
+                        {groupRunning(g)
+                          ? "Working…"
+                          : faces(g)
+                              .map((b) => b.name)
+                              .join(", ")}
+                      </small>
+                    </span>
+                    {(groupWaiting(g) || groupRunning(g)) && (
+                      <span
+                        className={`unread ${groupRunning(g) ? "pulse" : ""}`}
+                        aria-label={
+                          groupRunning(g) ? "Working" : "Needs review"
+                        }
+                      />
+                    )}
+                  </button>
+                ))}
+                <button
+                  className="group-link"
+                  onClick={() => setGrouping("new")}
+                >
+                  New group chat
+                  <Plus size={14} />
+                </button>
+              </>
+            )}
+          </section>
           <section className="bot-group" aria-label="Boards">
             {sectionHeading("boards", "Boards", visibleBoards.length)}
             {!folded.has("section:boards") &&
@@ -382,7 +453,6 @@ export function App() {
               onClick={() => setPage("activity")}
             >
               Activity
-              <span>{pending.length || ""}</span>
             </button>
             <button
               className={`group-link ${page === "memory" ? "active" : ""}`}
@@ -401,7 +471,6 @@ export function App() {
               onClick={() => setMenu((m) => !m)}
             >
               <User size={16} />
-              {pending.length > 0 && <span className="dot" />}
             </button>
             {menu && (
               <div className="popover account-menu" role="menu">
@@ -424,19 +493,6 @@ export function App() {
                 >
                   <BookOpen size={15} />
                   Memory
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setPage("activity");
-                    setMenu(false);
-                  }}
-                >
-                  <ActivityIcon size={15} />
-                  Activity
-                  {pending.length > 0 && (
-                    <span className="count">{pending.length}</span>
-                  )}
                 </button>
                 <div className="menu-divider" />
                 <div className="menu-label">Appearance</div>
@@ -470,9 +526,38 @@ export function App() {
         </div>
       </aside>
       <main>
-        {collapsed && <div className="floating-tools drag">{toolbar}</div>}
+        <button
+          className="sidebar-reveal icon ghost"
+          aria-label="Show sidebar"
+          title={"Show sidebar  ⌘\\"}
+          tabIndex={collapsed ? 0 : -1}
+          aria-hidden={!collapsed}
+          onClick={() => setCollapsed(false)}
+        >
+          <PanelLeft size={17} />
+        </button>
         <ErrorNote error={error} />
-        {page === "chat" && (
+        {page === "chat" && group && (
+          <Chat
+            key={group.id}
+            bot={main}
+            main
+            group={group}
+            state={state}
+            onRefresh={refresh}
+            onSettings={() => setPage("settings")}
+            onEditGroup={() => setGrouping("edit")}
+            onDeleteGroup={() =>
+              void api("groups", { id: group.id }, "DELETE")
+                .then(() => {
+                  open(main);
+                  return refresh();
+                })
+                .catch((e: Error) => setError(e.message))
+            }
+          />
+        )}
+        {page === "chat" && !group && (
           <Chat
             key={current.id}
             bot={current}
@@ -485,9 +570,15 @@ export function App() {
         {page === "new" && (
           <NewChat
             bots={[main, ...specialists]}
+            groups={state.groups.map((g) => ({ group: g, faces: faces(g) }))}
             mainId={main.id}
             onClose={() => setPage("chat")}
             onPick={open}
+            onPickGroup={openGroup}
+            onCreateGroup={() => {
+              setPage("chat");
+              setGrouping("new");
+            }}
             onCreate={() => {
               setPage("chat");
               setCreating({});
@@ -526,17 +617,16 @@ export function App() {
                 onSelect={setSelected}
               />
             )}
-            {page === "activity" && (
-              <ActivityView state={state} onRefresh={refresh} />
-            )}
             {page === "settings" && (
               <SettingsView
                 state={state}
                 onRefresh={refresh}
                 theme={theme}
                 onTheme={setTheme}
+                onOpenActivity={() => setPage("activity")}
               />
             )}
+            {page === "activity" && <ActivityView events={state.activity} />}
           </div>
         )}
       </main>
@@ -571,6 +661,7 @@ export function App() {
           y={createMenu.y}
           onClose={() => setCreateMenu(null)}
           onChat={() => setPage("new")}
+          onGroup={() => setGrouping("new")}
           onBot={() => setCreating({})}
           onBoard={() => setCreatingBoard({})}
         />
@@ -607,6 +698,22 @@ export function App() {
           onCreated={(b) => {
             openBoard(b.id);
             void refresh();
+          }}
+        />
+      )}
+      {grouping && (
+        <CreateGroup
+          lead={main}
+          specialists={specialists}
+          {...(grouping === "edit" && group ? { group } : {})}
+          onClose={() => setGrouping(null)}
+          onSaved={(g) => {
+            openGroup(g);
+            void refresh();
+          }}
+          onCreateBot={() => {
+            setGrouping(null);
+            setCreating({});
           }}
         />
       )}
