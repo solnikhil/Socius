@@ -23,7 +23,8 @@ Electron supervises a Node utility process that binds `127.0.0.1` on an ephemera
 | POST/DELETE | `/api/boards/members` | Add a member or edit its board role / remove a non-coordinator |
 | POST/DELETE | `/api/boards/sources` | Share or remove a text source |
 | POST | `/api/boards/runs` | Start a background team run (202) |
-| POST | `/api/boards/runs/cancel`, `/runs/retry` | Stop a run; retry outstanding work |
+| POST | `/api/boards/runs/approve` | Run a plan awaiting review (a new message revises it instead) |
+| POST | `/api/boards/runs/cancel`, `/runs/retry` | Stop a run or discard a pending plan; retry outstanding work |
 | POST | `/api/boards/tasks/cancel`, `/api/boards/stop` | Cancel one task; stop every active run on a board |
 
 Board semantics, budgets, restart behaviour and examples: [Teams & Boards](teams.md).

@@ -16,7 +16,11 @@ export function CreateBoard({
   onClose: () => void;
   onCreated: (board: Board) => void;
 }) {
-  const [members, setMembers] = useState<string[]>([mainId]),
+  // Every bot starts on the board; the coordinator picks whoever fits each task.
+  const [members, setMembers] = useState<string[]>(() => [
+      mainId,
+      ...bots.map((b) => b.id).filter((id) => id !== mainId),
+    ]),
     [coordinator, setCoordinator] = useState(mainId),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -39,6 +43,7 @@ export function CreateBoard({
         completionCriteria: data.get("criteria"),
         memberIds: members,
         coordinatorId: coordinator,
+        reviewPlan: data.get("reviewPlan") === "on",
       });
       onCreated(board);
       onClose();
@@ -115,6 +120,13 @@ export function CreateBoard({
                 </option>
               ))}
           </select>
+        </label>
+        <label className="toggle-row">
+          <input type="checkbox" name="reviewPlan" defaultChecked />
+          <span>
+            <strong>Show me the plan before the team starts</strong>
+            <small>Steer it by replying in the board chat.</small>
+          </span>
         </label>
         <ErrorNote error={error} />
         <button className="primary" disabled={busy || !members.length}>

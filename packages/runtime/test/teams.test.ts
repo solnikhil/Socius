@@ -21,6 +21,7 @@ interface Call {
   bot: string;
   title: string;
   prompt: string;
+  briefing: string;
 }
 interface Script {
   plan?: (request: ModelRequest) => unknown;
@@ -33,7 +34,13 @@ function scripted(script: Script, calls: Call[]): ModelRunner {
     const prompt = String(request.messages[0]?.content ?? "");
     const phase = request.team?.phase ?? "chat";
     const title = /^Task: (.*)$/m.exec(prompt)?.[1] ?? "";
-    calls.push({ phase, bot: request.bot.name, title, prompt });
+    calls.push({
+      phase,
+      bot: request.bot.name,
+      title,
+      prompt,
+      briefing: request.briefing ?? "",
+    });
     let text: string;
     if (phase === "plan") {
       const plan = script.plan?.(request);
@@ -128,6 +135,7 @@ async function createBoard(
   env: Env,
   members: BotInstance[],
   budgets: Partial<Board["budgets"]> = {},
+  reviewPlan = false,
 ) {
   const res = await env.call<Board>("boards", {
     name: "Research",
@@ -136,6 +144,7 @@ async function createBoard(
     memberIds: members.map((m) => m.id),
     coordinatorId: env.main.id,
     budgets,
+    reviewPlan,
   });
   assert.equal(res.status, 201);
   return res.body;
@@ -761,6 +770,7 @@ test("restart marks active runs interrupted without replaying, and an explicit r
     outcome: null,
     result: null,
     usage: { modelCalls: 2, tokens: 20 },
+    revisions: [],
     createdAt: now,
     finishedAt: null,
   });
@@ -864,6 +874,207 @@ test("coordinators can answer directly; archived boards are read-only", async ()
       ).status,
       400,
     );
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("plans wait in the thread for review; a chat reply revises them and Run plan executes once", async () => {
+  let a: BotInstance, b: BotInstance;
+  let short = false;
+  const env = await setup({
+    plan: (request) => {
+      short = /keep it to one step/i.test(String(request.messages[0]?.content));
+      return {
+        summary: short ? "One step, as you asked." : "Two steps.",
+        tasks: short
+          ? [
+              {
+                key: "only",
+                title: "Only step",
+                instructions: "Do it all.",
+                assigneeId: a.id,
+                dependsOn: [],
+                sourceIds: [],
+              },
+            ]
+          : [
+              {
+                key: "one",
+                title: "Gather",
+                instructions: "Gather.",
+                assigneeId: a.id,
+                dependsOn: [],
+                sourceIds: [],
+              },
+              {
+                key: "two",
+                title: "Write up",
+                instructions: "Write.",
+                assigneeId: b.id,
+                dependsOn: ["one"],
+                sourceIds: [],
+              },
+            ],
+      };
+    },
+  });
+  try {
+    a = await env.bot("Gatherer", "Collects facts from sources");
+    b = await env.bot("Author", "Writes the final copy");
+    const board = await createBoard(env, [env.main, a, b], {}, true);
+    const started = await run(env, board.id, "Summarise the notes.");
+    await env.engine.idle();
+    let detail = await env.detail(board.id);
+    assert.equal(detail.runs[0]!.state, "awaiting-approval");
+    assert.equal(detail.tasks.length, 2);
+    assert.equal(
+      env.calls.filter((c) => c.phase === "task").length,
+      0,
+      "nothing runs before approval",
+    );
+    assert.match(detail.messages.at(-1)!.content, /Reply to change this plan/);
+
+    // Steering happens in the chat: the reply revises the same run.
+    const revised = await run(env, board.id, "Keep it to one step.");
+    assert.equal(revised.id, started.id);
+    await env.engine.idle();
+    const replan = env.calls.filter((c) => c.phase === "plan").at(-1)!;
+    assert.match(replan.prompt, /plan draft 1:\n- one: Gather → Gatherer/);
+    assert.match(replan.prompt, /The user replied: Keep it to one step\./);
+    detail = await env.detail(board.id);
+    assert.equal(detail.runs.length, 1);
+    assert.deepEqual(
+      detail.tasks.map((t) => t.title),
+      ["Only step"],
+    );
+    assert.equal(detail.runs[0]!.state, "awaiting-approval");
+
+    // Restart keeps the pending plan; nothing is replayed.
+    await env.close();
+    const after = await setup({}, env.dataDir);
+    try {
+      assert.equal(
+        (await after.detail(board.id)).runs[0]!.state,
+        "awaiting-approval",
+      );
+      assert.equal(
+        (await after.call("boards/runs/approve", { id: started.id })).status,
+        202,
+      );
+      assert.equal(
+        (await after.call("boards/runs/approve", { id: started.id })).status,
+        409,
+      );
+      await after.engine.idle();
+      detail = await after.detail(board.id);
+      assert.equal(detail.runs[0]!.state, "completed");
+      assert.deepEqual(
+        after.calls.filter((c) => c.phase === "task").map((c) => c.title),
+        ["Only step"],
+      );
+    } finally {
+      await after.cleanup();
+    }
+  } catch (e) {
+    await env.close().catch(() => {});
+    throw e;
+  }
+});
+
+test("a plan awaiting review can be discarded, and the board then accepts new requests", async () => {
+  let a: BotInstance;
+  const env = await setup({
+    plan: () => ({
+      summary: "One step.",
+      tasks: [
+        {
+          key: "x",
+          title: "Step",
+          instructions: "x",
+          assigneeId: a.id,
+          dependsOn: [],
+          sourceIds: [],
+        },
+      ],
+    }),
+  });
+  try {
+    a = await env.bot("Alpha");
+    const board = await createBoard(env, [env.main, a], {}, true);
+    const started = await run(env, board.id);
+    await env.engine.idle();
+    const cancelled = await env.call<BoardRun>("boards/runs/cancel", {
+      id: started.id,
+    });
+    assert.equal(cancelled.body.state, "cancelled");
+    assert.equal((await env.detail(board.id)).tasks[0]!.state, "cancelled");
+    const next = await run(env, board.id, "Another request.");
+    assert.notEqual(next.id, started.id);
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("specialists see teammates' descriptions, who handed them work and who receives theirs", async () => {
+  let a: BotInstance, b: BotInstance, c: BotInstance;
+  const env = await setup({
+    plan: () => ({
+      summary: "Chain.",
+      tasks: [
+        {
+          key: "find",
+          title: "Find",
+          instructions: "f",
+          assigneeId: a.id,
+          dependsOn: [],
+          sourceIds: [],
+        },
+        {
+          key: "draft",
+          title: "Draft",
+          instructions: "d",
+          assigneeId: b.id,
+          dependsOn: ["find"],
+          sourceIds: [],
+        },
+        {
+          key: "check",
+          title: "Check",
+          instructions: "c",
+          assigneeId: c.id,
+          dependsOn: ["draft"],
+          sourceIds: [],
+        },
+      ],
+    }),
+  });
+  try {
+    a = await env.bot("Finder", "Finds evidence in sources");
+    b = await env.bot("Drafter", "Writes clear briefs");
+    c = await env.bot("Checker", "Checks claims");
+    const board = await createBoard(env, [env.main, a, b, c]);
+    // A board role overrides the bot's own description for this board.
+    await env.call("boards/members", {
+      boardId: board.id,
+      botId: c.id,
+      role: "Fact-checks every number",
+    });
+    await run(env, board.id);
+    await env.engine.idle();
+    const draft = env.calls.find((x) => x.title === "Draft")!;
+    assert.match(
+      draft.prompt,
+      /<teammate-result from="Finder" role="Finds evidence in sources" task="Find">/,
+    );
+    assert.match(
+      draft.prompt,
+      /handed to:\n- Checker \(Fact-checks every number\) for "Check"/,
+    );
+    assert.match(draft.briefing, /- Finder: Finds evidence in sources/);
+    assert.match(draft.briefing, /- Checker: Fact-checks every number/);
+    assert.match(draft.briefing, /Your board role: Writes clear briefs/);
+    assert.doesNotMatch(draft.briefing, /- Drafter:/);
   } finally {
     await env.cleanup();
   }

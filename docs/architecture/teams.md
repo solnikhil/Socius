@@ -8,11 +8,14 @@ Status: boards, delegation, the run queue, budgets, cancellation and restart rec
 
 A **board** groups any number of private bots around an objective, optional completion criteria, explicitly shared sources and one shared thread. One member is the **coordinator**. There is no roster cap in the schema, API, scheduler or UI. Membership and coordinator status grant no authority.
 
-A **run** is one user request. It moves through `planning → running → synthesizing → completed`, or ends as `partial`, `failed`, `cancelled` or `interrupted`. A board has at most one active run.
+A **run** is one user request. It moves through `planning → [awaiting-approval →] running → synthesizing → completed`, or ends as `partial`, `failed`, `cancelled` or `interrupted`. A board has at most one active run.
 
 1. **Plan.** The coordinator is called with the request, the roster (IDs, names, roles) and source *names*. It may call `proposePlan` once with a task graph: keyed tasks, one assignee each, the source IDs each needs, and `dependsOn` keys. `packages/teams` validates the plan: assignees must be members, sources must be shared on the board, keys must be unique, dependencies must exist and be acyclic, and the size must be at most `maxTasks`. Invalid plans return errors to the model so it can correct them within its step budget. A second plan in the same run is refused. If the coordinator does not plan, its answer is the run's result.
+   **Plan review** (`reviewPlan`, on by default) parks the run in `awaiting-approval` and posts the plan in the thread. Nothing runs until the user approves it with **Run plan** (`/api/boards/runs/approve`). A chat reply instead *revises* the same run: the unstarted tasks are replaced, and the coordinator re-plans with its previous drafts and the user's replies in the prompt. **Discard** cancels the run. A plan awaiting review survives restart unchanged.
 2. **Execute.** Tasks whose dependencies are done move from `backlog` to `ready`. Up to `concurrency` tasks run at once and the rest queue, so large rosters wait rather than fail. Each specialist gets a fresh single-message context: its task, the user's request, only the sources listed for that task, and the attributed results of its dependencies. It never sees its own chat history, other bots' memory, or the board thread.
 3. **Synthesize.** If every task is done, the coordinator writes one consolidated result from the attributed task results. If anything is outstanding, nothing is synthesized. The run ends `partial` with a plain-language list of what is missing and why.
+
+**Handoffs.** Every bot carries a short description: its board role, or else its own role. Each specialist's instructions list its teammates and what they do. Results it receives are tagged with who produced them and that bot's description, and it is told who will receive its own result next and for which task. The coordinator sees the same descriptions when assigning work. New boards start with every bot as a member, and the coordinator assigns each task to whichever member fits.
 
 Specialist calls have no `proposePlan` or `createBot` tool, so they cannot delegate, re-plan or trigger themselves recursively. Discussion is bounded: one plan, one contribution per task, one synthesis.
 
@@ -76,7 +79,7 @@ CREATE TABLE team_records(kind TEXT NOT NULL, id TEXT NOT NULL, board_id TEXT NO
 CREATE INDEX team_records_board ON team_records(board_id, kind);
 ```
 
-The `kind` values are `board`, `source`, `run`, `task` and `message`, and each is JSON matching the contracts DTOs. Board records carry `schemaVersion: 1`. Existing workspaces upgrade in place on next launch, and no existing table changes. `Approval` gains an optional `runId`, which is not part of the approval digest.
+The `kind` values are `board`, `source`, `run`, `task` and `message`, and each is JSON matching the contracts DTOs. Board records carry `schemaVersion: 1`. Existing workspaces upgrade in place on next launch, and no existing table changes. `Board.reviewPlan` and `BoardRun.revisions` were added after the first version. Older records are read with defaults (`true` and `[]`). `Approval` gains an optional `runId`, which is not part of the approval digest.
 
 ## Code map
 
@@ -85,7 +88,8 @@ The `kind` values are `board`, `source`, `run`, `task` and `message`, and each i
 - `packages/runtime/src/team-store.ts`: SQLite `TeamRepository`.
 - `packages/runtime/src/boards.ts`: authenticated endpoints and the model invoker that enforces each bot's grants.
 - `packages/runtime/src/model.ts`: optional `proposePlan` tool, per-call limits, board briefing and usage reporting on the existing AI SDK adapter.
-- `apps/web/src/views/BoardView.tsx`, `CreateBoard.tsx`: board switcher entries, thread, task board, roster and limits, sources.
+- `apps/web/src/views/BoardView.tsx`, `CreateBoard.tsx`: board switcher entries, thread with plan review, task board, roster and limits, sources.
+- `apps/web/src/components/BoardMenu.tsx`: right-click menu on a sidebar board (open, add bots, how this board works, rename, archive).
 
 ## API examples
 
@@ -103,8 +107,10 @@ POST /api/boards/members        {"boardId":"…","botId":"…","role":"Fact chec
 DELETE /api/boards/members      {"boardId":"…","botId":"…"}                        → 200 Board | 409 coordinator
 POST /api/boards/update         {"id":"…","coordinatorId":"…","budgets":{…},"archived":true}
 POST /api/boards/runs           {"boardId":"…","content":"Write the brief."}       → 202 BoardRun | 409 active run
+                                (while a plan awaits review, this revises it instead)
 GET  /api/boards/detail?id=…    → {board, sources, runs, tasks, messages}
-POST /api/boards/runs/cancel    {"id":"<run>"}   → 200 BoardRun (cancelled)
+POST /api/boards/runs/approve   {"id":"<run>"}   → 202 BoardRun (plan awaiting review starts)
+POST /api/boards/runs/cancel    {"id":"<run>"}   → 200 BoardRun (cancelled; also discards a plan awaiting review)
 POST /api/boards/runs/retry     {"id":"<run>"}   → 202 BoardRun
 POST /api/boards/tasks/cancel   {"id":"<task>"}  → 200
 POST /api/boards/stop           {"boardId":"…"}  → {"stopped":1}

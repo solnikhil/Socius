@@ -2223,3 +2223,116 @@ dialog::backdrop {
     flex-wrap: wrap;
   }
 }
+
+/* ---------- Board menu and plan review ---------- */
+.board-menu {
+  position: fixed;
+  width: 260px;
+  max-height: min(420px, calc(100vh - 16px));
+  overflow-y: auto;
+}
+.board-menu > button {
+  justify-content: flex-start;
+}
+.board-menu .menu-trailing {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.menu-bot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+.menu-bot strong {
+  font-weight: 500;
+}
+.menu-bot small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-note {
+  margin: 4px 10px 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.menu-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.menu-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px;
+}
+.board-menu .error {
+  margin: 6px 4px 2px;
+}
+.toggle-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 8px;
+  cursor: pointer;
+}
+.toggle-row input {
+  margin-top: 3px;
+}
+.toggle-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.toggle-row strong {
+  font-weight: 500;
+  color: var(--text);
+}
+.plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: 40px;
+}
+.plan-actions small {
+  color: var(--text-3);
+}
+.board-intro {
+  padding: 32px 0 8px;
+}
+.board-intro h2 {
+  font-size: 19px;
+  margin-bottom: 8px;
+}
+.intro-roster {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.intro-roster li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.intro-roster span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.intro-roster strong {
+  font-weight: 500;
+}

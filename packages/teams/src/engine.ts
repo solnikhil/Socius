@@ -13,6 +13,7 @@ import { blockedBy, sourcesFor, validatePlan, type Plan } from "./index.js";
 
 /** Persistence the engine needs. The runtime implements it over SQLite. */
 export interface TeamRepository {
+  deleteTasks(runId: string): void;
   board(id: string): Board | undefined;
   bot(id: string): BotInstance | undefined;
   sources(boardId: string): BoardSource[];
@@ -57,6 +58,11 @@ const activeRunStates = new Set<RunState>([
   "running",
   "synthesizing",
 ]);
+/** In flight, or holding a plan for review. Either way the board is occupied. */
+const openRunStates = new Set<RunState>([
+  ...activeRunStates,
+  "awaiting-approval",
+]);
 const retryableRunStates = new Set<RunState>([
   "partial",
   "failed",
@@ -96,13 +102,14 @@ export class TeamEngine {
   isBusy(boardId: string) {
     return (
       [...this.active.values()].some((r) => r.boardId === boardId) ||
-      this.repo.runs(boardId).some((r) => activeRunStates.has(r.state))
+      this.repo.runs(boardId).some((r) => openRunStates.has(r.state))
     );
   }
 
   /**
    * After a restart nothing is replayed. Active runs become interrupted, working
-   * tasks lose their partial output, and completed task results are kept.
+   * tasks lose their partial output, and completed task results are kept. Plans
+   * awaiting review stay as they are: nothing was running.
    */
   recover() {
     this.repo.transaction(() => {
@@ -125,9 +132,14 @@ export class TeamEngine {
     });
   }
 
+  /** A message to a board holding a plan for review revises that plan instead. */
   start(boardId: string, request: string): BoardRun {
     const board = this.repo.board(boardId) ?? fail(404, "Board not found");
     if (board.archivedAt) fail(409, "Archived boards are read-only");
+    const waiting = this.repo
+      .runs(boardId)
+      .find((r) => r.state === "awaiting-approval");
+    if (waiting) return this.revise(waiting, request);
     if (this.isBusy(boardId)) fail(409, "This board already has an active run");
     if (!board.members.some((m) => m.botId === board.coordinatorId))
       fail(409, "Choose a coordinator from the board members first");
@@ -140,6 +152,7 @@ export class TeamEngine {
       outcome: null,
       result: null,
       usage: { modelCalls: 0, tokens: 0 },
+      revisions: [],
       createdAt: now(),
       finishedAt: null,
     };
@@ -147,6 +160,46 @@ export class TeamEngine {
       this.repo.saveRun(run);
       this.message(run, null, "user", null, request);
       this.repo.event("board.run.started", `Run started on ${board.name}.`);
+    });
+    this.launch(run);
+    return run;
+  }
+
+  /** Runs a plan the user reviewed. */
+  approve(runId: string): BoardRun {
+    const run = this.repo.run(runId) ?? fail(404, "Run not found");
+    const board = this.repo.board(run.boardId) ?? fail(404, "Board not found");
+    if (board.archivedAt) fail(409, "Archived boards are read-only");
+    if (run.state !== "awaiting-approval" || this.active.has(run.id))
+      fail(409, "This run has no plan waiting for approval");
+    this.repo.transaction(() => {
+      run.state = "running";
+      this.repo.saveRun(run);
+      this.repo.event("board.plan.approved", `Plan approved on ${board.name}.`);
+    });
+    this.launch(run);
+    return run;
+  }
+
+  /** Replaces an unstarted plan with one revised from the user's reply. */
+  private revise(run: BoardRun, feedback: string): BoardRun {
+    if (this.active.has(run.id)) fail(409, "This board is already planning");
+    const tasks = this.repo.tasks(run.id);
+    this.repo.transaction(() => {
+      run.revisions.push({
+        plan: tasks
+          .map(
+            (t) =>
+              `- ${t.key}: ${t.title} → ${this.repo.bot(t.assigneeId)?.name ?? "former member"}`,
+          )
+          .join("\n"),
+        feedback,
+      });
+      // These tasks never started, so replacing them loses no work.
+      this.repo.deleteTasks(run.id);
+      this.message(run, null, "user", null, feedback);
+      run.state = "planning";
+      this.repo.saveRun(run);
     });
     this.launch(run);
     return run;
@@ -184,11 +237,19 @@ export class TeamEngine {
   }
 
   async cancelRun(runId: string) {
+    const waiting = this.repo.run(runId);
+    if (waiting?.state === "awaiting-approval" && !this.active.has(runId)) {
+      this.settleCancelled(runId);
+      return;
+    }
     const entry = this.active.get(runId) ?? fail(409, "Run is not active");
     entry.controller.abort();
     await entry.done;
   }
   async stopBoard(boardId: string) {
+    for (const run of this.repo.runs(boardId))
+      if (run.state === "awaiting-approval" && !this.active.has(run.id))
+        this.settleCancelled(run.id);
     const runs = [...this.active.entries()].filter(
       ([, r]) => r.boardId === boardId,
     );
@@ -285,7 +346,7 @@ export class TeamEngine {
         runId,
         task: null,
         briefing: planBriefing(board, sources, (id) => this.repo.bot(id)),
-        prompt: run.request,
+        prompt: planPrompt(run),
         proposePlan: (input) => {
           if (plan)
             return {
@@ -348,17 +409,23 @@ export class TeamEngine {
         (t) =>
           `- ${t.title} → ${this.repo.bot(t.assigneeId)?.name ?? "Unknown bot"}`,
       );
+      const review = board.reviewPlan;
       this.message(
         latest,
         null,
         "decision",
         coordinator.id,
-        `${accepted.summary}\n\n${lines.join("\n")}`,
+        `${accepted.summary}\n\n${lines.join("\n")}${review ? "\n\nReply to change this plan, or run it when it looks right." : ""}`,
       );
-      latest.state = "running";
+      latest.state = review ? "awaiting-approval" : "running";
       this.repo.saveRun(latest);
+      if (review)
+        this.repo.event(
+          "board.plan.proposed",
+          `A plan on ${board.name} is waiting for your go-ahead.`,
+        );
     });
-    return true;
+    return !board.reviewPlan;
   }
 
   private async execute(runId: string, entry: ActiveRun, attempt: Attempt) {
@@ -431,16 +498,22 @@ export class TeamEngine {
         bot,
         runId: run.id,
         task,
-        briefing: taskBriefing(board, bot),
+        briefing: taskBriefing(board, bot, (id) => this.repo.bot(id)),
         prompt: taskPrompt(
           run,
           task,
           sourcesFor(task, this.repo.sources(board.id)),
           deps.map((d) => ({
             title: d.title,
-            from: this.repo.bot(d.assigneeId)?.name ?? "Former member",
+            ...this.profile(board, d.assigneeId),
             result: d.result ?? "",
           })),
+          all
+            .filter((n) => n.dependsOn.includes(task.key))
+            .map((n) => ({
+              title: n.title,
+              ...this.profile(board, n.assigneeId),
+            })),
         ),
       });
       if (signal.aborted) throw new Error("aborted");
@@ -518,7 +591,7 @@ export class TeamEngine {
           board,
           tasks.map((t) => ({
             title: t.title,
-            from: this.repo.bot(t.assigneeId)?.name ?? "Former member",
+            ...this.profile(board, t.assigneeId),
             result: t.result ?? "",
           })),
         ),
@@ -606,6 +679,15 @@ export class TeamEngine {
     return attempt.exhausted;
   }
 
+  /** The short description teammates see during handoffs: board role, else the bot's own role. */
+  private profile(board: Board, botId: string) {
+    const bot = this.repo.bot(botId);
+    return {
+      from: bot?.name ?? "Former member",
+      does: describe(board, botId, bot),
+    };
+  }
+
   private memberBot(board: Board, botId: string) {
     return board.members.some((m) => m.botId === botId)
       ? this.repo.bot(botId)
@@ -625,7 +707,7 @@ export class TeamEngine {
 
   private settleCancelled(runId: string) {
     const run = this.repo.run(runId);
-    if (!run || !activeRunStates.has(run.state)) return;
+    if (!run || !openRunStates.has(run.state)) return;
     this.repo.transaction(() => {
       for (const task of this.repo.tasks(runId))
         if (["backlog", "ready", "working"].includes(task.state)) {
@@ -703,33 +785,69 @@ function planBriefing(
     .filter(Boolean)
     .join("\n\n");
 }
-function taskBriefing(board: Board, bot: BotInstance) {
-  const member = board.members.find((m) => m.botId === bot.id);
+function describe(board: Board, botId: string, bot?: BotInstance) {
+  const member = board.members.find((m) => m.botId === botId);
+  return (member?.role || bot?.role || "member").replace(/\s+/g, " ").trim();
+}
+function planPrompt(run: BoardRun) {
+  return [
+    run.request,
+    ...run.revisions.map(
+      (r, i) =>
+        `Your plan draft ${i + 1}:\n${r.plan || "(no tasks)"}\n\nThe user replied: ${r.feedback}`,
+    ),
+    run.revisions.length
+      ? "Propose a revised plan that follows the user's latest reply."
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+function taskBriefing(
+  board: Board,
+  bot: BotInstance,
+  lookup: (id: string) => BotInstance | undefined,
+) {
+  const teammates = board.members
+    .filter((m) => m.botId !== bot.id)
+    .map((m) => {
+      const b = lookup(m.botId);
+      return `- ${b?.name ?? "Unavailable"}: ${describe(board, m.botId, b)}`;
+    });
   return [
     `You are contributing one bounded task to the Socius board "${board.name}".`,
     `Board objective: ${board.objective}`,
-    `Your board role: ${member?.role || bot.role}`,
+    `Your board role: ${describe(board, bot.id, bot)}`,
+    teammates.length &&
+      `Your teammates and what they do (for handoff context only; you cannot message them):\n${teammates.join("\n")}`,
     "Return only your contribution. Cite the sources you used and state uncertainty plainly. You cannot delegate, plan or message other bots. Only the tools supplied in this call exist.",
     UNTRUSTED,
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 function taskPrompt(
   run: BoardRun,
   task: BoardTask,
   sources: BoardSource[],
-  deps: { title: string; from: string; result: string }[],
+  deps: { title: string; from: string; does: string; result: string }[],
+  next: { title: string; from: string; does: string }[],
 ) {
   return [
     `Task: ${task.title}\n${task.instructions}`,
     `The user's request to the team: ${run.request}`,
+    next.length &&
+      `Your result will be handed to:\n${next.map((n) => `- ${n.from} (${n.does}) for "${n.title}"`).join("\n")}\nShape your output so they can use it directly.`,
     ...sources.map(
       (s) => `<source id="${s.id}" name="${s.name}">\n${s.text}\n</source>`,
     ),
     ...deps.map(
       (d) =>
-        `<teammate-result from="${d.from}" task="${d.title}">\n${d.result}\n</teammate-result>`,
+        `<teammate-result from="${d.from}" role="${d.does}" task="${d.title}">\n${d.result}\n</teammate-result>`,
     ),
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 function synthesisBriefing(board: Board) {
   return [
@@ -741,7 +859,7 @@ function synthesisBriefing(board: Board) {
 function synthesisPrompt(
   run: BoardRun,
   board: Board,
-  results: { title: string; from: string; result: string }[],
+  results: { title: string; from: string; does: string; result: string }[],
 ) {
   return [
     `The user's request: ${run.request}`,
@@ -750,7 +868,7 @@ function synthesisPrompt(
       `Completion criteria: ${board.completionCriteria}`,
     ...results.map(
       (r) =>
-        `<teammate-result from="${r.from}" task="${r.title}">\n${r.result}\n</teammate-result>`,
+        `<teammate-result from="${r.from}" role="${r.does}" task="${r.title}">\n${r.result}\n</teammate-result>`,
     ),
   ]
     .filter(Boolean)

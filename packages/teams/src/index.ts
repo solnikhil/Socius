@@ -37,6 +37,7 @@ export const CreateBoardSchema = z.strictObject({
   memberIds: uniqueIds.min(1),
   coordinatorId: uuid,
   budgets: BudgetsSchema.partial().optional(),
+  reviewPlan: z.boolean().default(true),
 });
 export const UpdateBoardSchema = z.strictObject({
   name: text(100).optional(),
@@ -44,6 +45,7 @@ export const UpdateBoardSchema = z.strictObject({
   completionCriteria: z.string().trim().max(2000).optional(),
   coordinatorId: uuid.optional(),
   budgets: BudgetsSchema.partial().optional(),
+  reviewPlan: z.boolean().optional(),
   archived: z.boolean().optional(),
 });
 export const MemberSchema = z.strictObject({

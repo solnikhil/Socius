@@ -25,7 +25,8 @@ import { columnOf, type BoardColumn } from "@socius/teams";
 import { api } from "../api.js";
 import { Avatar, ErrorNote, Markdown } from "../components/ui.js";
 
-type Tab = "thread" | "tasks" | "team" | "sources";
+export type BoardTab = "thread" | "tasks" | "team" | "sources";
+type Tab = BoardTab;
 const tabs: { id: Tab; label: string }[] = [
   { id: "thread", label: "Thread" },
   { id: "tasks", label: "Tasks" },
@@ -35,6 +36,7 @@ const tabs: { id: Tab; label: string }[] = [
 const activeStates = new Set(["planning", "running", "synthesizing"]);
 const runLabel: Record<BoardRun["state"], string> = {
   planning: "Planning",
+  "awaiting-approval": "Plan ready for review",
   running: "Working",
   synthesizing: "Writing final result",
   completed: "Completed",
@@ -57,15 +59,17 @@ export function BoardView({
   onRefresh,
   onClose,
   onSettings,
+  initialTab = "thread",
 }: {
   boardId: string;
   state: Snapshot;
   onRefresh: () => Promise<void>;
   onClose: () => void;
   onSettings: () => void;
+  initialTab?: Tab;
 }) {
   const [detail, setDetail] = useState<BoardDetail | null>(null),
-    [tab, setTab] = useState<Tab>("thread"),
+    [tab, setTab] = useState<Tab>(initialTab),
     [error, setError] = useState(""),
     [offline, setOffline] = useState(false);
   const loaded = useRef(false);
@@ -233,6 +237,9 @@ function Thread({
     if (await act("boards/runs", { boardId: detail.board.id, content: text }))
       setText("");
   }
+  const coordinatorName =
+    bot(detail.board.coordinatorId)?.name ?? "The coordinator";
+  const awaiting = run?.state === "awaiting-approval";
   const retryable =
     run &&
     ["partial", "failed", "cancelled", "interrupted"].includes(run.state);
@@ -241,12 +248,38 @@ function Thread({
       <div className="board-scroll">
         <div className="board-thread">
           {!detail.messages.length && (
-            <div className="empty">
+            <div className="board-intro">
               <h2>{detail.board.objective}</h2>
-              <p>
-                Ask the team for something. The coordinator plans the work,
-                specialists contribute, and you get one consolidated result.
+              <p className="muted">
+                Ask the team for something. {coordinatorName} picks the members
+                that fit
+                {detail.board.reviewPlan
+                  ? ", shows you the plan here first, and starts once you approve it."
+                  : " and starts right away."}{" "}
+                You get one consolidated result.
               </p>
+              <ul className="intro-roster" aria-label="Team">
+                {detail.board.members.map((m) => {
+                  const b = bot(m.botId);
+                  return (
+                    <li key={m.botId}>
+                      <Avatar
+                        name={b?.name ?? "Unavailable"}
+                        main={b?.template.id === "socius/main"}
+                        size={26}
+                      />
+                      <span>
+                        <strong>
+                          {b?.name ?? "Unavailable bot"}
+                          {m.botId === detail.board.coordinatorId &&
+                            " · coordinator"}
+                        </strong>
+                        <small>{m.role || b?.role}</small>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
           {detail.messages.map((m) => {
@@ -281,6 +314,24 @@ function Thread({
               </article>
             );
           })}
+          {awaiting && run && (
+            <div className="plan-actions" role="group" aria-label="Plan review">
+              <button
+                className="primary"
+                disabled={archived || !hasModel}
+                onClick={() => void act("boards/runs/approve", { id: run.id })}
+              >
+                Run plan
+              </button>
+              <button
+                className="pill"
+                onClick={() => void act("boards/runs/cancel", { id: run.id })}
+              >
+                Discard
+              </button>
+              <small>Or reply below to change it.</small>
+            </div>
+          )}
           {retryable && (
             <div className="outcome" role="status">
               <p>{run.outcome ?? "This run did not finish."}</p>
@@ -311,7 +362,9 @@ function Thread({
                   ? "This board is archived."
                   : active
                     ? "The team is working. Stop it to send a new request."
-                    : "Ask the team…"
+                    : awaiting
+                      ? "Reply to change the plan…"
+                      : "Ask the team…"
               }
               value={text}
               disabled={archived || active}
@@ -652,6 +705,29 @@ function Team({
             Save brief
           </button>
         </form>
+      </section>
+      <section className="settings-card">
+        <h2>How this board works</h2>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={board.reviewPlan}
+            disabled={archived}
+            onChange={(e) =>
+              void act("boards/update", {
+                id: board.id,
+                reviewPlan: e.target.checked,
+              })
+            }
+          />
+          <span>
+            <strong>Show me the plan before the team starts</strong>
+            <small>
+              The coordinator posts its plan in the thread. Reply to change it,
+              or run it when it looks right.
+            </small>
+          </span>
+        </label>
       </section>
       <section className="settings-card">
         <h2>Execution limits</h2>

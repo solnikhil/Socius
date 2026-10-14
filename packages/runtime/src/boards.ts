@@ -129,6 +129,7 @@ export async function handleBoards(ctx: {
         joinedAt: now,
       })),
       budgets: { ...defaultBudgets, ...stripUndefined(input.budgets) },
+      reviewPlan: input.reviewPlan,
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
@@ -159,6 +160,7 @@ export async function handleBoards(ctx: {
         fail(400, "The coordinator must be a board member");
       b.coordinatorId = input.coordinatorId;
     }
+    if (input.reviewPlan !== undefined) b.reviewPlan = input.reviewPlan;
     if (input.budgets)
       b.budgets = { ...b.budgets, ...stripUndefined(input.budgets) };
     save(b, `Updated board ${b.name}.`);
@@ -242,6 +244,12 @@ export async function handleBoards(ctx: {
     const input = z.strictObject({ id: uuid }).parse(await body(req));
     await engine.cancelRun(input.id);
     json(res, 200, teams.run(input.id));
+    return true;
+  }
+  if (method === "POST" && path === "/api/boards/runs/approve") {
+    const input = z.strictObject({ id: uuid }).parse(await body(req));
+    if (!store.settings().model) fail(409, "Choose a model in Settings first");
+    json(res, 202, engine.approve(input.id));
     return true;
   }
   if (method === "POST" && path === "/api/boards/runs/retry") {

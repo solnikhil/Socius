@@ -41,10 +41,11 @@ export class TeamStore implements TeamRepository {
     return rows.map((r) => JSON.parse(r.data as string) as T);
   }
   boards() {
-    return this.list<Board>("board");
+    return this.list<Board>("board").map(normalizeBoard);
   }
   board(id: string) {
-    return this.one<Board>("board", id);
+    const board = this.one<Board>("board", id);
+    return board && normalizeBoard(board);
   }
   saveBoard(board: Board) {
     this.put("board", board.id, board.id, board);
@@ -64,10 +65,11 @@ export class TeamStore implements TeamRepository {
       .run(id);
   }
   runs(boardId?: string) {
-    return this.list<BoardRun>("run", boardId);
+    return this.list<BoardRun>("run", boardId).map(normalizeRun);
   }
   run(id: string) {
-    return this.one<BoardRun>("run", id);
+    const run = this.one<BoardRun>("run", id);
+    return run && normalizeRun(run);
   }
   saveRun(run: BoardRun) {
     this.put("run", run.id, run.boardId, run);
@@ -83,6 +85,12 @@ export class TeamStore implements TeamRepository {
   task(id: string) {
     return this.one<BoardTask>("task", id);
   }
+  deleteTasks(runId: string) {
+    for (const task of this.tasks(runId))
+      this.store.db
+        .prepare("DELETE FROM team_records WHERE kind='task' AND id=?")
+        .run(task.id);
+  }
   saveTask(task: BoardTask) {
     this.put("task", task.id, task.boardId, task);
   }
@@ -93,7 +101,7 @@ export class TeamStore implements TeamRepository {
     const board = this.board(boardId);
     return board
       ? {
-          board,
+          board: normalizeBoard(board),
           sources: this.sources(boardId),
           runs: this.runs(boardId),
           tasks: this.list<BoardTask>("task", boardId),
@@ -109,4 +117,12 @@ export class TeamStore implements TeamRepository {
   event(kind: string, description: string) {
     this.store.event(kind, description);
   }
+}
+
+// Fields added after schemaVersion 1 shipped; older records read with defaults.
+function normalizeBoard(board: Board): Board {
+  return { ...board, reviewPlan: board.reviewPlan ?? true };
+}
+function normalizeRun(run: BoardRun): BoardRun {
+  return { ...run, revisions: run.revisions ?? [] };
 }

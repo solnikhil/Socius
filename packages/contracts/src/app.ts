@@ -108,6 +108,8 @@ export interface Board {
   coordinatorId: string;
   members: BoardMember[];
   budgets: BoardBudgets;
+  /** When true, the coordinator's plan waits in the thread for the user to run or revise it. */
+  reviewPlan: boolean;
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
@@ -122,6 +124,7 @@ export interface BoardSource {
 }
 export type RunState =
   | "planning"
+  | "awaiting-approval"
   | "running"
   | "synthesizing"
   | "completed"
@@ -139,6 +142,8 @@ export interface BoardRun {
   outcome: string | null;
   result: string | null;
   usage: { modelCalls: number; tokens: number };
+  /** User replies that revised the plan before it ran, oldest first. */
+  revisions: { plan: string; feedback: string }[];
   createdAt: string;
   finishedAt: string | null;
 }

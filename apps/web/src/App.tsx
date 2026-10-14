@@ -32,7 +32,8 @@ import { MemoryView } from "./views/MemoryView.js";
 import { ActivityView } from "./views/ActivityView.js";
 import { SettingsView } from "./views/SettingsView.js";
 import { CreateBot } from "./views/CreateBot.js";
-import { BoardView } from "./views/BoardView.js";
+import { BoardView, type BoardTab } from "./views/BoardView.js";
+import { BoardMenu } from "./components/BoardMenu.js";
 import { CreateBoard } from "./views/CreateBoard.js";
 
 type Page = "chat" | "new" | "memory" | "activity" | "settings" | "board";
@@ -46,6 +47,15 @@ export function App() {
     [creating, setCreating] = useState(false),
     [boardId, setBoardId] = useState(""),
     [creatingBoard, setCreatingBoard] = useState(false),
+    [boardTab, setBoardTab] = useState<{ tab: BoardTab; nonce: number }>({
+      tab: "thread",
+      nonce: 0,
+    }),
+    [boardMenu, setBoardMenu] = useState<{
+      id: string;
+      x: number;
+      y: number;
+    } | null>(null),
     [apps, setApps] = useState(false),
     [collapsed, setCollapsed] = useState(false),
     [menu, setMenu] = useState(false),
@@ -111,6 +121,14 @@ export function App() {
     setSelected(b.id);
     setPage("chat");
   };
+  const openBoard = (id: string, tab: BoardTab = "thread") => {
+    setBoardId(id);
+    setBoardTab((t) => ({ tab, nonce: t.nonce + 1 }));
+    setPage("board");
+  };
+  const menuBoard = boardMenu
+    ? state.boards.find((b) => b.id === boardMenu.id)
+    : undefined;
   const connected = state.catalog.filter((p) =>
     state.installations.some((i) => i.id === p.id && p.kind !== "bot"),
   );
@@ -197,9 +215,10 @@ export function App() {
                 <button
                   key={b.id}
                   className={`board-row ${page === "board" && b.id === boardId ? "active" : ""}`}
-                  onClick={() => {
-                    setBoardId(b.id);
-                    setPage("board");
+                  onClick={() => openBoard(b.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setBoardMenu({ id: b.id, x: e.clientX, y: e.clientY });
                   }}
                 >
                   <span className="board-icon" aria-hidden="true">
@@ -347,8 +366,9 @@ export function App() {
         )}
         {page === "board" && boardId && (
           <BoardView
-            key={boardId}
+            key={`${boardId}:${boardTab.nonce}`}
             boardId={boardId}
+            initialTab={boardTab.tab}
             state={state}
             onRefresh={refresh}
             onClose={() => setPage("chat")}
@@ -396,14 +416,27 @@ export function App() {
           onClose={() => setApps(false)}
         />
       )}
+      {boardMenu && menuBoard && (
+        <BoardMenu
+          board={menuBoard}
+          bots={[main, ...specialists]}
+          x={boardMenu.x}
+          y={boardMenu.y}
+          onClose={() => setBoardMenu(null)}
+          onOpen={(tab) => {
+            openBoard(menuBoard.id, tab);
+            setBoardMenu(null);
+          }}
+          onRefresh={refresh}
+        />
+      )}
       {creatingBoard && (
         <CreateBoard
           bots={[main, ...specialists]}
           mainId={main.id}
           onClose={() => setCreatingBoard(false)}
           onCreated={(b) => {
-            setBoardId(b.id);
-            setPage("board");
+            openBoard(b.id);
             void refresh();
           }}
         />

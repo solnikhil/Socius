@@ -139,8 +139,29 @@ test("a four-member research board plans, delegates and returns one reviewed bri
     await page.getByRole("button", { name: "Share source" }).click();
     await expect(page.getByText("market-notes.txt")).toBeVisible();
 
-    await page.getByRole("tab", { name: /Team/ }).click();
-    await expect(page.locator(".roster li")).toHaveCount(4);
+    // A bot created later joins through the board's right-click menu.
+    await api(page, "bots", {
+      name: "Editor",
+      role: "Tightens wording",
+      instructions: "Edit for clarity.",
+    });
+    await page.reload();
+    await page
+      .getByRole("button", { name: /Market research/ })
+      .click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Add bots" }).click();
+    await page.screenshot({
+      path: "test-results/socius-board-menu.png",
+      animations: "disabled",
+    });
+    await page.getByRole("menuitem", { name: /Editor/ }).click();
+    await expect(page.getByText("On this board · 5")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page
+      .getByRole("button", { name: /Market research/ })
+      .click({ button: "right" });
+    await page.getByRole("menuitem", { name: "How this board works" }).click();
+    await expect(page.locator(".roster li")).toHaveCount(5);
     await page.screenshot({
       path: "test-results/socius-board-team.png",
       animations: "disabled",
@@ -151,6 +172,25 @@ test("a four-member research board plans, delegates and returns one reviewed bri
       .getByRole("textbox", { name: "Message the team" })
       .fill("Write the brief.");
     await page.getByRole("button", { name: "Send to team" }).click();
+    // The plan waits in the chat; a reply steers it, then Run plan starts it.
+    await expect(page.getByRole("button", { name: "Run plan" })).toBeVisible();
+    await expect(page.getByText(/Reply to change this plan/)).toBeVisible();
+    await page
+      .getByRole("textbox", { name: "Message the team" })
+      .fill("Keep the brief to two sentences.");
+    await page.getByRole("button", { name: "Send to team" }).click();
+    await expect(
+      page.getByText("Keep the brief to two sentences.", { exact: true }),
+    ).toBeVisible();
+    // Wait for the revised plan, not the stale button from the first one.
+    await expect(page.getByText(/Reply to change this plan/)).toHaveCount(2);
+    await expect(page.getByRole("button", { name: "Run plan" })).toBeVisible();
+    await page.screenshot({
+      path: "test-results/socius-board-plan-review.png",
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.getByRole("button", { name: "Run plan" }).click();
     await expect(page.getByText("Final brief.")).toBeVisible();
     await expect(page.getByRole("status").first()).toHaveText(/Completed/);
     await expect(
