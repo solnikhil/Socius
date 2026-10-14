@@ -1,0 +1,103 @@
+[
+  {
+    "id": "hook",
+    "seconds": 6.035,
+    "parts": [
+      {
+        "say": "Today's best AI agents are built for America.",
+        "start": 0,
+        "end": 2.561
+      },
+      {
+        "say": "Priced in dollars. English only. Clueless about Indian life.",
+        "start": 2.681,
+        "end": 6.035
+      }
+    ]
+  },
+  {
+    "id": "meet",
+    "seconds": 2.588,
+    "parts": [
+      {
+        "say": "Meet Socius.",
+        "start": 0,
+        "end": 0.992
+      },
+      {
+        "say": "India's open AI ally.",
+        "start": 1.132,
+        "end": 2.588
+      }
+    ]
+  },
+  {
+    "id": "app",
+    "seconds": 6.458,
+    "parts": [
+      {
+        "say": "Ask for a Tatkal ticket.",
+        "start": 0,
+        "end": 1.251
+      },
+      {
+        "say": "It opens I R C T C, pulls your ID from DigiLocker, and waits for your okay to pay.",
+        "start": 1.331,
+        "end": 6.458
+      }
+    ]
+  },
+  {
+    "id": "uses",
+    "seconds": 5.105,
+    "parts": [
+      {
+        "say": "Pay bills on UPI.",
+        "start": 0,
+        "end": 1.31
+      },
+      {
+        "say": "File GST on time.",
+        "start": 1.369,
+        "end": 2.566
+      },
+      {
+        "say": "Book flights and movies.",
+        "start": 2.626,
+        "end": 3.826
+      },
+      {
+        "say": "In any Indian language.",
+        "start": 3.886,
+        "end": 5.105
+      }
+    ]
+  },
+  {
+    "id": "platform",
+    "seconds": 4.19,
+    "parts": [
+      {
+        "say": "It runs on your laptop, with any model, and India's developers can teach it anything.",
+        "start": 0,
+        "end": 4.19
+      }
+    ]
+  },
+  {
+    "id": "close",
+    "seconds": 1.97,
+    "parts": [
+      {
+        "say": "Socius.",
+        "start": 0,
+        "end": 0.756
+      },
+      {
+        "say": "Built for India.",
+        "start": 0.916,
+        "end": 1.97
+      }
+    ]
+  }
+]

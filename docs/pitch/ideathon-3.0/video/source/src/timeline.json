@@ -1,0 +1,80 @@
+{
+  "fps": 30,
+  "durationInFrames": 900,
+  "bpm": 120,
+  "vo": {
+    "hook": 9,
+    "meet": 200,
+    "app": 286,
+    "uses": 488,
+    "platform": 660,
+    "close": 800
+  },
+  "cues": {
+    "agents": [
+      12,
+      22,
+      32,
+      42
+    ],
+    "headline1": 14,
+    "tags": [
+      92,
+      100,
+      118,
+      126
+    ],
+    "headline2": 140,
+    "chipsIn": 142,
+    "strikes": [
+      160,
+      166,
+      172,
+      178,
+      184
+    ],
+    "converge": 186,
+    "drop": 196,
+    "flips": [
+      236,
+      242,
+      248,
+      254,
+      260
+    ],
+    "blinks": [
+      222,
+      262,
+      842,
+      872
+    ],
+    "toApp": 272,
+    "appReady": 312,
+    "step1": 326,
+    "step1Result": 340,
+    "step2": 358,
+    "step3": 394,
+    "cursorIn": 404,
+    "click": 444,
+    "booked": 447,
+    "notify": 452,
+    "toTiles": 486,
+    "highlights": [
+      488,
+      529,
+      567,
+      586,
+      605
+    ],
+    "toWall": 656,
+    "badges": [
+      662,
+      700,
+      726
+    ],
+    "implode": 776,
+    "closeHit": 796,
+    "tagline": 827,
+    "footer": 848
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "voice": "af_heart",
+  "speed": 1.2,
+  "partGap": 0.1,
+  "lines": [
+    {
+      "id": "hook",
+      "parts": [
+        {
+          "say": "Today's best AI agents are built for America.",
+          "gapAfter": 0.12
+        },
+        {
+          "say": "Priced in dollars. English only. Clueless about Indian life."
+        }
+      ]
+    },
+    {
+      "id": "meet",
+      "parts": [
+        {
+          "say": "Meet Socius.",
+          "gapAfter": 0.14,
+          "speed": 1.0
+        },
+        {
+          "say": "India's open AI ally."
+        }
+      ]
+    },
+    {
+      "id": "app",
+      "parts": [
+        {
+          "say": "Ask for a Tatkal ticket.",
+          "gapAfter": 0.08
+        },
+        {
+          "say": "It opens I R C T C, pulls your ID from DigiLocker, and waits for your okay to pay."
+        }
+      ]
+    },
+    {
+      "id": "uses",
+      "speed": 1.22,
+      "parts": [
+        {
+          "say": "Pay bills on UPI.",
+          "gapAfter": 0.06
+        },
+        {
+          "say": "File GST on time.",
+          "gapAfter": 0.06
+        },
+        {
+          "say": "Book flights and movies.",
+          "gapAfter": 0.06
+        },
+        {
+          "say": "In any Indian language."
+        }
+      ]
+    },
+    {
+      "id": "platform",
+      "parts": [
+        {
+          "say": "It runs on your laptop, with any model, and India's developers can teach it anything."
+        }
+      ]
+    },
+    {
+      "id": "close",
+      "parts": [
+        {
+          "say": "Socius.",
+          "gapAfter": 0.16,
+          "speed": 0.98
+        },
+        {
+          "say": "Built for India.",
+          "speed": 1.0
+        }
+      ]
+    }
+  ]
+}
