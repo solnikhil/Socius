@@ -22,7 +22,8 @@
     "test:e2e": "playwright test",
     "format": "prettier --write apps packages scripts/*.ts e2e playwright.config.ts",
     "format:check": "prettier --check apps packages scripts/*.ts e2e playwright.config.ts",
-    "test:live": "npm run build && tsx scripts/live-provider-check.ts --live"
+    "test:live": "npm run build && tsx scripts/live-provider-check.ts --live",
+    "test:live:dreaming": "npm run build && tsx scripts/live-dreaming-check.ts --live"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
