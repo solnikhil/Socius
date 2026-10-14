@@ -1,5 +1,9 @@
 Tracking: [GitHub issue #3](https://github.com/solnikhil/Socius/issues/3). Companion: [Teams & Boards #2](https://github.com/solnikhil/Socius/issues/2).
 
+## Assignment
+
+Owner: **Teammate working on Skills & Connectors Marketplace** (name intentionally unspecified). The user owns all UI/refinement. This issue owner builds skill/registry/connector services, contracts and tests; provide setup/install states and payloads for user-owned screens. Completion still requires acceptance evidence.
+
 ## Outcome
 Turn the curated catalog into a usable skills and bot-template ecosystem with standard Agent Skills packages, reviewed MCP connector discovery and one real authenticated connector. Preserve the two product categories **Skills & Connectors** and **Bots**, whether the catalog entry point is named Marketplace or Connect Apps.
 
@@ -17,12 +21,12 @@ A user imports a standard document-brief skill, reviews its source/version/depen
 Read: [AGENTS.md](https://github.com/solnikhil/Socius/blob/main/AGENTS.md), [architecture](https://github.com/solnikhil/Socius/blob/main/docs/architecture/v1.md), [local API](https://github.com/solnikhil/Socius/blob/main/docs/architecture/local-api.md), [README](https://github.com/solnikhil/Socius/blob/main/README.md).
 
 ## Ownership and integration contract
-Own packages/marketplace, new packages/skills and packages/connectors, catalog/install UI, connector setup and integration tests. Extend:
+Own packages/marketplace, new packages/skills and packages/connectors, connector setup services and integration tests. The user owns catalog/install UI. Extend:
 - packages/contracts/src/index.ts and app.ts: release/setup/action/receipt DTOs.
 - packages/marketplace/src/index.ts and curated.ts: sources, compatibility and lifecycle.
 - packages/runtime/src/store.ts: versioned installation, credential-reference, scope and approval records.
 - packages/runtime/src/server.ts and model.ts: reviewed connector/tool broker.
-- apps/web/src/views: catalog and installation/setup flows.
+- apps/web/src/views: user-owned catalog and installation/setup flows; supply documented endpoints, state transitions and response shapes.
 
 The board issue owns packages/teams and orchestration. Coordinate edits to contracts, server.ts, model.ts and navigation. You are not alone: do not revert other owners' edits. A concurrent UI update may replace Marketplace.tsx with ConnectApps.tsx; inspect main rather than restoring the older layout.
 
@@ -54,7 +58,7 @@ Expose a typed action broker usable by single bots and board tasks. Include bot/
 
 ## Suggested PR sequence
 1. Standard skill loader/import/export and local lifecycle.
-2. Registry metadata/verification and reviewed setup UI.
+2. Registry metadata/verification and setup-state APIs for the user-owned UI.
 3. Real read-only connector and secure credentials.
 4. Shared write broker/approvals, reconciliation and the complete acceptance flow.
 
