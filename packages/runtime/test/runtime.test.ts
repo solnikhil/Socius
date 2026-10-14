@@ -12,6 +12,7 @@ import type {
   GroupChat,
   Category,
 } from "@socius/contracts/app";
+import type { BotInstance } from "@socius/contracts";
 import type { ModelRunner } from "../src/model.js";
 import { paired, connectModel } from "./helpers.js";
 
@@ -178,6 +179,19 @@ test("main bot proposals survive restart and create exactly one fresh specialist
           id: approval.id,
           digest: approval.digest,
           approve: true,
+          appearance: { shape: "hex", eyes: "glow" },
+        })
+      ).status,
+      400,
+    );
+    // The reviewer's chosen look applies; the model's proposal never carries one.
+    assert.equal(
+      (
+        await r.request("approvals", {
+          id: approval.id,
+          digest: approval.digest,
+          approve: true,
+          appearance: { shape: "wide", eyes: "dots" },
         })
       ).status,
       200,
@@ -195,6 +209,10 @@ test("main bot proposals survive restart and create exactly one fresh specialist
     state = (await (await r.request("state")).json()) as Snapshot;
     assert.equal(state.bots.length, 2);
     assert.equal(state.bots[1]!.name, "Planner");
+    assert.deepEqual(state.bots[1]!.appearance, {
+      shape: "wide",
+      eyes: "dots",
+    });
     assert.deepEqual(state.bots[1]!.grantedCapabilities, []);
     assert.notEqual(
       state.bots[0]!.memoryNamespace,
@@ -698,6 +716,85 @@ test("categories file each bot in at most one place and never touch group chats"
       a.id,
       b.id,
     ]);
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("bot appearance is validated, persisted and kept out of templates", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-appearance-"));
+  const r = await paired(dir);
+  try {
+    const draft = {
+      name: "Scout",
+      role: "Finds things",
+      instructions: "Look.",
+    };
+    const created = (await (
+      await r.request("bots", {
+        ...draft,
+        appearance: { shape: "hex", eyes: "pupils" },
+      })
+    ).json()) as BotInstance;
+    assert.deepEqual(created.appearance, { shape: "hex", eyes: "pupils" });
+    // Older bots and API callers may omit it; the app derives a look from the name.
+    const plain = (await (
+      await r.request("bots", draft)
+    ).json()) as BotInstance;
+    assert.equal("appearance" in plain, false);
+    for (const appearance of [
+      { shape: "star", eyes: "dots" },
+      { shape: "round", eyes: "lasers" },
+      { shape: "round" },
+      { shape: "round", eyes: "dots", color: "#fff" },
+      "round",
+    ])
+      assert.equal(
+        (await r.request("bots", { ...draft, appearance })).status,
+        400,
+        JSON.stringify(appearance),
+      );
+    const restyled = (await (
+      await r.request("bots/update", {
+        id: created.id,
+        appearance: { shape: "blob", eyes: "cyclops" },
+      })
+    ).json()) as BotInstance;
+    assert.equal(restyled.name, "Scout");
+    assert.deepEqual(restyled.appearance, { shape: "blob", eyes: "cyclops" });
+    assert.equal(
+      (await r.request("bots/update", { id: created.id })).status,
+      400,
+    );
+    assert.equal(
+      (
+        await r.request("bots/update", {
+          id: created.id,
+          appearance: { shape: "blob", eyes: "cyclops", spin: true },
+        })
+      ).status,
+      400,
+    );
+    const snapshot = (await (await r.request("state")).json()) as Snapshot;
+    assert.deepEqual(
+      snapshot.bots.find((b) => b.id === created.id)?.appearance,
+      { shape: "blob", eyes: "cyclops" },
+    );
+    const preview = (await (
+      await r.request("export/bot/preview", {
+        botId: created.id,
+        draft: {
+          name: "Scout",
+          description: "Finds things.",
+          role: "Finds things",
+          instructions: "Look carefully.",
+          version: "1.0.0",
+          license: "MIT",
+        },
+      })
+    ).json()) as { files: { content: string }[] };
+    assert.doesNotMatch(preview.files[0]!.content, /appearance|cyclops/);
   } finally {
     await r.close();
     await rm(dir, { recursive: true, force: true });

@@ -1,3 +1,4 @@
+import type { BotAppearance } from "./appearance.js";
 import type {
   ActionActor,
   BotInstance,
@@ -6,6 +7,7 @@ import type {
   Manifest,
   ReleaseIdentity,
   ReleaseSource,
+  SkillActivation,
   TrustStatus,
 } from "./index.js";
 import type {
@@ -78,6 +80,65 @@ export interface Task {
   errorCode?: ProviderErrorCode;
   /** The model that ran this task. */
   model?: ModelRef;
+  /** Skill releases offered to each bot in this task, and which were actually loaded. */
+  skills?: TaskSkill[];
+  createdAt: string;
+}
+/**
+ * Activation evidence for one skill in one task. `loaded` means its instructions
+ * entered model context (preloaded or loaded on demand). Neither proves the model
+ * followed the procedure.
+ */
+export interface TaskSkill {
+  botId: string;
+  skillId: string;
+  version: string;
+  digest: string;
+  activation: SkillActivation;
+  loaded: boolean;
+}
+/** A private bot's assignment of one installed skill release. */
+export interface SkillAssignment {
+  botId: string;
+  skillId: string;
+  /** The exact reviewed release. Never silently moved to another version. */
+  release: { version: string; digest: string };
+  enabled: boolean;
+  activation: SkillActivation;
+  /** Increments on every change; mutations must name the revision they saw. */
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+/**
+ * - ready: assigned, enabled, installed, globally enabled and the pinned release matches.
+ * - off: the user turned it off for this bot only.
+ * - needs-review: the installed release differs from the pinned one.
+ * - unavailable: not installed, globally disabled or failed integrity checks.
+ */
+export type SkillAssignmentStatus =
+  "ready" | "off" | "needs-review" | "unavailable";
+export interface SkillAssignmentView extends SkillAssignment {
+  status: SkillAssignmentStatus;
+  detail: string;
+  name: string;
+  description: string;
+  /** The currently installed, intact release when it differs from the pin. */
+  installed: { version: string; digest: string } | null;
+  /** Characters of instructions an always-load activation adds to every call. */
+  instructionChars: number;
+  /** Skill dependencies of the pinned release not assigned and ready for this bot. */
+  missingDependencies: string[];
+}
+/**
+ * A bot whose skill set needs the user's review: an upgraded workspace where every
+ * bot used to see every installed skill, or a template that declared skill dependencies.
+ */
+export interface SkillReview {
+  botId: string;
+  reason: "migration" | "template";
+  /** Skills the user may want to assign. Suggestions only; nothing is assigned. */
+  suggested: string[];
   createdAt: string;
 }
 export interface Memory {
@@ -125,6 +186,7 @@ export interface BotDraft {
   name: string;
   role: string;
   instructions: string;
+  appearance?: BotAppearance | undefined;
 }
 export interface Approval {
   id: string;
@@ -239,6 +301,8 @@ export interface Snapshot {
   catalog: Manifest[];
   releases: Release[];
   installations: Installation[];
+  skillAssignments: SkillAssignmentView[];
+  skillReviews: SkillReview[];
   /** Connected-app accounts (Notion, …); model providers are `connections`. */
   connectorConnections: ConnectorConnection[];
   actions: ActionRecord[];
