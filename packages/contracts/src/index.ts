@@ -179,6 +179,34 @@ export const ActionRequest = z.strictObject({
 });
 export type ActionRequest = z.infer<typeof ActionRequest>;
 
+// Per-bot skill assignment. Installation makes a release available to the workspace;
+// an assignment makes that exact release available to one private bot. Neither grants
+// tools, credentials or connector permissions.
+export const SkillActivation = z.enum(["on-demand", "always-load"]);
+export type SkillActivation = z.infer<typeof SkillActivation>;
+export const SkillAssignmentKey = z.strictObject({
+  botId: z.string().uuid(),
+  skillId: PackageId,
+});
+export const AssignSkill = SkillAssignmentKey.extend({
+  activation: SkillActivation.default("on-demand"),
+  enabled: z.boolean().default(true),
+});
+export const UpdateSkillAssignment = SkillAssignmentKey.extend({
+  // Optimistic concurrency: the revision the caller last saw.
+  revision: z.number().int().min(1),
+  activation: SkillActivation.optional(),
+  enabled: z.boolean().optional(),
+});
+export const ReviewSkillAssignment = SkillAssignmentKey.extend({
+  revision: z.number().int().min(1),
+  // The installed release the user reviewed; it must still be the installed one.
+  release: z.strictObject({ version: Version, digest: Digest }),
+});
+export const UnassignSkill = SkillAssignmentKey.extend({
+  revision: z.number().int().min(1).optional(),
+});
+
 export const TaskState = z.enum([
   "queued",
   "running",

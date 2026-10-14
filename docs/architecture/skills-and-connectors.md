@@ -12,7 +12,7 @@ Socius imports and exports [Agent Skills](https://agentskills.io/specification) 
 - **Instruction-only.** Files under `scripts/` are stored inert and are never executed or loaded into model context. Frontmatter that asks for activation (`entrypoint`, `command`, `hooks`, `mcp-servers`, …) is rejected. Native executables are rejected anywhere (by extension and by ELF/PE/Mach-O magic bytes). Script-like files outside `scripts/` are rejected.
 - **`allowed-tools`** is recorded and shown as a request. It never adds tools or permissions.
 - **Safe reading:** path traversal, absolute paths, drive letters, backslashes, case-insensitive duplicates, multiple roots, symbolic links and Windows junctions are rejected. Limits: 200 files, 1 MiB per file, 5 MiB total, depth 8. Hidden dot-files are ignored and reported.
-- **Progressive loading:** bots see only installed skill names and descriptions. `loadSkill` returns the full instructions plus a list of reference files; `readSkillResource` reads one UTF-8 reference (≤64 KiB) after re-verifying its hash.
+- **Progressive loading:** a bot sees only the names and descriptions of skills assigned to it ([per-bot assignment](#per-bot-skill-assignment-s07)). `loadSkill` returns the full instructions plus a list of reference files; `readSkillResource` reads one UTF-8 reference (≤64 KiB) after re-verifying its hash.
 - **Export** writes a standard directory (`serializeSkill`) that imports back to the same manifest.
 
 An example skill lives in [`examples/skills/document-brief`](../../examples/skills/document-brief).
@@ -37,6 +37,22 @@ Install flow: **inspect → review dependencies and permissions → verify integ
 - Connectors install only with a matching reviewed runtime implementation (`verifyManifest`) and never from `local-unverified` releases.
 - Enable/disable, update, rollback (to the previous recorded release, only if it needs no new consent and its exact dependencies are installed) and uninstall (blocked while another installed package depends on it). Receipts keep up to 10 history entries. Uninstalling a connector also revokes its connection.
 - Releases with `minRuntime` newer than the runtime are listed as incompatible and cannot be planned.
+
+## Per-bot skill assignment (S07)
+
+Tracking: [issue #13](https://github.com/solnikhil/Socius/issues/13). Install → assign → activate → authorize → execute are separate steps, and none grants the next.
+
+- **Assignment contract** (`SkillAssignment` in `packages/contracts/src/app.ts`, record kind `skill-assignment`): bot ID, skill package ID, the exact pinned release (version + digest), `enabled`, activation (`on-demand` or `always-load`), `revision` and timestamps. It is kept apart from installation receipts, grants and manifests. Installing a skill assigns it to no bot.
+- **Status** is computed from the live install state: `ready`; `off` (turned off for this bot only); `needs-review` (the installed release differs from the pin: update, rollback or reinstall at another version); `unavailable` (not installed, turned off for the whole workspace, or failed verification). Only `ready` assignments are usable. A mismatched release is never substituted silently: the user accepts the installed release per bot with `skills/assignments/review`, naming its exact version and digest.
+- **One resolver** (`SkillAssignments` in `packages/runtime/src/skills.ts`). `packageTools` builds each model call from `skills.session(botId)`: direct chats, group coordinators and group members all go through it, so a coordinator never supplies a member's skills or the reverse. `session` freezes the usable releases for that call; `loadSkill` and `readSkillResource` recheck the live assignment every time (after any asynchronous model step), refuse a release that changed since the snapshot, re-verify file hashes, and return the same "not assigned to this bot" error for every failure, so guessed IDs reveal nothing. Reads stay limited to declared `reference` files; scripts remain inert.
+- **Activation.** On-demand skills are listed by name and description and loaded with `loadSkill`. Always-load procedures are preloaded in a deterministic order (oldest assignment first, then ID) inside a `<procedure>` block that cannot override the user, the bot's role, permissions or other bots. Their total is capped at `ALWAYS_LOAD_BUDGET` (24 000 characters) per bot; an assignment that would exceed it is refused rather than truncated. Text-only models get only the preloaded procedures plus an explicit note that on-demand skills are unavailable; they get no skill tools.
+- **Evidence.** Each task records `skills`: per bot, the offered skill releases (version, digest, activation) and whether their instructions were actually loaded. This is evidence of loading, not proof that the model followed the procedure. Instructions already sent to a provider cannot be recalled.
+- **Lifecycle.** Disabling a package blocks every bot; turning an assignment off affects one bot. Install and rollback report how many assignments now need review (`skillReviewsNeeded`, activity `skill.review-needed`). Uninstalling an assigned skill returns 409 naming the affected bots unless `detach: true` confirms removing those assignments; reinstalling never restores them. Deleting a bot deletes its assignments. Tampered release records or files fail closed.
+- **Migration 5** assigns nothing. In a workspace that already had installations, every existing bot gets a `skill-review` record (reason `migration`) suggesting the installed skills it used to see. Chats, memory and grants are untouched. Dismissing a review is permanent.
+- **Templates** that declare skill dependencies still install those packages, but the new bot only gets a `template` review with suggestions. A model cannot assign skills: there is no model tool for it.
+- **UI:** bot details → **Skills** lists assigned skills with status, an on/off switch, on-demand/always-load (with an approximate token cost), **Use x.y.z** for review and **Remove**, plus installed skills to assign.
+
+Hooks for future work: approved delegation and routines must build model context through `modelContext`/`packageTools` for the acting bot, never the parent's. Not implemented yet: dependency closure enforcement (missing skill dependencies are only reported as `missingDependencies`), Socius suggesting specialists from skill summaries, install-time "which bots?" prompts, template export of reviewed dependency requests, per-task skill evidence in the UI, and live-model quality comparisons.
 
 ## MCP Registry adapter (`packages/marketplace/src/registry.ts`)
 
@@ -94,12 +110,23 @@ import type { ActionRequest } from "@socius/contracts";
 // }
 const result = await runtime.broker.request(request);
 // { status: "completed", summary, data } for reads
-// { status: "awaiting-approval", actionId, summary } for writes
+// { status: "awaiting-approval", actionId, summary } for writes; the model
+// tool then waits for the user's decision (see "Waiting for the user")
 ```
 
 Callers cannot supply code, tool names outside the reviewed list or permissions. Every request and every execution rechecks: the bot exists; the connector is installed, enabled and matches the requested release digest and reviewed code; the capability was consented at install; the bot holds the grant; the connection is ready; the arguments parse. A coordinator or parent task confers nothing; checks use the acting bot's own grants. Roster size does not matter.
 
 **Writes** create a durable `ActionRecord` whose digest binds actor, release, action, connection ID, normalized arguments and expiry (24 h). Approval (`POST /api/actions/resolve`) requires the matching digest, recomputes it to detect tampering, rejects expired records and re-authorizes. Failed checks mark the record `blocked`. Approved records execute once.
+
+**Waiting for the user.** A bot's write request does not return "awaiting approval" to the model. The runtime streams an `approval` event, which shows a review card in that chat, and the model call waits on `broker.waitForDecision` for up to 15 minutes. That time does not count against the task deadline. The bot then receives the real outcome and replies from it:
+
+- `done`, with the result summary and link.
+- `declined`.
+- `declined-with-feedback`: the user typed an answer instead, which declines the exact change and is passed back as `userFeedback`. `POST /api/actions/resolve` accepts `feedback` only with `approve: false`.
+- `not-done` or `outcome-unclear`, with the error.
+- `still-waiting`: the wait ended, or the task was stopped or shut down. The card stays reviewable until it expires.
+
+The card shows the change as a question with the app's logo, readable fields (raw IDs hidden, long text as prose), the options A "Yes, go ahead" / B "No, don't" (also keys A/B), and a "Type your own answer" box. Bots describe connectors as connected apps, never as tools or internal names.
 
 **Idempotency and reconciliation.** Notion has no idempotency keys, so Socius does not promise exactly-once effects.
 
@@ -122,7 +149,7 @@ Limits: 20 reads and 5 pending proposals per task; the model loop is still bound
 
 ## Migrations
 
-`migrations` version 2:
+`migrations` version 5 adds per-bot skill review markers (see above). Version 2:
 
 - creates `connector_secrets(connection_id, secret, updated_at)`;
 - upgrades installation receipts with `enabled` (true), `source` (bundled), `trust` (curated), `consentedCapabilities` ([]) and `history` ([]).

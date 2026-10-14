@@ -16,6 +16,7 @@ import {
   FileText,
   Pencil,
   Plus,
+  Puzzle,
   Settings,
   Square,
   Trash2,
@@ -50,6 +51,7 @@ import {
 import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
+import { BotSkills } from "./BotSkills.js";
 import { BotModelMenu } from "../components/ModelPicker.js";
 import { resolvedModel, SETUP_CODES, type OpenSettings } from "../models.js";
 
@@ -108,6 +110,7 @@ export function Chat({
     [consent, setConsent] = useState(false),
     [details, setDetails] = useState(false),
     [exporting, setExporting] = useState(false),
+    [skillsOpen, setSkillsOpen] = useState(false),
     [copied, setCopied] = useState("");
   const scroller = useRef<HTMLDivElement>(null),
     thread = useRef<HTMLDivElement>(null),
@@ -236,6 +239,8 @@ export function Chat({
           const event = JSON.parse(buffer.slice(0, newline));
           buffer = buffer.slice(newline + 1);
           if (event.type === "started") setTaskId(event.taskId);
+          // The bot is waiting on a review card; show it right away.
+          if (event.type === "approval") void onRefresh();
           if (event.type === "text")
             setStream({ botId: event.botId ?? bot.id, content: event.content });
           // A member finished its reply in a group chat.
@@ -360,6 +365,13 @@ export function Chat({
         (needsAttention(a) || a.state === "succeeded"),
     )
     .slice(-5);
+  // A running reply that is paused on the user's review.
+  const waiting = actions.find(
+    (a) =>
+      a.state === "pending" &&
+      a.actor.taskId === (taskId || running?.id) &&
+      Date.parse(a.expiresAt) > Date.now(),
+  );
   // In a group, each run of replies from one bot is labelled with its name.
   const speaker = (m: Pick<Message, "role" | "botId">) =>
     m.role === "user" ? "user" : m.botId;
@@ -514,6 +526,21 @@ export function Chat({
                   <BookOpen size={15} />
                   <span>Memory</span>
                   <em>{memory ? "On" : "Off"}</em>
+                </button>
+                <button
+                  onClick={() => {
+                    setDetails(false);
+                    setSkillsOpen(true);
+                  }}
+                >
+                  <Puzzle size={15} />
+                  <span>Skills</span>
+                  <em>
+                    {state.skillReviews.some((r) => r.botId === bot.id)
+                      ? "Review"
+                      : state.skillAssignments.filter((a) => a.botId === bot.id)
+                          .length}
+                  </em>
                 </button>
                 <button
                   onClick={() => {
@@ -674,8 +701,8 @@ export function Chat({
                   <Markdown text={closeOpenMarks(streamed)} />
                 ) : (
                   <span className="thinking">
-                    {(stream && author(stream.botId)?.name) ?? bot.name} is
-                    working
+                    {(stream && author(stream.botId)?.name) ?? bot.name} is{" "}
+                    {waiting ? "waiting for you" : "working"}
                   </span>
                 )}
               </div>
@@ -805,6 +832,14 @@ export function Chat({
         </form>
       </div>
       {exporting && <ExportBot bot={bot} onClose={() => setExporting(false)} />}
+      {skillsOpen && (
+        <BotSkills
+          bot={bot}
+          state={state}
+          onRefresh={onRefresh}
+          onClose={() => setSkillsOpen(false)}
+        />
+      )}
       {consent && (
         <Modal title="Memory permissions" onClose={() => setConsent(false)}>
           <p className="muted">

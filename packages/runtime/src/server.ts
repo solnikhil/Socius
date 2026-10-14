@@ -16,13 +16,17 @@ import {
 import { reviewedConnectors } from "@socius/connectors";
 import {
   BotAppearanceSchema,
+  AssignSkill,
   Capability,
   Digest,
+  ReviewSkillAssignment,
+  UnassignSkill,
+  UpdateSkillAssignment,
   type BotInstance,
   type BotManifest,
-  type SkillManifest,
 } from "@socius/contracts";
 import type {
+  ActionRecord,
   Approval,
   BotDraft,
   BotLayout,
@@ -32,6 +36,7 @@ import type {
   Message,
   RegistryPage,
   Task,
+  TaskSkill,
   Reaction,
 } from "@socius/contracts/app";
 import { REACTIONS } from "@socius/contracts/app";
@@ -59,6 +64,13 @@ import { classify } from "./providers/errors.js";
 import { PackageError, PackageService } from "./packages.js";
 import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
+import { SkillAssignments } from "./skills.js";
+import {
+  Dreamer,
+  DreamingInput,
+  type DreamRunner,
+  type DreamerOptions,
+} from "./dreaming.js";
 
 export type { SecretBox };
 export interface RuntimeOptions {
@@ -67,6 +79,9 @@ export interface RuntimeOptions {
   port?: number;
   secretBox?: SecretBox;
   runner?: ModelRunner;
+  /** Test-only background synthesis boundary; production uses structured AI SDK output. */
+  dreamRunner?: DreamRunner;
+  dreamingOptions?: DreamerOptions;
   /** Opens connector sign-in pages in the system browser (desktop). */
   openExternal?: (url: string) => void;
   /** Test-only: fixture endpoints and fetch for connectors and the registry. */
@@ -162,21 +177,43 @@ function coordinatorHistory(
 export async function startRuntime(options: RuntimeOptions) {
   const store = new Store(options.dataDir);
   const packages = new PackageService(store);
+  const skills = new SkillAssignments(store, packages);
+  // Running task id → skill activation evidence, saved with the task when it ends.
+  const taskSkills = new Map<string, TaskSkill[]>();
   let pairingToken = randomBytes(32).toString("hex");
   const session = randomBytes(32).toString("hex");
   // Running task id → its controller and the provider connection it uses.
   const active = new Map<
     string,
-    { controller: AbortController; connections: Set<string> }
+    {
+      controller: AbortController;
+      connections: Set<string>;
+      /** Streams an event to the chat that started the task. */
+      send?: (event: unknown) => void;
+      /** Pauses the task deadline while the user decides; returns a release. */
+      hold?: () => () => void;
+    }
   >();
+  let dreamer: Dreamer | undefined;
+  /** How long a bot waits for the user to review a change before moving on. */
+  const APPROVAL_WAIT_MS = 15 * 60_000;
   const providers = new ProviderService(
     store,
     options.secretBox,
     options.fetch,
     (connectionId) =>
-      [...active.values()].some((t) => t.connections.has(connectionId)),
+      [...active.values()].some((t) => t.connections.has(connectionId)) ||
+      !!dreamer?.usesConnection(connectionId),
     options.env ?? process.env,
   );
+  dreamer = new Dreamer(
+    store,
+    providers,
+    () => active.size > 0,
+    options.dreamRunner,
+    options.dreamingOptions,
+  );
+  const dreaming = dreamer;
   const ModelRefSchema = z.strictObject({
     connectionId: uuid,
     modelId: ModelId,
@@ -213,11 +250,29 @@ export async function startRuntime(options: RuntimeOptions) {
     },
     ...options.registry,
   });
-  function skillRelease(id: string) {
-    return (
-      packages.active("skill").find((r) => r.manifest.id === id) ??
-      fail(404, "That skill is not installed and enabled")
+  function recordSkill(taskId: string, evidence: TaskSkill) {
+    const list = taskSkills.get(taskId) ?? [];
+    const same = list.find(
+      (e) =>
+        e.botId === evidence.botId &&
+        e.skillId === evidence.skillId &&
+        e.digest === evidence.digest,
     );
+    if (same) same.loaded ||= evidence.loaded;
+    else list.push(evidence);
+    taskSkills.set(taskId, list);
+  }
+  /** Logs when a package change leaves bot skill assignments needing review. */
+  function noteReviews(ids: string[]) {
+    const pending = ids
+      .flatMap((id) => skills.affected(id))
+      .filter((a) => skills.view(a).status === "needs-review");
+    if (pending.length)
+      store.event(
+        "skill.review-needed",
+        `${pending.length} bot skill assignment${pending.length === 1 ? "" : "s"} need review before using the new release.`,
+      );
+    return pending.length;
   }
   // Model tools for reviewed connector actions. Every call goes through the broker,
   // which rechecks installation, consent, grants and connection state.
@@ -235,6 +290,9 @@ export async function startRuntime(options: RuntimeOptions) {
         tools.push({
           name: action.toolName,
           description: action.description,
+          app:
+            packages.installedRelease(connector.id)?.manifest.name ??
+            connector.id,
           inputSchema: action.params,
           execute: async (args) => {
             const current = store.get<Installation>(
@@ -252,46 +310,86 @@ export async function startRuntime(options: RuntimeOptions) {
               action: action.id,
               arguments: args,
             });
-            return result.status === "completed"
-              ? { summary: result.summary, untrustedData: result.data }
-              : {
-                  status: "awaiting-approval",
-                  summary: result.summary,
-                  note: "The user must approve this exact change in Socius. It has not happened yet.",
-                };
+            if (result.status === "completed")
+              return { summary: result.summary, untrustedData: result.data };
+            // Wait for the user's review, then report what actually happened.
+            const task = active.get(actor.taskId);
+            task?.send?.({ type: "approval", actionId: result.actionId });
+            const release = task?.hold?.();
+            let decided: ActionRecord | null;
+            try {
+              decided = await broker.waitForDecision(
+                result.actionId,
+                task?.controller.signal ?? AbortSignal.abort(),
+                APPROVAL_WAIT_MS,
+              );
+            } finally {
+              release?.();
+            }
+            return decisionResult(result.summary, decided);
           },
         });
       }
     }
     return tools;
   }
-  /** Skills (loaded on demand) and connector tools for one bot's model call. */
+  /** What a bot learns once the user has reviewed its proposed change. */
+  function decisionResult(summary: string, a: ActionRecord | null) {
+    if (!a || a.state === "pending")
+      return {
+        status: "still-waiting",
+        summary,
+        note: "The user has not reviewed this change yet. It has not happened. Tell them it is waiting for their approval in this chat.",
+      };
+    if (a.state === "succeeded")
+      return {
+        status: "done",
+        summary: a.result?.summary ?? summary,
+        ...(a.result?.url ? { url: a.result.url } : {}),
+      };
+    if (a.state === "denied")
+      return a.feedback
+        ? {
+            status: "declined-with-feedback",
+            summary,
+            userFeedback: a.feedback,
+            note: "The user did not approve this change and replied instead. Follow their reply; if they want a revised change, propose it again.",
+          }
+        : {
+            status: "declined",
+            summary,
+            note: "The user declined. Nothing happened. Do not propose it again unless they ask.",
+          };
+    return {
+      status: a.state === "unknown" ? "outcome-unclear" : "not-done",
+      summary,
+      error: a.error,
+      note:
+        a.state === "unknown"
+          ? "It is unclear whether the change happened. Ask the user to check the app before trying again."
+          : "The change did not happen. Explain briefly and offer to adjust it.",
+    };
+  }
+  /**
+   * The bot's own assigned skills and connector tools for one model call. Skills
+   * come only from this bot's assignments through the shared resolver, whichever
+   * path (direct chat, group coordinator or member) builds the call.
+   */
+
   function packageTools(
     b: BotInstance,
     actor: { taskId: string; boardId?: string; runId?: string },
   ): Pick<
     ModelRequest,
-    "skills" | "loadSkill" | "readSkillResource" | "connectorTools"
+    | "skills"
+    | "preloadedSkills"
+    | "omittedSkills"
+    | "loadSkill"
+    | "readSkillResource"
+    | "connectorTools"
   > {
     return {
-      skills: packages.active("skill").map((r) => ({
-        id: r.manifest.id,
-        name: r.manifest.name,
-        description: r.manifest.description,
-      })),
-      // Progressive disclosure: full instructions and references load on demand,
-      // and disabling a skill takes effect on the next call.
-      loadSkill: (id) => {
-        const m = skillRelease(id).manifest as SkillManifest;
-        return {
-          instructions: m.instructions,
-          resources: (m.resources ?? [])
-            .filter((r) => r.kind === "reference")
-            .map((r) => r.path),
-        };
-      },
-      readSkillResource: (id, resourcePath) =>
-        packages.resourceText(skillRelease(id), resourcePath),
+      ...skills.session(b.id, (e) => recordSkill(actor.taskId, e)),
       connectorTools: connectorTools(b, actor),
     };
   }
@@ -436,8 +534,10 @@ export async function startRuntime(options: RuntimeOptions) {
     b: BotInstance,
     taskId: string,
     signal: AbortSignal,
+    query: string,
   ): Promise<Omit<ModelRequest, "messages">> {
     const selected = await providers.forChat(b.id);
+    b = bot(b.id);
     active.get(taskId)?.connections.add(selected.ref.connectionId);
     const feedback = reactionFeedback(b.id);
     return {
@@ -445,6 +545,10 @@ export async function startRuntime(options: RuntimeOptions) {
       modelRef: selected.ref,
       tools: selected.entry.tools !== false,
       bot: b,
+      dreamingEnabled: dreaming.settings().enabled,
+      recalledMemory: b.grantedCapabilities.includes("memory.read")
+        ? store.searchMemory(b.id, query)
+        : [],
       ...(feedback ? { feedback } : {}),
       ...packageTools(b, { taskId }),
       signal,
@@ -454,6 +558,11 @@ export async function startRuntime(options: RuntimeOptions) {
         return store.searchMemory(b.id, q);
       },
       proposeMemory: (c) => {
+        if (dreaming.settings().enabled)
+          fail(
+            409,
+            "Dreaming consolidates memories in the background. Use the memory editor for immediate changes.",
+          );
         if (!bot(b.id).grantedCapabilities.includes("memory.write"))
           fail(403, "Memory access revoked");
         return proposal(b.id, taskId, "memory", c);
@@ -482,16 +591,13 @@ export async function startRuntime(options: RuntimeOptions) {
       send: (event: unknown) => void,
     ) => Promise<Message[]>,
   ) {
+    dreaming.foregroundStarted();
     store.transaction(() => {
       store.put("task", task.id, task);
       store.put("message", user.id, user);
       store.event("task.started", `Task started for ${label}.`);
     });
     const controller = new AbortController();
-    active.set(task.id, {
-      controller,
-      connections: new Set(task.model ? [task.model.connectionId] : []),
-    });
     res.writeHead(200, {
       "Content-Type": "application/x-ndjson",
       "Cache-Control": "no-store",
@@ -501,16 +607,44 @@ export async function startRuntime(options: RuntimeOptions) {
     };
     send({ type: "started", taskId: task.id });
     let timedOut = false;
-    const timeout = setTimeout(() => {
+    const expire = () => {
       timedOut = true;
       controller.abort();
-    }, timeoutMs);
+    };
+    let deadline = Date.now() + timeoutMs,
+      timeout = setTimeout(expire, timeoutMs),
+      holds = 0,
+      remaining = timeoutMs;
+    // Time spent waiting on the user's review never counts against the task.
+    const hold = () => {
+      if (holds++ === 0) {
+        clearTimeout(timeout);
+        remaining = Math.max(deadline - Date.now(), 60_000);
+      }
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        if (--holds === 0) {
+          deadline = Date.now() + remaining;
+          timeout = setTimeout(expire, remaining);
+        }
+      };
+    };
+    active.set(task.id, {
+      controller,
+      connections: new Set(task.model ? [task.model.connectionId] : []),
+      send,
+      hold,
+    });
     // Browser disconnect does not stop work; it remains visible after reload.
     try {
       const messages = await work(controller.signal, send);
       if (controller.signal.aborted)
         throw new Error("Task cancelled or timed out");
       task.state = "completed";
+      const used = taskSkills.get(task.id);
+      if (used) task.skills = used;
       store.transaction(() => {
         for (const m of messages) store.put("message", m.id, m);
         store.put("task", task.id, task);
@@ -523,6 +657,8 @@ export async function startRuntime(options: RuntimeOptions) {
         timedOut,
       });
       task.state = failure.code === "cancelled" ? "cancelled" : "failed";
+      const used = taskSkills.get(task.id);
+      if (used) task.skills = used;
       task.error = failure.message;
       task.errorCode = failure.code;
       store.put("task", task.id, task);
@@ -531,6 +667,9 @@ export async function startRuntime(options: RuntimeOptions) {
     } finally {
       clearTimeout(timeout);
       active.delete(task.id);
+      taskSkills.delete(task.id);
+      dreaming.foregroundFinished();
+
       broker.forgetTask(task.id);
       res.end();
     }
@@ -612,7 +751,7 @@ export async function startRuntime(options: RuntimeOptions) {
         try {
           reply.content = await run(
             {
-              ...(await modelContext(m, task.id, signal)),
+              ...(await modelContext(m, task.id, signal, request)),
               briefing: [
                 DEFAULT_FRAMING,
                 `You are ${m.name}, a member of the group chat "${g.name}" with ${[lead, ...roster.filter((b) => b.id !== m.id)].map((b) => b.name).join(", ")} and the user. ${lead.name} coordinates the group and is asking you directly.`,
@@ -651,7 +790,7 @@ export async function startRuntime(options: RuntimeOptions) {
       };
       answer.content = await run(
         {
-          ...(await modelContext(lead, task.id, signal)),
+          ...(await modelContext(lead, task.id, signal, user.content)),
           ...(budget > 0 ? { askMember } : {}),
           briefing: [
             DEFAULT_FRAMING,
@@ -765,6 +904,19 @@ export async function startRuntime(options: RuntimeOptions) {
     instance.instructions = parsed.instructions;
     if (parsed.appearance) instance.appearance = parsed.appearance;
     store.put("bot", instance.id, instance);
+    // Template dependencies install packages; they are suggestions for this
+    // private bot's skills, never assignments.
+    if (template)
+      skills.suggest(
+        instance.id,
+        template.dependencies
+          .filter(
+            (d) =>
+              packages.catalog.release(d.id, d.version)?.manifest.kind ===
+              "skill",
+          )
+          .map((d) => d.id),
+      );
     store.event("bot.created", `Created ${instance.name}.`);
     return instance;
   }
@@ -865,6 +1017,8 @@ export async function startRuntime(options: RuntimeOptions) {
             catalog: packages.catalog.list(),
             releases: packages.releases(),
             installations: store.all("installation"),
+            skillAssignments: skills.views(),
+            skillReviews: skills.reviews(),
             connectorConnections: connections.list(),
             actions: store.all("action").slice(-100),
             activity: store.all("activity").slice(-100).reverse(),
@@ -875,7 +1029,67 @@ export async function startRuntime(options: RuntimeOptions) {
             selection: store.providers.selection(),
             environment: providers.environment(),
             secretStorage: !!options.secretBox,
+            dreaming: dreaming.status(),
           });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/dreaming") {
+          json(res, 200, dreaming.status());
+          return;
+        }
+        if (req.method === "GET" && path === "/api/dreaming/sources") {
+          const b = bot(uuid.parse(url.searchParams.get("botId")));
+          const runId = url.searchParams.get("runId");
+          const memoryId = url.searchParams.get("memoryId");
+          if (!!runId === !!memoryId)
+            fail(400, "Choose one dream or memory source");
+          const run = runId
+            ? store.get<import("@socius/contracts/app").DreamRun>(
+                "dream-run",
+                uuid.parse(runId),
+              )
+            : undefined;
+          const memory = memoryId
+            ? store.memory(b.id).find((m) => m.id === uuid.parse(memoryId))
+            : undefined;
+          if ((runId && (!run || run.botId !== b.id)) || (memoryId && !memory))
+            fail(404, "Dreaming source not found");
+          const ids =
+            run?.sourceMessageIds ?? memory?.dream?.sourceMessageIds ?? [];
+          json(
+            res,
+            200,
+            ids.map((id) => {
+              const m = store.get<Message>("message", id);
+              const available =
+                m?.botId === b.id && !m.groupId && m.role === "user";
+              return {
+                id,
+                content: available ? clip(m.content, 4000) : null,
+                createdAt: available ? m.createdAt : null,
+              };
+            }),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/dreaming/settings") {
+          json(
+            res,
+            200,
+            dreaming.configure(DreamingInput.parse(await body(req))),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/dreaming/run") {
+          const input = z.strictObject({ botId: uuid }).parse(await body(req));
+          bot(input.botId);
+          json(res, 202, dreaming.runNow(input.botId));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/dreaming/cancel") {
+          const input = z.strictObject({ id: uuid }).parse(await body(req));
+          dreaming.cancel(input.id);
+          json(res, 200, { ok: true });
           return;
         }
         if (req.method === "POST" && path === "/api/bots") {
@@ -959,35 +1173,9 @@ export async function startRuntime(options: RuntimeOptions) {
             )
           )
             fail(409, "Wait until the group chat using this bot finishes.");
-          const memories = store.memory(b.id);
-          store.transaction(() => {
-            for (const f of store.all<Category>("folder")) {
-              if (!f.botIds.includes(b.id)) continue;
-              store.put("folder", f.id, {
-                ...f,
-                botIds: f.botIds.filter((id) => id !== b.id),
-              });
-            }
-            for (const g of groups) {
-              if (!g.memberIds.includes(b.id)) continue;
-              store.put("group", g.id, {
-                ...g,
-                memberIds: g.memberIds.filter((id) => id !== b.id),
-              });
-            }
-            for (const m of store.all<Message>("message")) {
-              if (m.botId === b.id && !m.groupId) store.delete("message", m.id);
-            }
-            for (const a of store.all<Approval>("approval")) {
-              if (a.botId === b.id && a.state === "pending")
-                store.delete("approval", a.id);
-            }
-            for (const mem of memories) store.deleteMemory(mem.id);
-            store.providers.select(`bot:${b.id}`, null);
-            store.delete("bot-layout", b.id);
-            store.delete("bot", b.id);
-            store.event("bot.deleted", `Deleted ${b.name}.`);
-          });
+          store.deleteBot(b.id);
+          dreaming.permissionsChanged();
+
           json(res, 200, { ok: true });
           return;
         }
@@ -1032,6 +1220,10 @@ export async function startRuntime(options: RuntimeOptions) {
               input.content,
               "User editor",
               input.id,
+              input.id
+                ? store.memory(input.botId).find((m) => m.id === input.id)
+                    ?.dream
+                : undefined,
             ),
           );
           return;
@@ -1093,6 +1285,7 @@ export async function startRuntime(options: RuntimeOptions) {
             );
           }
           store.put("bot", b.id, b);
+          dreaming.permissionsChanged();
           json(res, 200, b);
           return;
         }
@@ -1115,20 +1308,24 @@ export async function startRuntime(options: RuntimeOptions) {
               consent: z.array(Capability).max(20).default([]),
             })
             .parse(await body(req));
-          json(
-            res,
-            200,
-            packages.install(input, (template: BotManifest) =>
-              createBot(
-                {
-                  name: template.name,
-                  role: template.role,
-                  instructions: template.instructions,
-                },
-                template,
-              ),
+          const planned = packages
+            .preview(input.id, input.version)
+            .packages.map((p) => p.manifest.id);
+          const result = packages.install(input, (template: BotManifest) =>
+            createBot(
+              {
+                name: template.name,
+                role: template.role,
+                instructions: template.instructions,
+              },
+              template,
             ),
           );
+          json(res, 200, {
+            ...result,
+            // Bots pinned to a different release keep it until the user reviews.
+            skillReviewsNeeded: noteReviews(planned),
+          });
           return;
         }
         if (req.method === "POST" && path === "/api/installations/enable") {
@@ -1140,9 +1337,23 @@ export async function startRuntime(options: RuntimeOptions) {
         }
         if (req.method === "POST" && path === "/api/installations/uninstall") {
           const input = z
-            .strictObject({ id: z.string().max(130) })
+            .strictObject({
+              id: z.string().max(130),
+              // Uninstalling an assigned skill needs explicit confirmation to
+              // detach it from those bots. Reinstalling never restores them.
+              detach: z.boolean().default(false),
+            })
             .parse(await body(req));
-          packages.uninstall(input.id);
+          const assigned = skills.affected(input.id);
+          if (assigned.length && !input.detach)
+            fail(
+              409,
+              `Assigned to ${assigned.map((a) => store.get<BotInstance>("bot", a.botId)?.name ?? "a removed bot").join(", ")}. Confirm to remove it from those bots and uninstall.`,
+            );
+          store.transaction(() => {
+            packages.uninstall(input.id);
+            skills.detach(input.id);
+          });
           // Removing a connector also revokes its stored account credentials.
           for (const c of connections.list())
             if (c.connectorId === input.id && c.state !== "disconnected")
@@ -1154,7 +1365,54 @@ export async function startRuntime(options: RuntimeOptions) {
           const input = z
             .strictObject({ id: z.string().max(130) })
             .parse(await body(req));
-          json(res, 200, packages.rollback(input.id));
+          const rolled = packages.rollback(input.id);
+          noteReviews([input.id]);
+          json(res, 200, rolled);
+          return;
+        }
+        if (req.method === "GET" && path === "/api/skills/assignments") {
+          json(
+            res,
+            200,
+            skills.views(bot(url.searchParams.get("botId") ?? "").id),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/skills/assign") {
+          const input = AssignSkill.parse(await body(req));
+          bot(input.botId);
+          const result = skills.assign(input);
+          json(res, result.created ? 201 : 200, result.assignment);
+          return;
+        }
+        if (
+          req.method === "POST" &&
+          path === "/api/skills/assignments/update"
+        ) {
+          const input = UpdateSkillAssignment.parse(await body(req));
+          bot(input.botId);
+          json(res, 200, skills.update(input));
+          return;
+        }
+        if (
+          req.method === "POST" &&
+          path === "/api/skills/assignments/review"
+        ) {
+          const input = ReviewSkillAssignment.parse(await body(req));
+          bot(input.botId);
+          json(res, 200, skills.review(input));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/skills/unassign") {
+          const input = UnassignSkill.parse(await body(req));
+          bot(input.botId);
+          json(res, 200, skills.unassign(input));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/skills/reviews/dismiss") {
+          const input = z.strictObject({ botId: uuid }).parse(await body(req));
+          bot(input.botId);
+          json(res, 200, skills.dismissReview(input.botId));
           return;
         }
         if (req.method === "POST" && path === "/api/skills/import") {
@@ -1304,6 +1562,10 @@ export async function startRuntime(options: RuntimeOptions) {
               id: uuid,
               digest: z.string().length(64),
               approve: z.boolean(),
+              feedback: z.string().trim().min(1).max(2000).optional(),
+            })
+            .refine((v) => !(v.approve && v.feedback), {
+              message: "Feedback replaces approval",
             })
             .parse(await body(req));
           json(res, 200, await broker.resolve(input));
@@ -1527,7 +1789,7 @@ export async function startRuntime(options: RuntimeOptions) {
               };
               assistant.content = await executeModel(
                 {
-                  ...(await modelContext(b, task.id, signal)),
+                  ...(await modelContext(b, task.id, signal, user.content)),
                   ...(b.template.id === "socius/main"
                     ? { briefing: workspaceBriefing() }
                     : {}),
@@ -1787,6 +2049,7 @@ export async function startRuntime(options: RuntimeOptions) {
   if (!address || typeof address === "string")
     throw new Error("Runtime failed to bind");
   origin = `http://127.0.0.1:${address.port}`;
+  dreaming.start();
   return {
     origin,
     pairingURL: `${origin}/pair?token=${pairingToken}`,
@@ -1794,7 +2057,9 @@ export async function startRuntime(options: RuntimeOptions) {
     packages,
     connections,
     broker,
+    dreaming,
     close: async () => {
+      await dreaming.close();
       for (const t of active.values()) t.controller.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
       await new Promise<void>((resolve, reject) =>
