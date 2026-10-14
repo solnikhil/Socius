@@ -125,3 +125,39 @@ test("exact remote origin is opt-in, separately paired, CSRF protected and canno
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Electron port fallback is remembered and a changed target is explicitly marked", async () => {
+  const { createServer } = await import("node:http");
+  const { startRuntime } = await import("../src/server.js");
+  const dir = await mkdtemp(join(tmpdir(), "socius-port-"));
+  const blocker = createServer();
+  await new Promise<void>((resolve) => blocker.listen(0, "127.0.0.1", resolve));
+  const port = (blocker.address() as import("node:net").AddressInfo).port;
+  let r = await startRuntime({ dataDir: dir, preferredPort: port });
+  try {
+    assert.equal(Number(new URL(r.origin).port), port + 1);
+    r.store.put("remote-settings", "owner", {
+      enabled: true,
+      origin: remote,
+      configuredPort: port + 1,
+    });
+    await r.close();
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    await new Promise<void>((resolve) =>
+      blocker.listen(port + 1, "127.0.0.1", resolve),
+    );
+    r = await startRuntime({ dataDir: dir, preferredPort: port });
+    assert.equal(Number(new URL(r.origin).port), port + 2);
+    const p = await fetch(r.pairingURL, { redirect: "manual" });
+    const Cookie = p.headers.get("set-cookie")!.split(";")[0]!;
+    const s = await (
+      await fetch(r.origin + "/api/remote/status", { headers: { Cookie } })
+    ).json();
+    assert.equal(s.needsServeUpdate, true);
+    assert.match(s.serveCommand, new RegExp(`127.0.0.1:${port + 2}`));
+  } finally {
+    await r.close();
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    await rm(dir, { recursive: true, force: true });
+  }
+});

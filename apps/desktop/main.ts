@@ -151,6 +151,7 @@ app
     child.postMessage({
       type: "start",
       dataDir: join(app.getPath("userData"), "workspace"),
+      preferredPort: Number(process.env.SOCIUS_RUNTIME_PORT ?? 47613),
       webDir: join(__dirname, "web"),
       secretStorage,
     });

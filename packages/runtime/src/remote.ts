@@ -1,4 +1,6 @@
 import type { IncomingMessage } from "node:http";
+import { accessSync, constants } from "node:fs";
+import { delimiter, join } from "node:path";
 import { isIP } from "node:net";
 import { z } from "zod";
 import type { Store } from "./store.js";
@@ -104,4 +106,19 @@ export function remoteSafe(method: string, path: string) {
       "/api/devices/signout",
     ].includes(path)
   );
+}
+
+/** Presence only: no CLI is executed and no network configuration is changed. */
+export function hasTailscaleCLI() {
+  return (process.env.PATH ?? "").split(delimiter).some((dir) => {
+    try {
+      accessSync(
+        join(dir, process.platform === "win32" ? "tailscale.exe" : "tailscale"),
+        constants.X_OK,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }

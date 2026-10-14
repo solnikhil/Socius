@@ -287,3 +287,14 @@ export interface PhonePairing {
   code: string;
   expiresAt: string;
 }
+export interface RemoteAccessStatus {
+  enabled: boolean;
+  origin: string;
+  localOwner: boolean;
+  localTarget?: string;
+  port?: number;
+  cliAvailable?: boolean;
+  needsServeUpdate?: boolean;
+  serveCommand?: string;
+  teardownCommand?: string;
+}

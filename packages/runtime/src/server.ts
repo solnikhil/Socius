@@ -67,6 +67,7 @@ import {
   cookieToken,
   sessionCookie,
   remoteSafe,
+  hasTailscaleCLI,
 } from "./remote.js";
 
 export type { SecretBox };
@@ -74,6 +75,8 @@ export interface RuntimeOptions {
   dataDir: string;
   webDir?: string;
   port?: number;
+  /** Electron only: remembered preferred port, with bounded fallback. */
+  preferredPort?: number;
   secretBox?: SecretBox;
   runner?: ModelRunner;
   /** Opens connector sign-in pages in the system browser (desktop). */
@@ -910,6 +913,19 @@ export async function startRuntime(options: RuntimeOptions) {
           json(res, 200, {
             ...remoteSettings(store),
             localOwner: context.kind === "local",
+            ...(context.kind === "local"
+              ? {
+                  localTarget: origin,
+                  port: Number(new URL(origin).port),
+                  cliAvailable: hasTailscaleCLI(),
+                  needsServeUpdate:
+                    remoteSettings(store).enabled &&
+                    remoteSettings(store).configuredPort !==
+                      Number(new URL(origin).port),
+                  serveCommand: `tailscale serve --bg --https=443 ${origin}`,
+                  teardownCommand: "tailscale serve --https=443 off",
+                }
+              : {}),
           });
           return;
         }
@@ -1874,14 +1890,51 @@ export async function startRuntime(options: RuntimeOptions) {
       else errorResponse(res, error);
     }
   });
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(options.port ?? 0, "127.0.0.1", resolve);
-  });
+  const savedPort = store.get<{ port: number }>(
+    "runtime-port",
+    "electron",
+  )?.port;
+  const preferred = options.preferredPort;
+  if (
+    preferred !== undefined &&
+    (!Number.isInteger(preferred) || preferred < 1024 || preferred > 65515)
+  )
+    throw new Error("Invalid preferred runtime port");
+  const initialPort =
+    options.port ?? (preferred === undefined ? 0 : (savedPort ?? preferred));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const error = (e: Error) => {
+          server.off("listening", ready);
+          reject(e);
+        };
+        const ready = () => {
+          server.off("error", error);
+          resolve();
+        };
+        server.once("error", error);
+        server.once("listening", ready);
+        server.listen(initialPort + attempt, "127.0.0.1");
+      });
+      break;
+    } catch (e) {
+      if (
+        preferred === undefined ||
+        (e as NodeJS.ErrnoException).code !== "EADDRINUSE" ||
+        attempt >= 20
+      ) {
+        store.close();
+        throw e;
+      }
+    }
+  }
   const address = server.address();
   if (!address || typeof address === "string")
     throw new Error("Runtime failed to bind");
   origin = `http://127.0.0.1:${address.port}`;
+  if (preferred !== undefined)
+    store.put("runtime-port", "electron", { port: address.port });
   return {
     origin,
     pairingURL: `${origin}/pair?token=${pairingToken}`,
