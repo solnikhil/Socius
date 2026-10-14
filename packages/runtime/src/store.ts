@@ -72,8 +72,10 @@ export class Store {
     for (const task of this.all<Task>("task")) {
       if (task.state === "running") {
         task.state = "failed";
-        task.error =
-          "The runtime stopped during this task. Retry explicitly; no action was replayed.";
+        // Routine attempts are recovered by the routine engine from their checkpoints.
+        task.error = task.routineRunId
+          ? "The runtime stopped during this routine attempt. Completed steps are kept; the run resumes or stops by its recovery policy."
+          : "The runtime stopped during this task. Retry explicitly; no action was replayed.";
         this.put("task", task.id, task);
         this.event("task.interrupted", task.error);
       }

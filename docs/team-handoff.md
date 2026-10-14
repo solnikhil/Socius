@@ -30,7 +30,9 @@ Open:
 
 ## Scheduling, durability and proactivity — ready for assignment
 
-[Issue #10](https://github.com/solnikhil/Socius/issues/10) is a separate workstream for **A03 Scheduling**, **A04 Durable execution** and **A05 Proactivity**. **Owner: unassigned; the user will assign it.** Read the [complete work package](issues/scheduling-durability-proactivity.md) for requirements, PR sequence and acceptance tests. No implementation is claimed.
+[Issue #10](https://github.com/solnikhil/Socius/issues/10) is a separate workstream for **A03 Scheduling**, **A04 Durable execution** and **A05 Proactivity**. Read the [complete work package](issues/scheduling-durability-proactivity.md) for requirements, PR sequence and acceptance tests.
+
+Status: runtime services, migration 5, DTOs (`@socius/contracts/routines`), API and deterministic tests are implemented on `codex/scheduling-durability-proactivity` and described in [Routines](architecture/routines.md). Pending: review and integration, routine UI (user-owned; hooks listed in that document), browser acceptance and a consented live brief/watcher run. Two lines in `App.tsx`/`Chat.tsx` exclude routine attempts from the "bot is replying" state; no visual change.
 
 Deliver disabled-by-default private routines with persisted schedules, explicit timezone/missed-run policy and history; a documented checkpoint/resume model with controlled crash tests and the existing action/approval boundary; and opt-in briefs/watchers/finite goal follow-ups with quiet/no-change behavior. The same scheduler, queue, execution records and policy service must support these flows; avoid separate engines per feature.
 

@@ -80,6 +80,8 @@ export interface Task {
   errorCode?: ProviderErrorCode;
   /** The model that ran this task. */
   model?: ModelRef;
+  /** Set when this task is one attempt of a scheduled or manual routine run. */
+  routineRunId?: string;
   /** Skill releases offered to each bot in this task, and which were actually loaded. */
   skills?: TaskSkill[];
   createdAt: string;
@@ -166,7 +168,8 @@ export interface DreamRun {
   createdAt: string;
   finishedAt: string | null;
   sourceMessageIds: string[];
-  errorCode?: ProviderErrorCode | "invalid_output" | "state_changed" | "storage";
+  errorCode?:
+    ProviderErrorCode | "invalid_output" | "state_changed" | "storage";
   saved: number;
   skipped: number;
   error: string | null;

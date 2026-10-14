@@ -34,7 +34,9 @@ Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The 
 - Approvals (proposed bots and memory saves) are reviewed inline in the proposing bot's chat or group chat; a blue dot marks it in the sidebar.
 - Activity keeps a local record of chats, reviews, memory changes, and installs. Provider keys and exception bodies are omitted. The Activity page and Settings show that record. Analytics and remote crash reporting are off.
 
-Pending approvals survive restart and cannot be approved twice. An interrupted running task is marked failed and requires explicit retry; model execution is not checkpoint-resumed. Delegation happens in group chats; direct chats do not delegate.
+- **Routines (runtime and API only, pending review).** Private, disabled-by-default routines for one bot: tasks, morning briefs, watchers over a reviewed connector read, and finite goal follow-ups, on one-time, interval, daily or weekly schedules in an IANA time zone. Missed runs are skipped and recorded by default; runs are checkpointed, fenced to one runtime, resume after a restart without replaying effects, and every write is still an exact-action approval. Unchanged watchers stay quiet. Results go to an in-app inbox through `/api/routines`; there is no routine screen yet. See [Routines](docs/architecture/routines.md).
+
+Pending approvals survive restart and cannot be approved twice. An interrupted chat task is marked failed and requires explicit retry; chat model calls are not checkpoint-resumed (routine runs are, from completed steps). Delegation happens in group chats; direct chats do not delegate.
 
 ## Browser mode and packaging
 
@@ -51,7 +53,7 @@ The API binds loopback and uses one-time pairing, an HttpOnly same-site cookie, 
 
 ## Remaining workstreams
 
-Public publishing and signed releases, arbitrary executable skills, connectors beyond Notion, browser automation, scheduling, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
+Public publishing and signed releases, arbitrary executable skills, connectors beyond Notion, browser automation, a routine UI, closed-app or cloud scheduling, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
 
 Skill scripts are stored inert; there is no executable sandbox. Digest checks bind review to content, not publisher identity: imported releases are labelled unverified. Connecting accounts requires the desktop app's OS-backed encryption. The interface currently uses shared CSS tokens and native dialogs; Tailwind/shadcn adoption can occur inside the UI workstream without altering runtime contracts.
 

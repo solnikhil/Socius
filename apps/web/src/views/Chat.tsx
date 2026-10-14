@@ -135,6 +135,8 @@ export function Chat({
   const running = state.tasks.find(
     (t) =>
       t.state === "running" &&
+      // Routine attempts run in the background and never block this chat.
+      !t.routineRunId &&
       (group ? t.groupId === group.id : t.botId === bot.id && !t.groupId),
   );
   const memory = bot.grantedCapabilities.includes("memory.read");
