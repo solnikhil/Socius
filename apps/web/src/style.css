@@ -2921,3 +2921,62 @@ h4.with-mark {
     gap: 2px;
   }
 }
+/* Bot template picker in Create bot */
+dialog.create-bot {
+  width: min(620px, calc(100vw - 32px));
+}
+.templates {
+  margin: 4px 0 14px;
+}
+.template-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+.template-tabs button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.template-tabs button.selected {
+  background: var(--solid);
+  color: var(--solid-text);
+}
+.template-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.template-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: left;
+}
+.template-card strong {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.template-card small {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.template-card.selected {
+  border-color: var(--text);
+}

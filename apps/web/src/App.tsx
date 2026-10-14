@@ -12,7 +12,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import type { BotInstance } from "@socius/contracts";
+import type { BotInstance, BotManifest } from "@socius/contracts";
 import type { Category, GroupChat, Snapshot } from "@socius/contracts/app";
 import { api } from "./api.js";
 import {
@@ -629,6 +629,9 @@ export function App() {
       )}
       {creating && (
         <CreateBot
+          templates={state.catalog.filter(
+            (m): m is BotManifest => m.kind === "bot" && !!m.category,
+          )}
           onClose={() => setCreating(false)}
           onCreated={(b) => {
             void refresh();

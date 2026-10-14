@@ -116,6 +116,8 @@ export const BotManifest = z.strictObject({
   ...base,
   kind: z.literal("bot"),
   role: z.string().min(1).max(200),
+  /** Display grouping in the template gallery, such as "Sales". */
+  category: z.string().min(1).max(40).optional(),
   instructions: z.string().min(1).max(20_000),
   modelRequirement: z.enum(["text", "tools", "vision-and-tools"]),
 });

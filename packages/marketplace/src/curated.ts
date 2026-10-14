@@ -1,4 +1,5 @@
 import { mainBot, type ReleaseInput } from "./index.js";
+import { botTemplates } from "./templates.js";
 import type { Manifest } from "@socius/contracts";
 const summary: Manifest = {
   schemaVersion: 1,
@@ -34,6 +35,7 @@ export const curatedCatalog: Manifest[] = [
   mainBot,
   summary,
   research,
+  ...botTemplates,
   {
     ...mainBot,
     id: "socius/researcher",

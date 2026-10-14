@@ -79,6 +79,19 @@ test("configure a model, create bots manually and through Socius, install skills
     page.getByRole("region", { name: "Boards", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("option", { name: /Create new bot/ }).click();
+  // Templates fill the form; every field stays editable.
+  await page.getByRole("tab", { name: "Marketing" }).click();
+  await page.getByRole("button", { name: /Copy Humanizer/ }).click();
+  await expect(page.getByLabel("Role", { exact: true })).toHaveValue(
+    "Rewrites drafts to sound natural",
+  );
+  await expect(page.getByLabel("Instructions")).toHaveValue(
+    /sounds like a person wrote it/,
+  );
+  await page.screenshot({
+    path: "test-results/socius-bot-templates.png",
+    animations: "disabled",
+  });
   await page.getByLabel("Name", { exact: true }).fill("College assistant");
   await page.getByLabel("Role", { exact: true }).fill("College planning");
   await page

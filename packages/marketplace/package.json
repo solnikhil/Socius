@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./curated": "./src/curated.ts",
+    "./templates": "./src/templates.ts",
     "./registry": "./src/registry.ts",
     "./connector-directory": "./src/connector-directory.ts"
   },
