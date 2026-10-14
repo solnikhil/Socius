@@ -11,7 +11,7 @@ const runtime = await startRuntime({
   runner: async (request, onText) => {
     const content = String(request.messages.at(-1)?.content);
     if (content.toLowerCase().includes("create"))
-      request.proposeBot({
+      request.proposeBot?.({
         name: "Planner",
         role: "Planning specialist",
         instructions: "Make grounded plans from supplied context.",

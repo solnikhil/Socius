@@ -1,0 +1,14 @@
+{
+  "name": "@socius/teams",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./engine": "./src/engine.ts"
+  },
+  "dependencies": {
+    "@socius/contracts": "0.1.0",
+    "zod": "4.6.7"
+  }
+}

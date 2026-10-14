@@ -1,8 +1,4 @@
-import {
-  createServer,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
+import { createServer } from "node:http";
 import {
   createHash,
   randomBytes,
@@ -22,8 +18,12 @@ import type {
   Message,
   Task,
 } from "@socius/contracts/app";
+import { TeamEngine, TeamError } from "@socius/teams/engine";
 import { Store } from "./store.js";
+import { TeamStore } from "./team-store.js";
 import { runModel, type ModelRunner } from "./model.js";
+import { HttpError, body, fail, json } from "./http.js";
+import { createInvoke, handleBoards } from "./boards.js";
 
 export interface SecretBox {
   encrypt: (value: string) => Promise<string>;
@@ -46,41 +46,6 @@ const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const same = (a: string, b: string) =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-const fail = (status: number, message: string): never => {
-  throw new HttpError(status, message);
-};
-async function body(req: IncomingMessage): Promise<unknown> {
-  if (!req.headers["content-type"]?.startsWith("application/json"))
-    fail(415, "Expected JSON");
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > 1024 * 1024) fail(413, "Request too large");
-    chunks.push(chunk);
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString());
-  } catch {
-    return fail(400, "Invalid JSON");
-  }
-}
-function json(res: ServerResponse, status: number, value: unknown) {
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Cache-Control": "no-store",
-  });
-  res.end(JSON.stringify(value));
-}
-
 export async function startRuntime(options: RuntimeOptions) {
   const store = new Store(options.dataDir),
     catalog = new Catalog(curatedCatalog);
@@ -125,6 +90,7 @@ export async function startRuntime(options: RuntimeOptions) {
     taskId: string,
     kind: "memory" | "bot",
     payload: string | BotDraft,
+    runId?: string,
   ) {
     if (
       store.all<Approval>("approval").filter((a) => a.taskId === taskId)
@@ -142,6 +108,7 @@ export async function startRuntime(options: RuntimeOptions) {
           ? payload
           : `Create ${payload.name} — ${payload.role}`,
       digest: digest({ botId, taskId, kind, payload }),
+      ...(runId ? { runId } : {}),
       state: "pending",
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
@@ -155,6 +122,36 @@ export async function startRuntime(options: RuntimeOptions) {
     );
     return { approvalId: approval.id };
   }
+  async function apiKey() {
+    const secret = store.secret();
+    return secret && options.secretBox
+      ? await options.secretBox.decrypt(secret)
+      : undefined;
+  }
+  function installedSkills() {
+    const installations = store.all<Installation>("installation");
+    return catalog
+      .list()
+      .filter(
+        (p): p is Extract<Manifest, { kind: "skill" }> =>
+          p.kind === "skill" &&
+          installations.some((i) => i.id === p.id && i.version === p.version),
+      )
+      .map((p) => p.instructions);
+  }
+  const teams = new TeamStore(store);
+  const engine = new TeamEngine(
+    teams,
+    createInvoke({
+      store,
+      runner: options.runner ?? runModel,
+      apiKey,
+      skills: installedSkills,
+      proposeMemory: (botId, taskId, runId, content) =>
+        proposal(botId, taskId, "memory", content, runId),
+    }),
+  );
+  engine.recover();
   const server = createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -203,6 +200,7 @@ export async function startRuntime(options: RuntimeOptions) {
             activity: store.all("activity").slice(-100).reverse(),
             approvals: store.all("approval"),
             tasks: store.all("task"),
+            boards: teams.boards(),
             settings: store.settings(),
             secretStorage: !!options.secretBox,
           });
@@ -410,7 +408,7 @@ export async function startRuntime(options: RuntimeOptions) {
             !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
           )
             fail(400, "Remote endpoints require HTTPS");
-          if (active.size)
+          if (active.size || engine.activeRuns())
             fail(409, "Wait for running tasks before changing providers");
           let secret: string | null | undefined = undefined;
           if (input.clearApiKey) secret = null;
@@ -509,32 +507,16 @@ export async function startRuntime(options: RuntimeOptions) {
           const timeout = setTimeout(() => controller.abort(), 180000);
           // Browser disconnect does not stop work; it remains visible after reload.
           try {
-            const secret = store.secret(),
-              apiKey =
-                secret && options.secretBox
-                  ? await options.secretBox.decrypt(secret)
-                  : undefined;
-            const installations = store.all<Installation>("installation");
-            const skills = catalog
-              .list()
-              .filter(
-                (p): p is Extract<Manifest, { kind: "skill" }> =>
-                  p.kind === "skill" &&
-                  installations.some(
-                    (i) => i.id === p.id && i.version === p.version,
-                  ),
-              )
-              .map((p) => p.instructions);
             const result = await (options.runner ?? runModel)(
               {
                 settings: store.settings(),
-                apiKey,
+                apiKey: await apiKey(),
                 bot: b,
                 messages: store
                   .messages(b.id)
                   .slice(-40)
                   .map((m) => ({ role: m.role, content: m.content })),
-                skills,
+                skills: installedSkills(),
                 signal: controller.signal,
                 searchMemory: (q) => {
                   if (!bot(b.id).grantedCapabilities.includes("memory.read"))
@@ -589,6 +571,11 @@ export async function startRuntime(options: RuntimeOptions) {
           }
           return;
         }
+        if (
+          path.startsWith("/api/boards") &&
+          (await handleBoards({ req, res, url, store, teams, engine }))
+        )
+          return;
         return fail(404, "Endpoint not found");
       }
       if (req.method !== "GET") fail(405, "Method not allowed");
@@ -623,14 +610,14 @@ export async function startRuntime(options: RuntimeOptions) {
       }
       json(
         res,
-        error instanceof HttpError
+        error instanceof HttpError || error instanceof TeamError
           ? error.status
           : error instanceof z.ZodError
             ? 400
             : 500,
         {
           error:
-            error instanceof HttpError
+            error instanceof HttpError || error instanceof TeamError
               ? error.message
               : error instanceof z.ZodError
                 ? "Invalid request fields"
@@ -651,7 +638,9 @@ export async function startRuntime(options: RuntimeOptions) {
     origin,
     pairingURL: `${origin}/pair?token=${pairingToken}`,
     store,
+    engine,
     close: async () => {
+      await engine.close();
       for (const c of active.values()) c.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
       await new Promise<void>((resolve, reject) =>

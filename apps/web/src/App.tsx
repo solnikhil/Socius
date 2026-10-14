@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity as ActivityIcon,
   BookOpen,
+  LayoutGrid,
   Monitor,
   Moon,
   PanelLeft,
@@ -31,8 +32,10 @@ import { MemoryView } from "./views/MemoryView.js";
 import { ActivityView } from "./views/ActivityView.js";
 import { SettingsView } from "./views/SettingsView.js";
 import { CreateBot } from "./views/CreateBot.js";
+import { BoardView } from "./views/BoardView.js";
+import { CreateBoard } from "./views/CreateBoard.js";
 
-type Page = "chat" | "new" | "memory" | "activity" | "settings";
+type Page = "chat" | "new" | "memory" | "activity" | "settings" | "board";
 const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
@@ -41,6 +44,8 @@ export function App() {
     [selected, setSelected] = useState(""),
     [page, setPage] = useState<Page>("chat"),
     [creating, setCreating] = useState(false),
+    [boardId, setBoardId] = useState(""),
+    [creatingBoard, setCreatingBoard] = useState(false),
     [apps, setApps] = useState(false),
     [collapsed, setCollapsed] = useState(false),
     [menu, setMenu] = useState(false),
@@ -184,6 +189,40 @@ export function App() {
               ))}
             </section>
           )}
+          <section className="bot-group" aria-label="Boards">
+            <h3>Boards</h3>
+            {state.boards
+              .filter((b) => !b.archivedAt || b.id === boardId)
+              .map((b) => (
+                <button
+                  key={b.id}
+                  className={`board-row ${page === "board" && b.id === boardId ? "active" : ""}`}
+                  onClick={() => {
+                    setBoardId(b.id);
+                    setPage("board");
+                  }}
+                >
+                  <span className="board-icon" aria-hidden="true">
+                    <LayoutGrid size={15} />
+                  </span>
+                  <span className="bot-text">
+                    <strong>{b.name}</strong>
+                    <small>
+                      {b.members.length} member
+                      {b.members.length === 1 ? "" : "s"}
+                      {b.archivedAt ? " · archived" : ""}
+                    </small>
+                  </span>
+                </button>
+              ))}
+            <button
+              className="group-link"
+              onClick={() => setCreatingBoard(true)}
+            >
+              New board
+              <Plus size={14} />
+            </button>
+          </section>
           <section className="bot-group compact">
             <button className="group-link" onClick={() => setCreating(true)}>
               New bot
@@ -306,6 +345,16 @@ export function App() {
             }}
           />
         )}
+        {page === "board" && boardId && (
+          <BoardView
+            key={boardId}
+            boardId={boardId}
+            state={state}
+            onRefresh={refresh}
+            onClose={() => setPage("chat")}
+            onSettings={() => setPage("settings")}
+          />
+        )}
         {(page === "memory" || page === "activity" || page === "settings") && (
           <div className="page-frame">
             <header className="page-bar drag">
@@ -345,6 +394,18 @@ export function App() {
           state={state}
           onRefresh={refresh}
           onClose={() => setApps(false)}
+        />
+      )}
+      {creatingBoard && (
+        <CreateBoard
+          bots={[main, ...specialists]}
+          mainId={main.id}
+          onClose={() => setCreatingBoard(false)}
+          onCreated={(b) => {
+            setBoardId(b.id);
+            setPage("board");
+            void refresh();
+          }}
         />
       )}
       {creating && (

@@ -88,3 +88,106 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+test("board planning calls expose only the plan tool, honour budgets and report token usage", async () => {
+  let calls = 0;
+  const plans: unknown[] = [];
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c);
+    const payload = JSON.parse(Buffer.concat(chunks).toString());
+    calls++;
+    if (calls === 1) {
+      assert.deepEqual(
+        payload.tools.map(
+          (t: { function: { name: string } }) => t.function.name,
+        ),
+        ["proposePlan"],
+        "a coordinator's board call cannot create bots",
+      );
+      assert.equal(payload.max_tokens, 1234);
+      assert.match(payload.messages[0].content, /BOARD BRIEFING/);
+    }
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    const chunk = (
+      delta: unknown,
+      finish_reason: string | null = null,
+      usage?: unknown,
+    ) =>
+      res.write(
+        `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture-model", choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`,
+      );
+    const usage = {
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      total_tokens: 120,
+    };
+    if (calls === 1) {
+      chunk({
+        role: "assistant",
+        tool_calls: [
+          {
+            index: 0,
+            id: "call-1",
+            type: "function",
+            function: {
+              name: "proposePlan",
+              arguments: JSON.stringify({
+                summary: "Research then write.",
+                tasks: [
+                  {
+                    key: "research",
+                    title: "Research",
+                    instructions: "Find facts.",
+                    assigneeId: "a",
+                    dependsOn: [],
+                    sourceIds: [],
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+      chunk({}, "tool_calls", usage);
+    } else {
+      chunk({ role: "assistant", content: "Plan recorded." });
+      chunk({}, "stop", usage);
+    }
+    res.end("data: [DONE]\n\n");
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const address = server.address() as { port: number };
+  try {
+    let tokens = 0;
+    const text = await runModel(
+      {
+        settings: {
+          provider: "compatible",
+          model: "fixture-model",
+          baseURL: `http://127.0.0.1:${address.port}/v1`,
+          hasApiKey: false,
+        },
+        bot: instantiateBot(mainBot),
+        messages: [{ role: "user", content: "Write a brief." }],
+        skills: [],
+        signal: new AbortController().signal,
+        briefing: "BOARD BRIEFING",
+        limits: { maxSteps: 3, maxOutputTokens: 1234 },
+        onUsage: (t) => (tokens += t),
+        searchMemory: () => [],
+        proposeMemory: () => ({ approvalId: "unused" }),
+        proposePlan: (plan) => {
+          plans.push(plan);
+          return { accepted: true };
+        },
+      },
+      () => {},
+    );
+    assert.equal(text, "Plan recorded.");
+    assert.equal(plans.length, 1);
+    assert.equal(tokens, 240);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});

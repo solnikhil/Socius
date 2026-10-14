@@ -41,7 +41,7 @@ async function paired(dataDir: string, runner?: ModelRunner) {
 const fake: ModelRunner = async (request, onText) => {
   const message = request.messages.at(-1)?.content;
   if (typeof message === "string" && message.includes("create bot"))
-    request.proposeBot({
+    request.proposeBot?.({
       name: "Planner",
       role: "Planning specialist",
       instructions: "Make clear plans from supplied context.",
