@@ -86,6 +86,34 @@ export interface Memory {
   content: string;
   source: string;
   updatedAt: string;
+  /** Local evidence references. A manual correction retains these for forgetting. */
+  dream?: { runId: string; sourceMessageIds: string[] };
+}
+export interface DreamingSettings {
+  enabled: boolean;
+  model: ModelRef | null;
+  idleMinutes: number;
+  intervalMinutes: number;
+  revision: number;
+}
+export interface DreamRun {
+  id: string;
+  botId: string;
+  model: ModelRef;
+  state:
+    "running" | "committing" | "completed" | "failed" | "cancelled" | "stale";
+  createdAt: string;
+  finishedAt: string | null;
+  sourceMessageIds: string[];
+  errorCode?: ProviderErrorCode | "invalid_output" | "state_changed" | "storage";
+  saved: number;
+  skipped: number;
+  error: string | null;
+}
+export interface DreamingStatus {
+  settings: DreamingSettings;
+  modelAvailable: boolean;
+  runs: DreamRun[];
 }
 export interface Activity {
   id: string;
@@ -197,6 +225,7 @@ export interface ActionRecord {
   updatedAt: string;
 }
 export interface Snapshot {
+  dreaming: DreamingStatus;
   bots: BotInstance[];
   groups: GroupChat[];
   categories: Category[];
