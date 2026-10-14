@@ -54,7 +54,7 @@ export function refusal(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
   if (!reason) return "The service rejected this reviewed action.";
-  return `The service refused: ${reason.length > 300 ? `${reason.slice(0, 300)}…` : reason}`;
+  return `The service rejected this change: ${reason.length > 300 ? `${reason.slice(0, 300)}…` : reason}`;
 }
 export const reference = z
   .string()

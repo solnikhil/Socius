@@ -161,10 +161,10 @@ test("a refused write shows the service's own reason as clipped plain text", asy
   const { refusal } = await import("../src/actions.js");
   assert.equal(
     refusal("Team “ENG” not found.\u0007\n Use a team ID."),
-    "The service refused: Team “ENG” not found. Use a team ID.",
+    "The service rejected this change: Team “ENG” not found. Use a team ID.",
   );
   assert.equal(refusal("  \n"), "The service rejected this reviewed action.");
   const long = refusal("x".repeat(500));
   assert.ok(long.endsWith("…"));
-  assert.ok(long.length < 330);
+  assert.ok(long.length <= 340);
 });
