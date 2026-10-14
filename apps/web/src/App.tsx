@@ -139,10 +139,11 @@ export function App() {
   useEffect(() => {
     document.documentElement.classList.toggle("mac-desktop", isMacDesktop);
   }, []);
-  const openSettings: OpenSettings = useCallback(
-    (tab, connectionId) => setSettings({ tab, connectionId }),
-    [],
-  );
+  const openSettings: OpenSettings = useCallback((tab, connectionId) => {
+    // On a phone the sidebar is an overlay; close it so the dialog is reachable.
+    if (matchMedia("(max-width: 600px)").matches) setCollapsed(true);
+    setSettings({ tab, connectionId });
+  }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === ",") {
@@ -401,6 +402,11 @@ export function App() {
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""}`}>
       <ConnectionBanner />
+      <div
+        className="drawer-backdrop"
+        aria-hidden="true"
+        onClick={() => setCollapsed(true)}
+      />
       <aside className="sidebar" aria-label="Bots" inert={collapsed}>
         <div className="sidebar-top drag">{toolbar}</div>
         <div className="sidebar-scroll">
@@ -519,9 +525,7 @@ export function App() {
                 align="start"
                 className="menu-panel account-panel"
               >
-                <DropdownMenuItem
-                  onSelect={() => setSettings({ tab: "general" })}
-                >
+                <DropdownMenuItem onSelect={() => openSettings("general")}>
                   <Settings size={15} />
                   Settings
                 </DropdownMenuItem>
@@ -552,7 +556,13 @@ export function App() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <button className="connect-apps" onClick={() => setApps(true)}>
+          <button
+            className="connect-apps"
+            onClick={() => {
+              if (matchMedia("(max-width: 600px)").matches) setCollapsed(true);
+              setApps(true);
+            }}
+          >
             Connect apps
             <span className="app-stack" aria-hidden="true">
               {(connected.length ? connected : state.catalog.slice(1, 3))

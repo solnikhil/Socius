@@ -3911,6 +3911,171 @@ dialog.create-bot,
   }
 }
 
+/* ---------- Composer: text on top, tools below (attach · model · mic · send) ---------- */
+.composer {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 8px 7px;
+  border-radius: 24px;
+}
+.composer textarea {
+  padding: 6px 8px 4px;
+  min-height: 30px;
+}
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.composer-spacer {
+  flex: 1;
+}
+.model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(260px, 52vw);
+  height: 34px;
+  padding: 0 10px 0 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.model-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-pill:hover,
+.model-pill[data-state="open"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.model-switcher {
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(60vh, 460px);
+  overflow-y: auto;
+  padding: 6px;
+}
+.composer .composer-mic {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.composer .composer-mic:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.composer .composer-mic.on {
+  background: #e5484d;
+  color: #fff;
+  animation: mic-pulse 1.4s ease-out infinite;
+}
+.composer.listening {
+  border-color: #e5484d;
+}
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(229, 72, 77, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer .composer-mic.on {
+    animation: none;
+  }
+}
+
+/* ---------- Phone: the sidebar slides over the chat instead of pushing it away ---------- */
+.drawer-backdrop {
+  display: none;
+}
+@media (max-width: 600px) {
+  .shell,
+  .shell.collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shell:not(.collapsed) > main {
+    min-width: 0;
+  }
+  .shell > main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .sidebar,
+  .shell.collapsed .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 70;
+    width: min(84vw, 320px);
+    max-width: none;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.18);
+    transform: translateX(0);
+    transition:
+      transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 200ms ease,
+      visibility 0s linear 0s;
+  }
+  .shell.collapsed .sidebar {
+    transform: translateX(-104%);
+    transition:
+      transform 280ms cubic-bezier(0.4, 0, 1, 1),
+      opacity 200ms ease 80ms,
+      visibility 0s linear 300ms;
+  }
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 65;
+    background: rgba(0, 0, 0, 0.32);
+    opacity: 1;
+    transition: opacity 240ms ease;
+  }
+  .shell.collapsed .drawer-backdrop {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .approval-card,
+  .action-card {
+    width: 100%;
+    max-width: none;
+  }
+  .composer-wrap {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .composer textarea {
+    font-size: 16px; /* stops iOS zooming into the field */
+  }
+  .model-pill {
+    max-width: 46vw;
+  }
+}
+
+/* Phone browsers: size to the visible viewport (excludes the address bar) so the
+   composer toolbar is never pushed below the screen. */
+@supports (height: 100dvh) {
+  .shell {
+    height: 100dvh;
+  }
+}
+@media (max-width: 600px) {
+  .shell {
+    min-height: 0;
+  }
+}
+
 /* ---------- Connected-app change review ---------- */
 .decision-card {
   width: min(560px, 78%);
