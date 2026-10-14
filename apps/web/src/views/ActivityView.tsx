@@ -15,6 +15,26 @@ const labels: Record<string, string> = {
   "permissions.updated": "Permissions changed",
   "package.installed": "App installed",
   "settings.updated": "Settings saved",
+  "package.imported": "Package imported",
+  "package.updated": "App updated",
+  "package.enabled": "App enabled",
+  "package.disabled": "App disabled",
+  "package.uninstalled": "App uninstalled",
+  "package.rolled-back": "App rolled back",
+  "package.exported": "Skill exported",
+  "bot.exported": "Template exported",
+  "connector.sign-in": "Sign-in started",
+  "connector.connected": "App connected",
+  "connector.disconnected": "App disconnected",
+  "connector.read": "App data read",
+  "action.requested": "Change needs review",
+  "action.approved": "Change approved",
+  "action.denied": "Change declined",
+  "action.succeeded": "Change made",
+  "action.failed": "Change not made",
+  "action.unknown": "Change outcome unclear",
+  "action.interrupted": "Change interrupted",
+  "action.retried": "Change retried",
 };
 
 function tone(kind: string) {
@@ -24,11 +44,15 @@ function tone(kind: string) {
     kind.endsWith("cancelled")
   )
     return "bad";
-  if (kind === "approval.requested") return "warn";
+  if (kind.endsWith("unknown")) return "bad";
+  if (kind === "approval.requested" || kind === "action.requested")
+    return "warn";
   if (
     kind.endsWith("completed") ||
     kind.endsWith("installed") ||
     kind.endsWith("saved") ||
+    kind.endsWith("succeeded") ||
+    kind === "connector.connected" ||
     kind === "bot.created"
   )
     return "good";

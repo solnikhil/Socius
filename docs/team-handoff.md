@@ -4,12 +4,12 @@ Use Node.js 24, `npm ci`, then `npm run desktop`. The user owns UI/refinement. T
 
 ## Ownership
 
-| Owner | Assignment | Code boundary | Current status |
-| --- | --- | --- | --- |
-| Teammate working on Teams & Boards | [Issue #2](https://github.com/solnikhil/Socius/issues/2) | New packages/teams, board/team contracts, orchestration, queue, persistence and tests | Assigned workstream; acceptance evidence still pending |
-| Teammate working on Skills & Connectors Marketplace | [Issue #3](https://github.com/solnikhil/Socius/issues/3) | packages/marketplace, new packages/skills and packages/connectors, installation/auth/action services and tests | Assigned workstream; acceptance evidence still pending |
-| You | [UI and refinement checklist](ui-refinement.md) | apps/web/src plus desktop visual/presentation changes | UI refinement ongoing; new backend integration follows contracts |
-| Luna testing handoff | API-provider and chat reliability | Runtime adapter/test changes; Settings hint handed to you | Superseded by branch `model-enhancements` (multi-provider connections); the uncommitted drafts on main need no separate integration |
+| Owner                                               | Assignment                                               | Code boundary                                                                                                  | Current status                                                                                                                      |
+| --------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Teammate working on Teams & Boards                  | [Issue #2](https://github.com/solnikhil/Socius/issues/2) | New packages/teams, board/team contracts, orchestration, queue, persistence and tests                          | Assigned workstream; acceptance evidence still pending                                                                              |
+| Teammate working on Skills & Connectors Marketplace | [Issue #3](https://github.com/solnikhil/Socius/issues/3) | packages/marketplace, new packages/skills and packages/connectors, installation/auth/action services and tests | Assigned workstream; acceptance evidence still pending                                                                              |
+| You                                                 | [UI and refinement checklist](ui-refinement.md)          | apps/web/src plus desktop visual/presentation changes                                                          | UI refinement ongoing; new backend integration follows contracts                                                                    |
+| Luna testing handoff                                | API-provider and chat reliability                        | Runtime adapter/test changes; Settings hint handed to you                                                      | Superseded by branch `model-enhancements` (multi-provider connections); the uncommitted drafts on main need no separate integration |
 
 Issues [#2 specification](issues/teams-boards.md) and [#3 specification](issues/skills-connectors-marketplace.md) contain the full winning workflows, PR sequence and closure criteria. Agents can read the public repository/issues without Notion access. Do not guess GitHub assignees or dates.
 
@@ -26,6 +26,7 @@ Issues [#2 specification](issues/teams-boards.md) and [#3 specification](issues/
 ## In progress / draft evidence
 
 Luna left uncommitted changes in:
+
 - packages/runtime/src/model.ts: injectable provider fetch for tests, explicit retry budget and suppressed raw provider error logging.
 - packages/runtime/test/model.test.ts: OpenAI/Anthropic/compatible boundary coverage plus an OpenRouter endpoint case.
 - packages/runtime/test/runtime.test.ts: document-summary persistence, approved-memory restart/replay handling, cancellation and sanitized failure/retry tests.

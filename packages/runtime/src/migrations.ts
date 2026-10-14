@@ -72,6 +72,34 @@ const migrations: { version: number; up: (db: DatabaseSync) => void }[] = [
       importLegacySettings(db);
     },
   },
+  {
+    version: 4,
+    up: (db) => {
+      // Connector credentials live outside general records and snapshots.
+      db.exec(`CREATE TABLE IF NOT EXISTS connector_secrets(
+        connection_id TEXT PRIMARY KEY, secret TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+      // Installation receipts gain lifecycle, provenance and consent fields.
+      const update = db.prepare(
+        "UPDATE records SET data=? WHERE kind='installation' AND id=?",
+      );
+      for (const row of db
+        .prepare("SELECT id, data FROM records WHERE kind='installation'")
+        .all()) {
+        const old = JSON.parse(row.data as string) as Record<string, unknown>;
+        update.run(
+          JSON.stringify({
+            ...old,
+            enabled: old.enabled ?? true,
+            source: old.source ?? { type: "bundled" },
+            trust: old.trust ?? "curated",
+            consentedCapabilities: old.consentedCapabilities ?? [],
+            history: old.history ?? [],
+          }),
+          row.id as string,
+        );
+      }
+    },
+  },
 ];
 
 /** Moves the v1 single-provider settings row into a provider connection. */

@@ -7,22 +7,39 @@ import {
   renameSync,
   unlinkSync,
   readdirSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { instantiateBot, mainBot } from "@socius/marketplace";
 import type { BotInstance } from "@socius/contracts";
-import type { Message, Memory, Activity, Task } from "@socius/contracts/app";
+import type {
+  ActionRecord,
+  Message,
+  Memory,
+  Activity,
+  Task,
+} from "@socius/contracts/app";
 import { migrate } from "./migrations.js";
 import { ProviderStore } from "./provider-store.js";
 
 export class Store {
   readonly db: DatabaseSync;
   readonly memoryDir: string;
+  /** Content-addressed, immutable release files: releases/<digest>/... */
+  readonly releasesDir: string;
+  /** Scratch space for imports; never active, cleared on start. */
+  readonly stagingDir: string;
+  readonly exportsDir: string;
   readonly providers: ProviderStore;
   constructor(readonly dir: string) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     this.memoryDir = join(dir, "memory");
     mkdirSync(this.memoryDir, { recursive: true, mode: 0o700 });
+    this.releasesDir = join(dir, "packages", "releases");
+    this.stagingDir = join(dir, "packages", "staging");
+    this.exportsDir = join(dir, "exports");
+    for (const d of [this.releasesDir, this.stagingDir, this.exportsDir])
+      mkdirSync(d, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(join(dir, "socius.sqlite"));
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
     migrate(this.db);
@@ -41,7 +58,57 @@ export class Store {
         this.event("task.interrupted", task.error);
       }
     }
+    // A write that was mid-flight when the runtime stopped has an unknown outcome.
+    for (const action of this.all<ActionRecord>("action")) {
+      if (action.state !== "executing") continue;
+      const attempt = action.attempts.at(-1);
+      if (attempt && !attempt.finishedAt) {
+        attempt.finishedAt = new Date().toISOString();
+        attempt.outcome = "ambiguous";
+        attempt.detail =
+          "Socius stopped before the service confirmed the outcome.";
+      }
+      action.state = "unknown";
+      action.retryable = false;
+      action.error =
+        "Socius stopped during this change. Check the result before retrying; it was not repeated.";
+      action.updatedAt = new Date().toISOString();
+      this.put("action", action.id, action);
+      this.event(
+        "action.interrupted",
+        `An approved change needs checking: ${action.summary}`,
+      );
+    }
+    this.cleanPackages();
     this.reconcileMemory();
+  }
+  /** Removes interrupted imports: staging leftovers and release files without a record. */
+  cleanPackages() {
+    for (const entry of readdirSync(this.stagingDir))
+      rmSync(join(this.stagingDir, entry), { recursive: true, force: true });
+    const known = new Set(
+      this.all<{ digest: string }>("release").map((r) => r.digest),
+    );
+    for (const entry of readdirSync(this.releasesDir))
+      if (!known.has(entry))
+        rmSync(join(this.releasesDir, entry), { recursive: true, force: true });
+  }
+  connectionSecret(connectionId: string): string | undefined {
+    return this.db
+      .prepare("SELECT secret FROM connector_secrets WHERE connection_id=?")
+      .get(connectionId)?.secret as string | undefined;
+  }
+  saveConnectionSecret(connectionId: string, secret: string) {
+    this.db
+      .prepare(
+        "INSERT INTO connector_secrets VALUES(?,?,?) ON CONFLICT(connection_id) DO UPDATE SET secret=excluded.secret, updated_at=excluded.updated_at",
+      )
+      .run(connectionId, secret, new Date().toISOString());
+  }
+  deleteConnectionSecret(connectionId: string) {
+    this.db
+      .prepare("DELETE FROM connector_secrets WHERE connection_id=?")
+      .run(connectionId);
   }
   all<T>(kind: string): T[] {
     return this.db

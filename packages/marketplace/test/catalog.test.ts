@@ -120,7 +120,12 @@ test("rejects incompatible versions within one installation plan", () => {
   );
 });
 test("rejects duplicate catalog entries and duplicate declared dependencies", () => {
-  assert.throws(() => new Catalog([mainBot, mainBot]), /Duplicate package/);
+  // Re-adding identical content is idempotent; one identity can never hold two contents.
+  assert.equal(new Catalog([mainBot, mainBot]).list().length, 1);
+  assert.throws(
+    () => new Catalog([mainBot, { ...mainBot, description: "Changed" }]),
+    /Duplicate package/,
+  );
   const dependency = { id: "test/leaf", version: "1.0.0" };
   assert.equal(
     Manifest.safeParse(skill("test/root", [dependency, dependency])).success,

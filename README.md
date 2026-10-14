@@ -22,7 +22,10 @@ Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The 
 - The main bot can propose specialists through an AI SDK tool. Review the exact role/instructions before approval creates a fresh bot with no inherited memory or permissions.
 - Streaming chat uses `ToolLoopAgent`, with bounded steps, cancellation and timeout. Chats and tasks persist in SQLite.
 - Attach `.txt` or `.md` documents up to 200 KB. Installed instruction skills influence procedure. Responses can be saved as Markdown.
-- Curated install previews show dependencies/capabilities. Installation verifies the reviewed digest and persists receipts atomically. Connector entries clearly state that execution is unavailable.
+- Install previews show source, trust, digest, dependencies and requested permissions. Newly requested permissions need consent; installation verifies the plan digest and file integrity, then persists receipts atomically. Packages can be enabled, disabled, updated, rolled back and uninstalled.
+- Import standard [Agent Skills](https://agentskills.io/specification) folders (`SKILL.md`) as instruction-only, locally unverified releases; export skills and bot templates after reviewing flagged text. Bots load skill instructions and reference files on demand.
+- **Notion connector** over Notion's official MCP server: sign in through the system browser (OAuth with PKCE), with tokens encrypted by the OS. Grant each bot read and/or write access. Bots search and read pages; creating a page needs your approval of the exact title and content, survives restart, and runs once. Unclear outcomes are checked, never blindly repeated. See [skills and connectors](docs/architecture/skills-and-connectors.md) for setup and scopes.
+- Browse the official MCP Registry from Connect Apps. Listings are metadata only; only Socius-reviewed servers are installable.
 - Memory is private per bot: editable Markdown files plus SQLite FTS5 search. External file edits reconcile when memory is read.
 - Enable memory per bot explicitly; model-proposed saves require review and recheck permissions.
 - Messaging-style interface: bot sidebar with the main bot featured, a `To:` new-chat palette (⌘N/⌘K, ⌘1–9 to pick), chat bubbles with safe Markdown rendering, and a Connect Apps modal. Appearance (System/Light/Dark) is in Settings and the account menu; the choice is stored locally.
@@ -48,9 +51,9 @@ The API binds loopback and uses one-time pairing, an HttpOnly same-site cookie, 
 
 ## Remaining workstreams
 
-Public publishing and signed releases, arbitrary executable skills, MCP/OAuth connector execution, browser automation, scheduling, connector actions in group chats or on boards, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
+Public publishing and signed releases, arbitrary executable skills, connectors beyond Notion, browser automation, scheduling, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
 
-Current skills are curated instruction manifests; standard Agent Skills directory import/export is a next deliverable. Digest checks bind review to bundled content, not publisher identity. The interface currently uses shared CSS tokens and native dialogs; Tailwind/shadcn adoption can occur inside the UI workstream without altering runtime contracts.
+Skill scripts are stored inert; there is no executable sandbox. Digest checks bind review to content, not publisher identity: imported releases are labelled unverified. Connecting accounts requires the desktop app's OS-backed encryption. The interface currently uses shared CSS tokens and native dialogs; Tailwind/shadcn adoption can occur inside the UI workstream without altering runtime contracts.
 
 ## Verify
 
@@ -72,7 +75,9 @@ Browser end-to-end tests use a deterministic model fixture only in test code and
 - [Team handoff](docs/team-handoff.md): independent work packages and acceptance criteria.
 - [Local API](docs/architecture/local-api.md): transport, endpoints and extension boundaries.
 - [Teams & Boards](docs/architecture/teams.md): board model, budgets, cancellation, restart behaviour and API examples.
+- [Skills and connectors](docs/architecture/skills-and-connectors.md): skill format, release lifecycle, MCP Registry, Notion setup and scopes, the action broker and known limitations.
 - `packages/contracts`: strict manifest schemas and shared domain types.
-- `packages/marketplace`: validated catalog, dependency planning, and bundled Socius bot template.
+- `packages/marketplace`: releases and trust, dependency planning, MCP Registry adapter, export review and the bundled Socius bot template.
+- `packages/skills`: Agent Skills import/export. `packages/connectors`: reviewed connector actions over MCP.
 
 The workspace packages are private TypeScript source packages. Public SDK distribution requires a compiled export surface, compatibility policy, and license decision.

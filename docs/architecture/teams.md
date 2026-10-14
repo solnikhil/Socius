@@ -10,8 +10,8 @@ A **board** groups any number of private bots around an objective, optional comp
 
 A **run** is one user request. It moves through `planning → [awaiting-approval →] running → synthesizing → completed`, or ends as `partial`, `failed`, `cancelled` or `interrupted`. A board has at most one active run.
 
-1. **Plan.** The coordinator is called with the request, the roster (IDs, names, roles) and source *names*. It may call `proposePlan` once with a task graph: keyed tasks, one assignee each, the source IDs each needs, and `dependsOn` keys. `packages/teams` validates the plan: assignees must be members, sources must be shared on the board, keys must be unique, dependencies must exist and be acyclic, and the size must be at most `maxTasks`. Invalid plans return errors to the model so it can correct them within its step budget. A second plan in the same run is refused. If the coordinator does not plan, its answer is the run's result.
-   **Plan review** (`reviewPlan`, on by default) parks the run in `awaiting-approval` and posts the plan in the thread. Nothing runs until the user approves it with **Run plan** (`/api/boards/runs/approve`). A chat reply instead *revises* the same run: the unstarted tasks are replaced, and the coordinator re-plans with its previous drafts and the user's replies in the prompt. **Discard** cancels the run. A plan awaiting review survives restart unchanged.
+1. **Plan.** The coordinator is called with the request, the roster (IDs, names, roles) and source _names_. It may call `proposePlan` once with a task graph: keyed tasks, one assignee each, the source IDs each needs, and `dependsOn` keys. `packages/teams` validates the plan: assignees must be members, sources must be shared on the board, keys must be unique, dependencies must exist and be acyclic, and the size must be at most `maxTasks`. Invalid plans return errors to the model so it can correct them within its step budget. A second plan in the same run is refused. If the coordinator does not plan, its answer is the run's result.
+   **Plan review** (`reviewPlan`, on by default) parks the run in `awaiting-approval` and posts the plan in the thread. Nothing runs until the user approves it with **Run plan** (`/api/boards/runs/approve`). A chat reply instead _revises_ the same run: the unstarted tasks are replaced, and the coordinator re-plans with its previous drafts and the user's replies in the prompt. **Discard** cancels the run. A plan awaiting review survives restart unchanged.
 2. **Execute.** Tasks whose dependencies are done move from `backlog` to `ready`. Up to `concurrency` tasks run at once and the rest queue, so large rosters wait rather than fail. Each specialist gets a fresh single-message context: its task, the user's request, only the sources listed for that task, and the attributed results of its dependencies. It never sees its own chat history, other bots' memory, or the board thread.
 3. **Synthesize.** If every task is done, the coordinator writes one consolidated result from the attributed task results. If anything is outstanding, nothing is synthesized. The run ends `partial` with a plain-language list of what is missing and why.
 
@@ -37,15 +37,15 @@ Specialist calls have no `proposePlan` or `createBot` tool, so they cannot deleg
 
 Per board, applied per run attempt. They limit execution, never membership.
 
-| Field | Default | Meaning |
-| --- | --- | --- |
-| `concurrency` | 3 | Simultaneous specialist calls |
-| `maxTasks` | 12 | Tasks per plan |
-| `maxModelCalls` | 40 | Calls per attempt; one is always reserved for synthesis |
-| `maxRunTokens` | 400000 | Provider-reported input + output tokens per attempt (the spend proxy) |
-| `maxStepsPerCall` | 6 | Tool-loop steps per call |
-| `maxOutputTokens` | 4000 | Output tokens per call |
-| `callTimeoutMs` | 180000 | Wall-clock limit per call |
+| Field             | Default | Meaning                                                               |
+| ----------------- | ------- | --------------------------------------------------------------------- |
+| `concurrency`     | 3       | Simultaneous specialist calls                                         |
+| `maxTasks`        | 12      | Tasks per plan                                                        |
+| `maxModelCalls`   | 40      | Calls per attempt; one is always reserved for synthesis               |
+| `maxRunTokens`    | 400000  | Provider-reported input + output tokens per attempt (the spend proxy) |
+| `maxStepsPerCall` | 6       | Tool-loop steps per call                                              |
+| `maxOutputTokens` | 4000    | Output tokens per call                                                |
+| `callTimeoutMs`   | 180000  | Wall-clock limit per call                                             |
 
 When a call or token budget runs out, no new task starts; in-flight calls finish. The run ends `partial` and names the exhausted budget. Timeouts fail the task with the limit stated. `run.usage` keeps cumulative calls and tokens across retries.
 

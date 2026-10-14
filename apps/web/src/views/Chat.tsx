@@ -32,6 +32,8 @@ import {
   useDismiss,
 } from "../components/ui.js";
 import { ApprovalCard } from "../components/ApprovalCard.js";
+import { ActionCard, needsAttention } from "../components/ActionCard.js";
+import { ExportBot } from "./ExportBot.js";
 import { ModelPicker } from "../components/ModelPicker.js";
 import {
   connectionOf,
@@ -91,6 +93,7 @@ export function Chat({
     } | null>(null),
     [consent, setConsent] = useState(false),
     [details, setDetails] = useState(false),
+    [exporting, setExporting] = useState(false),
     [copied, setCopied] = useState("");
   const bottom = useRef<HTMLDivElement>(null),
     upload = useRef<HTMLInputElement>(null),
@@ -273,6 +276,19 @@ export function Chat({
       a.state === "pending" &&
       Date.parse(a.expiresAt) > Date.now(),
   );
+  // Group work raises its changes in the group; direct chats show only their own.
+  const groupOf = new Map(state.tasks.map((t) => [t.id, t.groupId ?? null]));
+  const actions = state.actions
+    .filter(
+      (a) =>
+        (group
+          ? groupOf.get(a.actor.taskId) === group.id
+          : a.actor.botId === bot.id &&
+            !a.actor.boardId &&
+            !groupOf.get(a.actor.taskId)) &&
+        (needsAttention(a) || a.state === "succeeded"),
+    )
+    .slice(-5);
   // In a group, each run of replies from one bot is labelled with its name.
   const speaker = (m: Pick<Message, "role" | "botId">) =>
     m.role === "user" ? "user" : m.botId;
@@ -383,6 +399,15 @@ export function Chat({
                 <BookOpen size={15} />
                 <span>Memory</span>
                 <em>{memory ? "On" : "Off"}</em>
+              </button>
+              <button
+                onClick={() => {
+                  setDetails(false);
+                  setExporting(true);
+                }}
+              >
+                <Download size={15} />
+                <span>Export as template</span>
               </button>
               <p>
                 {owner
@@ -518,6 +543,14 @@ export function Chat({
           {approvals.map((a) => (
             <ApprovalCard key={a.id} approval={a} onRefresh={onRefresh} />
           ))}
+          {actions.map((a) => (
+            <ActionCard
+              key={a.id}
+              action={a}
+              state={state}
+              onRefresh={onRefresh}
+            />
+          ))}
           <div ref={bottom} />
         </div>
       </div>
@@ -622,6 +655,7 @@ export function Chat({
           )}
         </form>
       </div>
+      {exporting && <ExportBot bot={bot} onClose={() => setExporting(false)} />}
       {consent && (
         <Modal title="Memory permissions" onClose={() => setConsent(false)}>
           <p className="muted">

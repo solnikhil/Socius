@@ -48,6 +48,9 @@ parent.on("message", async ({ data }) => {
       const runtime = await startRuntime({
         dataDir: data.dataDir,
         webDir: data.webDir,
+        // Sign-in pages open in the system browser, never inside the app or chat.
+        openExternal: (url) =>
+          parent.postMessage({ type: "open-external", url }),
         ...(data.secretStorage ? { secretBox: box } : {}),
       });
       parent.postMessage({

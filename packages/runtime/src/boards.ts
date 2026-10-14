@@ -32,7 +32,14 @@ export function createInvoke(deps: {
   ) => Promise<
     Pick<ModelRequest, "model" | "modelRef" | "tools"> & { release: () => void }
   >;
-  skills: () => string[];
+  /** Installed skills and connector tools; connector actions carry the board actor. */
+  packageTools: (
+    bot: BotInstance,
+    actor: { taskId: string; boardId: string; runId: string },
+  ) => Pick<
+    ModelRequest,
+    "skills" | "loadSkill" | "readSkillResource" | "connectorTools"
+  >;
   proposeMemory: (
     botId: string,
     taskId: string,
@@ -57,7 +64,11 @@ export function createInvoke(deps: {
           tools: selected.tools,
           bot: current(),
           messages: [{ role: "user", content: inv.prompt }],
-          skills: deps.skills(),
+          ...deps.packageTools(current(), {
+            taskId: inv.task?.id ?? inv.run.id,
+            boardId: inv.board.id,
+            runId: inv.run.id,
+          }),
           team: {
             phase: inv.phase,
             boardId: inv.board.id,

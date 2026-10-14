@@ -87,6 +87,7 @@ test("reviewed installations bind the release digest, persist, and never grant p
           id: "socius/researcher",
           version: "0.1.0",
           digest: preview.digest,
+          consent: preview.newCapabilities,
         })
       ).status,
       200,
@@ -100,18 +101,39 @@ test("reviewed installations bind the release digest, persist, and never grant p
     const connector = (await (
       await r.request("install/preview", {
         id: "socius/notion",
-        version: "0.1.0",
+        version: "0.2.0",
       })
     ).json()) as InstallPreview;
+    assert.deepEqual(connector.newCapabilities, [
+      "documents.read",
+      "documents.write",
+    ]);
     assert.equal(
       (
         await r.request("install", {
           id: "socius/notion",
-          version: "0.1.0",
+          version: "0.2.0",
           digest: connector.digest,
         })
       ).status,
       409,
+    );
+    assert.equal(
+      (
+        await r.request("install", {
+          id: "socius/notion",
+          version: "0.2.0",
+          digest: connector.digest,
+          consent: connector.newCapabilities,
+        })
+      ).status,
+      200,
+    );
+    const after = (await (await r.request("state")).json()) as Snapshot;
+    assert.ok(
+      after.bots.every(
+        (b) => !b.grantedCapabilities.includes("documents.read"),
+      ),
     );
   } finally {
     await r.close();

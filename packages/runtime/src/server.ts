@@ -8,15 +8,26 @@ import {
 import { readFile, stat } from "node:fs/promises";
 import { resolve, extname, sep } from "node:path";
 import { z } from "zod";
-import { Catalog, instantiateBot } from "@socius/marketplace";
-import { curatedCatalog } from "@socius/marketplace/curated";
-import type { BotInstance, BotManifest, Manifest } from "@socius/contracts";
+import { instantiateBot } from "@socius/marketplace";
+import {
+  RegistryClient,
+  type RegistryClientOptions,
+} from "@socius/marketplace/registry";
+import { reviewedConnectors } from "@socius/connectors";
+import {
+  Capability,
+  Digest,
+  type BotInstance,
+  type BotManifest,
+  type SkillManifest,
+} from "@socius/contracts";
 import type {
   Approval,
   BotDraft,
   GroupChat,
   Installation,
   Message,
+  RegistryPage,
   Task,
 } from "@socius/contracts/app";
 import {
@@ -27,6 +38,7 @@ import { Store } from "./store.js";
 import {
   DEFAULT_FRAMING,
   runModel,
+  type ConnectorTool,
   type ModelRequest,
   type ModelRunner,
 } from "./model.js";
@@ -42,6 +54,9 @@ import { classify } from "./providers/errors.js";
 import { TeamEngine, TeamError } from "@socius/teams/engine";
 import { TeamStore } from "./team-store.js";
 import { createInvoke, handleBoards } from "./boards.js";
+import { PackageError, PackageService } from "./packages.js";
+import { ConnectionService } from "./connections.js";
+import { ActionBroker, type BrokerOptions } from "./broker.js";
 
 export type { SecretBox };
 export interface RuntimeOptions {
@@ -50,15 +65,34 @@ export interface RuntimeOptions {
   port?: number;
   secretBox?: SecretBox;
   runner?: ModelRunner;
+  /** Opens connector sign-in pages in the system browser (desktop). */
+  openExternal?: (url: string) => void;
+  /** Test-only: fixture endpoints and fetch for connectors and the registry. */
+  connectorEndpoints?: Record<string, string>;
+  connectorFetch?: typeof fetch;
+  registry?: RegistryClientOptions;
+  broker?: BrokerOptions;
   /** Network transport for provider calls. Tests inject a controlled fetch. */
   fetch?: typeof globalThis.fetch;
   /** Environment used for provider credential fallbacks. */
   env?: NodeJS.ProcessEnv;
 }
+const BotExportDraftSchema = z.strictObject({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().min(1).max(1024),
+  role: z.string().trim().min(1).max(200),
+  instructions: z.string().trim().min(1).max(20000),
+  version: z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/),
+  license: z.string().trim().min(1).max(200),
+});
+const GRANTABLE = ["documents.read", "documents.write"] as const;
+const callbackPage = (message: string) =>
+  `<!doctype html><meta charset="utf-8"><title>Socius</title><body style="font:16px system-ui;padding:48px;max-width:520px;margin:auto"><h1 style="font-size:20px">Socius</h1><p>${message.replace(/[<>&"]/g, "")}</p></body>`;
 const BotDraftSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
   role: z.string().trim().min(1).max(200),
-  instructions: z.string().trim().min(1).max(8000),
+  // Matches the bot template limit, so any valid template can be installed.
+  instructions: z.string().trim().min(1).max(20000),
 });
 const uuid = z.string().uuid();
 const Attachment = z
@@ -111,8 +145,8 @@ function coordinatorHistory(
 }
 
 export async function startRuntime(options: RuntimeOptions) {
-  const store = new Store(options.dataDir),
-    catalog = new Catalog(curatedCatalog);
+  const store = new Store(options.dataDir);
+  const packages = new PackageService(store);
   let pairingToken = randomBytes(32).toString("hex");
   const session = randomBytes(32).toString("hex");
   // Running task id → its controller and the provider connection it uses.
@@ -135,6 +169,119 @@ export async function startRuntime(options: RuntimeOptions) {
     modelId: ModelId,
   });
   let origin = "";
+  const connections = new ConnectionService(
+    store,
+    {
+      secretBox: options.secretBox,
+      endpoints: options.connectorEndpoints,
+      fetch: options.connectorFetch,
+      openExternal: options.openExternal,
+    },
+    () => origin,
+  );
+  const broker = new ActionBroker(store, packages, connections, options.broker);
+  // Persist only the few most recent registry pages so searches cannot grow the database.
+  type CachedPages = { entries: { key: string; page: RegistryPage }[] };
+  const REGISTRY_CACHE_ENTRIES = 10;
+  const registry = new RegistryClient({
+    cache: {
+      get: (key) =>
+        store
+          .get<CachedPages>("registry-cache", "recent")
+          ?.entries.find((e) => e.key === key)?.page,
+      set: (key, page) => {
+        const entries = (
+          store.get<CachedPages>("registry-cache", "recent")?.entries ?? []
+        ).filter((e) => e.key !== key);
+        store.put("registry-cache", "recent", {
+          entries: [{ key, page }, ...entries].slice(0, REGISTRY_CACHE_ENTRIES),
+        });
+      },
+    },
+    ...options.registry,
+  });
+  function skillRelease(id: string) {
+    return (
+      packages.active("skill").find((r) => r.manifest.id === id) ??
+      fail(404, "That skill is not installed and enabled")
+    );
+  }
+  // Model tools for reviewed connector actions. Every call goes through the broker,
+  // which rechecks installation, consent, grants and connection state.
+  function connectorTools(
+    b: BotInstance,
+    actor: { taskId: string; boardId?: string; runId?: string },
+  ): ConnectorTool[] {
+    const tools: ConnectorTool[] = [];
+    for (const connector of reviewedConnectors) {
+      if (!store.get<Installation>("installation", connector.id)?.enabled)
+        continue;
+      if (connections.forConnector(connector.id)?.state !== "ready") continue;
+      for (const action of connector.actions) {
+        if (!b.grantedCapabilities.includes(action.capability)) continue;
+        tools.push({
+          name: action.toolName,
+          description: action.description,
+          inputSchema: action.params,
+          execute: async (args) => {
+            const current = store.get<Installation>(
+              "installation",
+              connector.id,
+            );
+            if (!current) return { error: "The connector was uninstalled" };
+            const result = await broker.request({
+              actor: { ...actor, botId: b.id },
+              release: {
+                id: current.id,
+                version: current.version,
+                digest: current.digest,
+              },
+              action: action.id,
+              arguments: args,
+            });
+            return result.status === "completed"
+              ? { summary: result.summary, untrustedData: result.data }
+              : {
+                  status: "awaiting-approval",
+                  summary: result.summary,
+                  note: "The user must approve this exact change in Socius. It has not happened yet.",
+                };
+          },
+        });
+      }
+    }
+    return tools;
+  }
+  /** Skills (loaded on demand) and connector tools for one bot's model call. */
+  function packageTools(
+    b: BotInstance,
+    actor: { taskId: string; boardId?: string; runId?: string },
+  ): Pick<
+    ModelRequest,
+    "skills" | "loadSkill" | "readSkillResource" | "connectorTools"
+  > {
+    return {
+      skills: packages.active("skill").map((r) => ({
+        id: r.manifest.id,
+        name: r.manifest.name,
+        description: r.manifest.description,
+      })),
+      // Progressive disclosure: full instructions and references load on demand,
+      // and disabling a skill takes effect on the next call.
+      loadSkill: (id) => {
+        const m = skillRelease(id).manifest as SkillManifest;
+        return {
+          instructions: m.instructions,
+          resources: (m.resources ?? [])
+            .filter((r) => r.kind === "reference")
+            .map((r) => r.path),
+        };
+      },
+      readSkillResource: (id, resourcePath) =>
+        packages.resourceText(skillRelease(id), resourcePath),
+      connectorTools: connectorTools(b, actor),
+    };
+  }
   function bot(id: string): BotInstance {
     return (
       store.get<BotInstance>("bot", uuid.parse(id)) ??
@@ -168,17 +315,6 @@ export async function startRuntime(options: RuntimeOptions) {
       .all<Task>("task")
       .some((t) => t.state === "running" && match(t));
   }
-  function installedSkills() {
-    const installations = store.all<Installation>("installation");
-    return catalog
-      .list()
-      .filter(
-        (p): p is Extract<Manifest, { kind: "skill" }> =>
-          p.kind === "skill" &&
-          installations.some((i) => i.id === p.id && i.version === p.version),
-      )
-      .map((p) => p.instructions);
-  }
   const teams = new TeamStore(store);
   const engine = new TeamEngine(
     teams,
@@ -200,7 +336,7 @@ export async function startRuntime(options: RuntimeOptions) {
           },
         };
       },
-      skills: installedSkills,
+      packageTools,
       proposeMemory: (botId, taskId, runId, content) =>
         proposal(botId, taskId, "memory", content, runId),
     }),
@@ -219,7 +355,7 @@ export async function startRuntime(options: RuntimeOptions) {
       modelRef: selected.ref,
       tools: selected.entry.tools !== false,
       bot: b,
-      skills: installedSkills(),
+      ...packageTools(b, { taskId }),
       signal,
       searchMemory: (q) => {
         if (!bot(b.id).grantedCapabilities.includes("memory.read"))
@@ -304,6 +440,7 @@ export async function startRuntime(options: RuntimeOptions) {
     } finally {
       clearTimeout(timeout);
       active.delete(task.id);
+      broker.forgetTask(task.id);
       res.end();
     }
   }
@@ -447,6 +584,17 @@ export async function startRuntime(options: RuntimeOptions) {
       const expectedHost = new URL(origin).host;
       if (req.headers.host !== expectedHost) fail(403, "Invalid host");
       const url = new URL(req.url ?? "/", origin);
+      // OAuth redirects arrive from the system browser without the app session; the
+      // one-time state created by an explicit sign-in authenticates them instead.
+      if (req.method === "GET" && url.pathname === "/oauth/callback") {
+        const result = await connections.callback(url.searchParams);
+        res.writeHead(result.ok ? 200 : 400, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
+        res.end(callbackPage(result.message));
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/pair") {
         const token = url.searchParams.get("token") ?? "";
         if (!pairingToken || !same(token, pairingToken))
@@ -480,8 +628,11 @@ export async function startRuntime(options: RuntimeOptions) {
           json(res, 200, {
             bots: store.all("bot"),
             groups: store.all("group"),
-            catalog: catalog.list(),
+            catalog: packages.catalog.list(),
+            releases: packages.releases(),
             installations: store.all("installation"),
+            connectorConnections: connections.list(),
+            actions: store.all("action").slice(-100),
             activity: store.all("activity").slice(-100).reverse(),
             approvals: store.all("approval"),
             tasks: store.all("task"),
@@ -555,70 +706,275 @@ export async function startRuntime(options: RuntimeOptions) {
         }
         if (req.method === "POST" && path === "/api/grants") {
           const input = z
-            .strictObject({ botId: uuid, memory: z.boolean() })
+            .union([
+              z.strictObject({ botId: uuid, memory: z.boolean() }),
+              z.strictObject({
+                botId: uuid,
+                capability: z.enum(GRANTABLE),
+                granted: z.boolean(),
+              }),
+            ])
             .parse(await body(req));
           const b = bot(input.botId);
-          b.grantedCapabilities = input.memory
-            ? ["memory.read", "memory.write"]
-            : [];
+          if ("memory" in input) {
+            const others = b.grantedCapabilities.filter(
+              (c) => !c.startsWith("memory."),
+            );
+            b.grantedCapabilities = input.memory
+              ? [...others, "memory.read", "memory.write"]
+              : others;
+            store.event(
+              "permissions.updated",
+              `Memory access ${input.memory ? "enabled" : "revoked"} for ${b.name}.`,
+            );
+          } else {
+            if (
+              input.granted &&
+              !store
+                .all<Installation>("installation")
+                .some(
+                  (i) =>
+                    i.enabled &&
+                    i.consentedCapabilities.includes(input.capability),
+                )
+            )
+              fail(409, "No enabled package was consented for that permission");
+            const others = b.grantedCapabilities.filter(
+              (c) => c !== input.capability,
+            );
+            b.grantedCapabilities = input.granted
+              ? [...others, input.capability]
+              : others;
+            store.event(
+              "permissions.updated",
+              `${input.capability} ${input.granted ? "granted to" : "revoked from"} ${b.name}.`,
+            );
+          }
           store.put("bot", b.id, b);
-          store.event(
-            "permissions.updated",
-            `Memory access ${input.memory ? "enabled" : "revoked"} for ${b.name}.`,
-          );
           json(res, 200, b);
           return;
         }
         if (req.method === "POST" && path === "/api/install/preview") {
           const input = z
-            .strictObject({ id: z.string(), version: z.string() })
+            .strictObject({
+              id: z.string().max(130),
+              version: z.string().max(20),
+            })
             .parse(await body(req));
-          const plan = catalog.planInstall(input.id, input.version);
-          json(res, 200, { ...plan, digest: digest(plan.packages) });
+          json(res, 200, packages.preview(input.id, input.version));
           return;
         }
         if (req.method === "POST" && path === "/api/install") {
           const input = z
             .strictObject({
-              id: z.string(),
-              version: z.string(),
+              id: z.string().max(130),
+              version: z.string().max(20),
               digest: z.string().length(64),
+              consent: z.array(Capability).max(20).default([]),
             })
             .parse(await body(req));
-          const plan = catalog.planInstall(input.id, input.version);
-          if (!same(digest(plan.packages), input.digest))
-            fail(409, "The installation plan changed. Review it again.");
-          if (plan.packages.some((p) => p.kind === "connector"))
-            fail(
-              409,
-              "Connector execution and authentication are not implemented yet",
-            );
-          const root = plan.packages.find((p) => p.id === input.id)!;
-          store.transaction(() => {
-            for (const p of plan.packages) {
-              const receipt: Installation = {
-                id: p.id,
-                version: p.version,
-                digest: digest(p),
-                installedAt: new Date().toISOString(),
-              };
-              store.put("installation", p.id, receipt);
-            }
-            if (root.kind === "bot")
+          json(
+            res,
+            200,
+            packages.install(input, (template: BotManifest) =>
               createBot(
                 {
-                  name: root.name,
-                  role: root.role,
-                  instructions: root.instructions,
+                  name: template.name,
+                  role: template.role,
+                  instructions: template.instructions,
                 },
-                root,
-              );
-            store.event(
-              "package.installed",
-              `Installed ${root.name} ${root.version}. No permissions were granted.`,
-            );
-          });
+                template,
+              ),
+            ),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/installations/enable") {
+          const input = z
+            .strictObject({ id: z.string().max(130), enabled: z.boolean() })
+            .parse(await body(req));
+          json(res, 200, packages.setEnabled(input.id, input.enabled));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/installations/uninstall") {
+          const input = z
+            .strictObject({ id: z.string().max(130) })
+            .parse(await body(req));
+          packages.uninstall(input.id);
+          // Removing a connector also revokes its stored account credentials.
+          for (const c of connections.list())
+            if (c.connectorId === input.id && c.state !== "disconnected")
+              await connections.disconnect(c.id);
           json(res, 200, { ok: true });
+          return;
+        }
+        if (req.method === "POST" && path === "/api/installations/rollback") {
+          const input = z
+            .strictObject({ id: z.string().max(130) })
+            .parse(await body(req));
+          json(res, 200, packages.rollback(input.id));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/skills/import") {
+          const input = z
+            .strictObject({
+              label: z.string().max(200).default("Local folder"),
+              files: z
+                .array(
+                  z.strictObject({
+                    path: z.string().min(1).max(400),
+                    content: z.string().max(8 * 1024 * 1024),
+                  }),
+                )
+                .min(1)
+                .max(250),
+            })
+            .parse(await body(req, 8 * 1024 * 1024));
+          json(
+            res,
+            200,
+            packages.importSkill(
+              input.files.map((f) => ({
+                path: f.path,
+                bytes: new Uint8Array(Buffer.from(f.content, "base64")),
+              })),
+              input.label,
+            ),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/templates/import") {
+          const input = z
+            .strictObject({
+              label: z.string().max(200).default("Template file"),
+              manifest: z.unknown(),
+            })
+            .parse(await body(req));
+          json(res, 200, packages.importTemplate(input.manifest, input.label));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/export/skill/preview") {
+          const input = z
+            .strictObject({
+              id: z.string().max(130),
+              version: z.string().max(20),
+            })
+            .parse(await body(req));
+          json(res, 200, packages.exportSkillPreview(input.id, input.version));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/export/skill") {
+          const input = z
+            .strictObject({
+              id: z.string().max(130),
+              version: z.string().max(20),
+              digest: Digest,
+              acknowledge: z.boolean().default(false),
+            })
+            .parse(await body(req));
+          json(
+            res,
+            200,
+            packages.exportSkill(
+              input.id,
+              input.version,
+              input.digest,
+              input.acknowledge,
+            ),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/export/bot/preview") {
+          const input = z
+            .strictObject({ botId: uuid, draft: BotExportDraftSchema })
+            .parse(await body(req));
+          const b = bot(input.botId);
+          const { manifest: _manifest, ...preview } = packages.botExportPreview(
+            b,
+            input.draft,
+            store.memory(b.id),
+          );
+          json(res, 200, preview);
+          return;
+        }
+        if (req.method === "POST" && path === "/api/export/bot") {
+          const input = z
+            .strictObject({
+              botId: uuid,
+              draft: BotExportDraftSchema,
+              digest: Digest,
+              acknowledge: z.boolean().default(false),
+            })
+            .parse(await body(req));
+          const b = bot(input.botId);
+          json(
+            res,
+            200,
+            packages.exportBot(
+              b,
+              input.draft,
+              store.memory(b.id),
+              input.digest,
+              input.acknowledge,
+            ),
+          );
+          return;
+        }
+        if (req.method === "GET" && path === "/api/registry") {
+          json(
+            res,
+            200,
+            await registry.search({
+              search: url.searchParams.get("search") ?? "",
+              cursor: url.searchParams.get("cursor") ?? "",
+            }),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/connectors/connect") {
+          const input = z
+            .strictObject({ connectorId: z.string().max(130) })
+            .parse(await body(req));
+          if (
+            !store.get<Installation>("installation", input.connectorId)?.enabled
+          )
+            fail(409, "Install and enable the connector first");
+          json(res, 200, await connections.connect(input.connectorId));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/connectors/verify") {
+          const input = z
+            .strictObject({ connectionId: uuid })
+            .parse(await body(req));
+          json(res, 200, await connections.verify(input.connectionId));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/connectors/disconnect") {
+          const input = z
+            .strictObject({ connectionId: uuid })
+            .parse(await body(req));
+          json(res, 200, await connections.disconnect(input.connectionId));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/actions/resolve") {
+          const input = z
+            .strictObject({
+              id: uuid,
+              digest: z.string().length(64),
+              approve: z.boolean(),
+            })
+            .parse(await body(req));
+          json(res, 200, await broker.resolve(input));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/actions/check") {
+          const input = z.strictObject({ id: uuid }).parse(await body(req));
+          json(res, 200, await broker.check(input.id));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/actions/retry") {
+          const input = z.strictObject({ id: uuid }).parse(await body(req));
+          json(res, 200, await broker.retry(input.id));
           return;
         }
         if (req.method === "POST" && path === "/api/approvals") {
@@ -1087,7 +1443,7 @@ export async function startRuntime(options: RuntimeOptions) {
       });
       res.end(await readFile(file));
     } catch (error) {
-      if (error instanceof TeamError)
+      if (error instanceof TeamError || error instanceof PackageError)
         json(res, error.status, { error: error.message });
       else errorResponse(res, error);
     }
@@ -1104,6 +1460,9 @@ export async function startRuntime(options: RuntimeOptions) {
     origin,
     pairingURL: `${origin}/pair?token=${pairingToken}`,
     store,
+    packages,
+    connections,
+    broker,
     engine,
     close: async () => {
       await engine.close();

@@ -1,4 +1,4 @@
-import { mainBot } from "./index.js";
+import { mainBot, type ReleaseInput } from "./index.js";
 import type { Manifest } from "@socius/contracts";
 const summary: Manifest = {
   schemaVersion: 1,
@@ -61,19 +61,61 @@ export const curatedCatalog: Manifest[] = [
   {
     schemaVersion: 1,
     id: "socius/notion",
-    version: "0.1.0",
+    version: "0.2.0",
     kind: "connector",
     name: "Notion",
     description:
-      "Planned MCP integration for workspace pages and tasks. Authentication and tool execution are not available in this release.",
+      "Search and read pages in your Notion workspace, and create new pages after you approve each exact change.",
     publisher: "Socius",
     license: "LicenseRef-Socius-Pending",
-    capabilities: [],
+    capabilities: ["documents.read", "documents.write"],
     dependencies: [],
     protocol: "mcp",
     transport: "streamable-http",
     authentication: "oauth",
     setup:
-      "Connector workstream: implement reviewed MCP configuration, scoped OAuth and the shared action broker.",
+      "Sign in to Notion in your browser. Socius registers as an OAuth client with PKCE, stores tokens with OS-backed encryption and never shows them to bots. Grant each bot document access separately.",
+    upstream: {
+      registry: "io.modelcontextprotocol.registry",
+      name: "com.notion/mcp",
+      version: "1.0.1",
+      remoteUrl: "https://mcp.notion.com/mcp",
+    },
+    tools: [
+      {
+        id: "notion.search",
+        access: "read",
+        capability: "documents.read",
+        description:
+          "Search page titles and content the connected account can see.",
+      },
+      {
+        id: "notion.fetch",
+        access: "read",
+        capability: "documents.read",
+        description: "Read one page by ID or URL.",
+      },
+      {
+        id: "notion.create-page",
+        access: "write",
+        capability: "documents.write",
+        description:
+          "Create one page under a parent page. Every call needs your approval of the exact title and content.",
+      },
+    ],
   },
 ];
+/** Curated releases with provenance: registry-backed connectors keep their upstream identity. */
+export const curatedReleases: ReleaseInput[] = curatedCatalog.map((manifest) =>
+  manifest.kind === "connector" && manifest.upstream
+    ? {
+        manifest,
+        source: {
+          type: "mcp-registry",
+          name: manifest.upstream.name,
+          version: manifest.upstream.version,
+        },
+        trust: "reviewed",
+      }
+    : { manifest, source: { type: "bundled" }, trust: "curated" },
+);

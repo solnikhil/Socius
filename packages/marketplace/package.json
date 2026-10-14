@@ -5,9 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./curated": "./src/curated.ts"
+    "./curated": "./src/curated.ts",
+    "./registry": "./src/registry.ts"
   },
   "dependencies": {
-    "@socius/contracts": "0.1.0"
+    "@socius/contracts": "0.1.0",
+    "zod": "4.6.7"
   }
 }

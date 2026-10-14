@@ -19,14 +19,17 @@ export const fail = (
 ): never => {
   throw new HttpError(status, message, code);
 };
-export async function body(req: IncomingMessage): Promise<unknown> {
+export async function body(
+  req: IncomingMessage,
+  limit = 1024 * 1024,
+): Promise<unknown> {
   if (!req.headers["content-type"]?.startsWith("application/json"))
     fail(415, "Expected JSON");
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 1024 * 1024) fail(413, "Request too large");
+    if (size > limit) fail(413, "Request too large");
     chunks.push(chunk);
   }
   try {
