@@ -786,8 +786,37 @@ main > .error {
   background: var(--surface-2);
 }
 .bot-details {
-  width: 280px;
-  max-width: 280px;
+  width: 320px;
+  max-width: 320px;
+}
+.bot-model-menu {
+  padding: 2px 2px 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.bot-model-options {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.bot-model-options button,
+.bot-model-menu > button {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 7px 8px;
+  border-radius: 9px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--text);
+}
+.bot-model-options button:hover,
+.bot-model-menu > button:hover {
+  background: var(--surface-2);
+}
+.bot-model-options button[aria-checked="true"] {
+  background: var(--surface);
 }
 .bot-details-head {
   display: flex;
@@ -1075,23 +1104,6 @@ main > .error {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-.model-chip {
-  height: 34px;
-  border: none;
-  background: transparent;
-  color: var(--text-3);
-  font-size: 12.5px;
-  padding: 0 8px;
-  gap: 4px;
-  border-radius: 999px;
-  max-width: 200px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.model-chip:hover {
-  background: var(--surface-2);
-  color: var(--text-2);
 }
 .send {
   width: 34px;
@@ -2206,6 +2218,30 @@ button.member-row:hover {
   padding: 30px 38px 40px;
   min-width: 0;
 }
+/* Providers and models sit on a lifted graphite pane. The app chrome stays darker. */
+html[data-theme="dark"] .settings-dialog {
+  background: #3a3a3a;
+  border-color: #5c5c5c;
+  --sidebar: #333333;
+  --sidebar-line: #4a4a4a;
+  --surface-2: #464646;
+  --surface-3: #505050;
+  --text: #f4f4f4;
+  --text-2: #d2d2d2;
+}
+html[data-theme="dark"] .settings-pane {
+  background: #4a4a4a;
+  --bg: #585858;
+  --surface: #585858;
+  --surface-2: #666666;
+  --surface-3: #707070;
+  --input: #606060;
+  --border: #787878;
+  --border-strong: #8c8c8c;
+  --text: #f7f7f7;
+  --text-2: #e2e2e2;
+  --text-3: #c8c8c8;
+}
 .settings-pane .dialog-close {
   position: sticky;
   float: right;
@@ -2324,9 +2360,13 @@ h4.with-mark {
 }
 .bot-model-list li {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 260px);
+  grid-template-columns: 28px minmax(0, 1fr) minmax(180px, 260px);
   align-items: center;
   gap: 10px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
 .bot-model-name {
   display: flex;
@@ -2395,11 +2435,12 @@ h4.with-mark {
   gap: 11px;
   padding: 11px 12px;
   border-radius: 12px;
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border);
+  color: var(--text);
 }
 .provider-tile:hover {
-  background: var(--surface);
+  background: var(--surface-2);
   border-color: var(--border-strong);
 }
 .provider-tile > span:last-child {
@@ -2559,6 +2600,7 @@ h4.with-mark {
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+  background: var(--surface);
 }
 .discovered-list:empty {
   display: none;
@@ -2638,40 +2680,6 @@ h4.with-mark {
   background: color-mix(in srgb, var(--danger) 24%, transparent);
 }
 
-/* Composer model picker */
-.model-picker {
-  position: relative;
-}
-.model-menu {
-  width: 300px;
-}
-.model-menu [data-slot="dropdown-menu-radio-item"] {
-  padding-left: 8px;
-}
-.model-menu [data-slot="dropdown-menu-radio-item"] > span:first-child {
-  display: none;
-}
-.model-menu-list {
-  max-height: 300px;
-  overflow-y: auto;
-}
-.model-menu-list > button,
-.model-menu > button,
-.model-menu [role="menuitem"],
-.model-menu [role="menuitemradio"] {
-  width: 100%;
-  justify-content: flex-start;
-  gap: 9px;
-  border: none;
-  background: transparent;
-  padding: 7px 8px;
-  border-radius: 9px;
-  font-size: 13px;
-  text-align: left;
-}
-.model-menu-list > button:hover {
-  background: var(--surface-2);
-}
 .menu-check {
   width: 16px;
   display: inline-flex;

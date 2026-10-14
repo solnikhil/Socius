@@ -536,7 +536,7 @@ export function App() {
             group={group}
             state={state}
             onRefresh={refresh}
-            onSettings={() => openSettings("general")}
+            onSettings={openSettings}
             onEditGroup={() => setGrouping("edit")}
             onDeleteGroup={() =>
               void api("groups", { id: group.id }, "DELETE")

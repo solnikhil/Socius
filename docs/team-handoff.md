@@ -13,6 +13,30 @@ Use Node.js 24, `npm ci`, then `npm run desktop`. The user owns UI/refinement. T
 
 Issues [#2 specification](issues/teams-boards.md) and [#3 specification](issues/skills-connectors-marketplace.md) contain the full winning workflows, PR sequence and closure criteria. Agents can read the public repository/issues without Notion access. Do not guess GitHub assignees or dates.
 
+## Dreaming workstream — ready for assignment
+
+[Issue #8](https://github.com/solnikhil/Socius/issues/8) covers the complete feature and acceptance contract. **Owner: unassigned; the user will assign it.** The [handwritten spec](specs/dreaming.md) is integrated on main. Dreaming itself is not delivered on main.
+
+Partial implementation is preserved on `codex/dreaming-foundation` in [draft PR #9](https://github.com/solnikhil/Socius/pull/9). Its [inventory and review priorities](https://github.com/solnikhil/Socius/blob/codex/dreaming-foundation/docs/issues/dreaming-handoff.md) identify the exact files and remaining work. Continue from that branch after reviewing it against the issue; do not merge the draft as a finished feature.
+
+Draft regression evidence: typecheck, all 114 existing tests, catalog check, build and both existing workspace browser flows passed. Dedicated dreaming/scheduler/crash tests and live quality evaluation remain outstanding. The Electron launch test failed before these changes with `Process failed to launch` / `kill EPERM`, so current packaged/desktop verification remains open.
+
+The assignee owns the background service, policy/recovery, tests and focused settings integration, coordinating shared DTO/runtime hooks with other workstreams and visual decisions with the user. Complete correction/deletion protection, bounded scheduling, retention, useful source inspection and dedicated-model consent before acceptance. Keep group/shared memory, semantic search, cloud wakeups and general routine scheduling separate. Notion has the issue, spec and checklist; keep feature boxes unchecked until verified integration.
+
+## Scheduling, durability and proactivity — ready for assignment
+
+[Issue #10](https://github.com/solnikhil/Socius/issues/10) is a separate workstream for **A03 Scheduling**, **A04 Durable execution** and **A05 Proactivity**. **Owner: unassigned; the user will assign it.** Read the [complete work package](issues/scheduling-durability-proactivity.md) for requirements, PR sequence and acceptance tests. No implementation is claimed.
+
+Deliver disabled-by-default private routines with persisted schedules, explicit timezone/missed-run policy and history; a documented checkpoint/resume model with controlled crash tests and the existing action/approval boundary; and opt-in briefs/watchers/finite goal follow-ups with quiet/no-change behavior. The same scheduler, queue, execution records and policy service must support these flows; avoid separate engines per feature.
+
+Coordinate shared contracts/runtime/provider-budget/cancellation hooks with Dreaming #8 and the group/connector workstreams. Dreaming remains a separate issue and is not a dependency on an unmerged draft. The user owns UI/visual refinement. Cloud hosting, OS wake, new delivery channels, new connector adapters and board execution remain out of scope. Keep Notion A03/A04/A05 and scheduled-workflow I05 unchecked until verified integration.
+
+## Additional product roadmap — planned
+
+The [roadmap additions](roadmap.md) track A07 approved delegation from Socius's direct chat (the user's highest-priority orchestrator gap), A08 permissioned web search, U07 cross-chat/memory search, U08 edit/resend and branching, U09 pinned replies, U10 on-device dictation, U11 image/PDF attachments, O01 per-bot token/cost usage and a runtime-enforced monthly cap, and O02 inspectable bot health from reactions, failures and usage.
+
+A03 routines (for example, Planner's weekly draft, off until enabled, with run history in Activity) remain in Issue #10 rather than a duplicate workstream. These new entries are unassigned plans, not implemented behavior. Coordinate UI with the user and shared persistence, policy and usage hooks with ongoing workstreams; see the roadmap for scope and dependencies.
+
 ## Completed and integrated
 
 - Runnable Electron desktop shell and separate local runtime.
@@ -74,7 +98,7 @@ Boards were retired on 2026-10-14. Group chats are the single collaboration surf
 
 ## Explicitly deferred / not assigned in the current two issues
 
-Ollama testing is deferred at the user's request. LM Studio/llama.cpp checks can follow. Recurring routines/proactivity, browser automation/takeover, PDF/Office parsing, Tailscale/phone pairing, Telegram, public hosting/accounts/billing, signing/updates, agent email, semantic memory, voice, India Stack and optional cloud execution remain backlog items. Do not treat these as already assigned to the two teammates or required before your immediate UI refinement.
+Ollama testing is deferred at the user's request. LM Studio/llama.cpp checks can follow. Recurring routines/durable execution/proactivity are now specified in unassigned Issue #10; implementation remains pending. Browser automation/takeover, PDF/Office parsing, Tailscale/phone pairing, Telegram, public hosting/accounts/billing, signing/updates, agent email, semantic memory, voice, India Stack and optional cloud execution remain backlog items. Do not treat these as already assigned to the two teammates or required before your immediate UI refinement.
 
 ## Coordination rules
 

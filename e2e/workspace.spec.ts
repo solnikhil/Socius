@@ -59,6 +59,12 @@ test("configure a model, create bots manually and through Socius, install skills
   await botModel.selectOption({ value: "" });
   await expect(botModel).toHaveValue("");
   await page.emulateMedia({ colorScheme: "dark" });
+  await settings.getByRole("tab", { name: "Providers" }).click();
+  await page.screenshot({
+    path: "test-results/socius-settings-providers-dark.png",
+    animations: "disabled",
+  });
+  await settings.getByRole("tab", { name: "Models" }).click();
   await page.screenshot({
     path: "test-results/socius-settings-dark.png",
     animations: "disabled",
@@ -68,7 +74,18 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(settings).not.toBeVisible();
   await expect(
     page.getByRole("button", { name: "Model: fixture-model" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Socius details" }).click();
+  const details = page.locator(".bot-details");
+  await expect(
+    details.getByRole("radio", { name: "Workspace default" }),
+  ).toBeChecked();
+  await details.getByRole("radio", { name: "fixture-model" }).click();
+  await expect(
+    details.getByRole("radio", { name: "fixture-model" }),
+  ).toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(details).toHaveCount(0);
   await page.getByRole("button", { name: "Create" }).first().click();
   // The + opens the same palette as New chat; there is no separate menu.
   await expect(page.getByRole("menu", { name: "Create" })).toHaveCount(0);
