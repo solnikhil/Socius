@@ -31,6 +31,11 @@ export interface Message {
   groupId?: string;
   /** The user's reaction to a bot's reply. The bot reads it as feedback. */
   reaction?: Reaction;
+  /**
+   * In Socius's chat: a specialist's reply to a request Socius sent it. The
+   * message belongs to Socius's conversation; `botId` here is the author.
+   */
+  delegated?: { botId: string; request: string };
 }
 /** Reactions the user can leave on a bot's reply, with what each tells the bot. */
 export const REACTIONS = {
@@ -192,14 +197,46 @@ export interface BotDraft {
   instructions: string;
   appearance?: BotAppearance | undefined;
 }
+/** A proposed edit to a specialist; omitted fields stay as they are. */
+export interface BotUpdate {
+  botId: string;
+  name?: string;
+  role?: string;
+  instructions?: string;
+}
+/** Socius asking a specialist that would use its connected apps to answer. */
+export interface DelegatedAsk {
+  botId: string;
+  request: string;
+  /** Connected apps the specialist can use, shown to the user. */
+  apps: string[];
+}
+/** A proposed group chat. */
+export interface GroupDraft {
+  name: string;
+  memberIds: string[];
+}
+/** A proposed member list for an existing group chat. */
+export interface GroupMembersChange {
+  groupId: string;
+  memberIds: string[];
+}
 export interface Approval {
   id: string;
   botId: string;
   taskId: string;
-  kind: "memory" | "bot";
+  kind: "memory" | "bot" | "bot-update" | "group" | "group-members" | "ask";
   content: string;
-  payload: string | BotDraft;
+  payload:
+    | string
+    | BotDraft
+    | BotUpdate
+    | GroupDraft
+    | GroupMembersChange
+    | DelegatedAsk;
   digest: string;
+  /** What the user typed instead of approving; returned to the proposing bot. */
+  feedback?: string;
   /** Present when the proposal came from a board run. */
   runId?: string;
   state: "pending" | "approved" | "denied";

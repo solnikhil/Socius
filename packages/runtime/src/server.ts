@@ -29,6 +29,9 @@ import type {
   ActionRecord,
   Approval,
   BotDraft,
+  BotUpdate,
+  GroupDraft,
+  GroupMembersChange,
   BotLayout,
   Category,
   GroupChat,
@@ -51,6 +54,7 @@ import {
   type ConnectorTool,
   type ModelRequest,
   type ModelRunner,
+  type Orchestration,
 } from "./model.js";
 import { body, errorResponse, fail, json, validateBody } from "./http.js";
 import {
@@ -147,6 +151,11 @@ const BotDraftSchema = z.strictObject({
   instructions: z.string().trim().min(1).max(20000),
   appearance: BotAppearanceSchema.optional(),
 });
+const BotUpdateFields = z.strictObject({
+  name: z.string().trim().min(1).max(100).optional(),
+  role: z.string().trim().min(1).max(200).optional(),
+  instructions: z.string().trim().min(1).max(20000).optional(),
+});
 const uuid = z.string().uuid();
 const Attachment = z
   .strictObject({
@@ -209,6 +218,26 @@ function coordinatorHistory(
   return turns;
 }
 
+/**
+ * Socius's own chat: specialists' replies to its requests are attributed and
+ * merged into its turns, since providers expect turns to alternate.
+ */
+function directHistory(
+  messages: Message[],
+  name: (id: string) => string,
+): ModelRequest["messages"] {
+  const turns: { role: "user" | "assistant"; content: string }[] = [];
+  for (const m of messages.slice(-40)) {
+    const content = m.delegated
+      ? `[${name(m.delegated.botId)} replied to your request]\n${m.content}`
+      : m.content;
+    const last = turns.at(-1);
+    if (last?.role === m.role) last.content += `\n\n${content}`;
+    else turns.push({ role: m.role, content });
+  }
+  return turns;
+}
+
 export async function startRuntime(options: RuntimeOptions) {
   const store = new Store(options.dataDir);
   const packages = new PackageService(store);
@@ -238,6 +267,8 @@ export async function startRuntime(options: RuntimeOptions) {
     options.browser,
   );
   let dreamer: Dreamer | undefined;
+  /** Specialist requests Socius may make per message in its own chat. */
+  const MAX_DIRECT_ASKS = 6;
   /** How long a bot waits for the user to review a change before moving on. */
   const APPROVAL_WAIT_MS = 15 * 60_000;
   const providers = new ProviderService(
@@ -664,7 +695,7 @@ export async function startRuntime(options: RuntimeOptions) {
             .map((t) => `- ${t.name}: ${clip(t.role, 120)}`)
             .join("\n")}`
         : "",
-      "This roster is a snapshot for routing. Bots cannot be messaged from here: suggest opening a bot's chat, or a group chat when several should work together.",
+      "You orchestrate this workspace. Ask any specialist directly with askBot: its reply appears in this chat and comes back to you, so combine answers yourself and attribute them. Changing the workspace needs the user's approval each time: createBot, updateBot, createGroupChat and changeGroupMembers show the user a review card and wait for their decision. Use exact names from this roster.",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -756,8 +787,23 @@ export async function startRuntime(options: RuntimeOptions) {
       // Only the main bot gets the tool; specialists never propose bots.
       ...(b.template.id === "socius/main"
         ? {
-            proposeBot: (d: BotDraft) =>
-              proposal(b.id, taskId, "bot", BotDraftSchema.parse(d)),
+            proposeBot: (d: BotDraft) => {
+              const draft = BotDraftSchema.parse(d);
+              return proposeAndWait(
+                b.id,
+                taskId,
+                "bot",
+                draft,
+                `Create ${draft.name} — ${draft.role}`,
+                () => {
+                  const made = store
+                    .all<BotInstance>("bot")
+                    .findLast((x) => x.name === draft.name);
+                  return made ? { bot: made.name } : {};
+                },
+              );
+            },
+            orchestrate: orchestration(b, taskId),
           }
         : {}),
     };
@@ -856,6 +902,8 @@ export async function startRuntime(options: RuntimeOptions) {
     } finally {
       clearTimeout(timeout);
       active.delete(task.id);
+      // Anything still waiting on this task (an unanswered review) stops waiting.
+      controller.abort();
       taskSkills.delete(task.id);
       browser.releaseTask(task.id);
       dreaming.foregroundFinished();
@@ -1128,12 +1176,66 @@ export async function startRuntime(options: RuntimeOptions) {
     store.event("bot.created", `Created ${instance.name}.`);
     return instance;
   }
+  function createGroup(input: {
+    name?: string | undefined;
+    memberIds: string[];
+    maxAsks?: number | undefined;
+  }): GroupChat {
+    const members = groupMembers(input.memberIds);
+    const g: GroupChat = {
+      id: randomUUID(),
+      name: input.name || members.map((m) => m.name).join(", "),
+      memberIds: input.memberIds,
+      ...(input.maxAsks === undefined ? {} : { maxAsks: input.maxAsks }),
+      createdAt: new Date().toISOString(),
+    };
+    store.put("group", g.id, g);
+    store.event("group.created", `Created the group chat ${g.name}.`);
+    return g;
+  }
+  /** Applies an approved bot or group proposal, rechecking it against current state. */
+  function applyWorkspaceChange(
+    approval: Approval,
+    appearance?: z.infer<typeof BotAppearanceSchema>,
+  ) {
+    if (approval.kind === "bot") {
+      const draft = BotDraftSchema.parse(approval.payload);
+      createBot(appearance ? { ...draft, appearance } : draft);
+    } else if (approval.kind === "bot-update") {
+      const change = approval.payload as BotUpdate;
+      const target = bot(change.botId);
+      if (target.template.id === "socius/main")
+        fail(403, "Socius's own instructions are not edited by proposals");
+      const fields = BotUpdateFields.parse({
+        name: change.name,
+        role: change.role,
+        instructions: change.instructions,
+      });
+      for (const key of ["name", "role", "instructions"] as const)
+        if (fields[key] !== undefined) target[key] = fields[key]!;
+      store.put("bot", target.id, target);
+      store.event("bot.updated", `Updated ${target.name}.`);
+    } else if (approval.kind === "group") {
+      const draft = approval.payload as GroupDraft;
+      createGroup({ name: draft.name, memberIds: MemberIds.parse(draft.memberIds) });
+    } else if (approval.kind === "group-members") {
+      const change = approval.payload as GroupMembersChange;
+      const g = group(change.groupId);
+      if (running((t) => t.groupId === g.id))
+        fail(409, "Wait until this group chat finishes its reply.");
+      groupMembers(MemberIds.parse(change.memberIds));
+      g.memberIds = change.memberIds;
+      store.put("group", g.id, g);
+      store.event("group.updated", `Updated the group chat ${g.name}.`);
+    }
+  }
   function proposal(
     botId: string,
     taskId: string,
-    kind: "memory" | "bot",
-    payload: string | BotDraft,
+    kind: Approval["kind"],
+    payload: Approval["payload"],
     runId?: string,
+    content?: string,
   ) {
     if (
       store.all<Approval>("approval").filter((a) => a.taskId === taskId)
@@ -1147,9 +1249,10 @@ export async function startRuntime(options: RuntimeOptions) {
       kind,
       payload,
       content:
-        typeof payload === "string"
+        content ??
+        (typeof payload === "string"
           ? payload
-          : `Create ${payload.name} — ${payload.role}`,
+          : `Create ${(payload as BotDraft).name} — ${(payload as BotDraft).role}`),
       digest: digest({ botId, taskId, kind, payload }),
       ...(runId ? { runId } : {}),
       state: "pending",
@@ -1159,11 +1262,198 @@ export async function startRuntime(options: RuntimeOptions) {
     store.put("approval", approval.id, approval);
     store.event(
       "approval.requested",
-      kind === "bot"
-        ? "A bot creation proposal needs review."
-        : "A memory proposal needs review.",
+      kind === "memory"
+        ? "A memory proposal needs review."
+        : kind === "bot"
+          ? "A bot creation proposal needs review."
+          : "A workspace change needs review.",
     );
     return { approvalId: approval.id };
+  }
+  const approvalListeners = new Set<(a: Approval) => void>();
+  /**
+   * Proposes a change and waits for the user's review card, like connector
+   * writes: the task deadline pauses meanwhile, and the bot gets the outcome.
+   */
+  async function proposeAndWait(
+    botId: string,
+    taskId: string,
+    kind: Approval["kind"],
+    payload: Approval["payload"],
+    content: string,
+    done: (a: Approval) => Record<string, unknown> = () => ({}),
+  ) {
+    const { approvalId } = proposal(
+      botId,
+      taskId,
+      kind,
+      payload,
+      undefined,
+      content,
+    );
+    const task = active.get(taskId);
+    task?.send?.({ type: "approval", approvalId });
+    const release = task?.hold?.();
+    const signal = task?.controller.signal ?? AbortSignal.abort();
+    let decided: Approval | null;
+    try {
+      decided = await new Promise<Approval | null>((resolve) => {
+        const finish = (a: Approval | null) => {
+          clearTimeout(timer);
+          approvalListeners.delete(listener);
+          signal.removeEventListener("abort", abort);
+          resolve(a);
+        };
+        const listener = (a: Approval) => {
+          if (a.id === approvalId && a.state !== "pending") finish(a);
+        };
+        const abort = () => finish(null);
+        const timer = setTimeout(() => finish(null), APPROVAL_WAIT_MS);
+        timer.unref?.();
+        approvalListeners.add(listener);
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
+      });
+    } finally {
+      release?.();
+    }
+    if (!decided)
+      return {
+        status: "still-waiting",
+        summary: content,
+        note: "The user has not reviewed this yet. Nothing changed. Tell them it is waiting for their approval in this chat.",
+      };
+    if (decided.state === "approved")
+      return { status: "done", summary: content, ...done(decided) };
+    return decided.feedback
+      ? {
+          status: "declined-with-feedback",
+          summary: content,
+          userFeedback: decided.feedback,
+          note: "The user did not approve this and replied instead. Follow their reply; propose a revised change if that is what they want.",
+        }
+      : {
+          status: "declined",
+          summary: content,
+          note: "The user declined. Nothing changed. Do not propose it again unless they ask.",
+        };
+  }
+  /** Finds a specialist by its exact (case-insensitive) name. Socius is not one. */
+  function specialist(name: string): BotInstance | undefined {
+    const wanted = name.trim().toLowerCase();
+    return store
+      .all<BotInstance>("bot")
+      .find(
+        (b) =>
+          b.template.id !== "socius/main" &&
+          (b.name.toLowerCase() === wanted || b.id === name),
+      );
+  }
+  const roster = () =>
+    store
+      .all<BotInstance>("bot")
+      .filter((b) => b.template.id !== "socius/main")
+      .map((b) => b.name)
+      .join(", ") || "none";
+  /** Socius's workspace changes; each waits for the user's approval. */
+  function orchestration(lead: BotInstance, taskId: string): Orchestration {
+    return {
+      updateBot: async ({ bot: name, ...fields }) => {
+        const target = specialist(name);
+        if (!target)
+          return { error: `No bot is called "${name}". Bots: ${roster()}.` };
+        const change: BotUpdate = { botId: target.id };
+        for (const key of ["name", "role", "instructions"] as const)
+          if (fields[key] !== undefined && fields[key] !== target[key])
+            change[key] = BotUpdateFields.shape[key].unwrap().parse(fields[key]);
+        if (Object.keys(change).length === 1)
+          return { error: "Nothing would change." };
+        const parts = [
+          change.name && `rename to ${change.name}`,
+          change.role && "change its role",
+          change.instructions && "rewrite its instructions",
+        ].filter(Boolean);
+        return proposeAndWait(
+          lead.id,
+          taskId,
+          "bot-update",
+          change,
+          `Update ${target.name}: ${parts.join(", ")}`,
+        );
+      },
+      createGroup: async ({ name, members }) => {
+        const bots = members.map((m) => specialist(m));
+        const missing = members.filter((_, i) => !bots[i]);
+        if (missing.length)
+          return {
+            error: `No bot is called ${missing.map((m) => `"${m}"`).join(", ")}. Bots: ${roster()}.`,
+          };
+        const draft: GroupDraft = {
+          name: z.string().trim().min(1).max(100).parse(name),
+          memberIds: MemberIds.parse([...new Set(bots.map((b) => b!.id))]),
+        };
+        return proposeAndWait(
+          lead.id,
+          taskId,
+          "group",
+          draft,
+          `Create group chat “${draft.name}” with ${bots.map((b) => b!.name).join(", ")}`,
+        );
+      },
+      changeMembers: async ({ group: name, add = [], remove = [] }) => {
+        const wanted = name.trim().toLowerCase();
+        const g = store
+          .all<GroupChat>("group")
+          .find((x) => x.name.toLowerCase() === wanted || x.id === name);
+        if (!g)
+          return {
+            error: `No group chat is called "${name}". Groups: ${
+              store
+                .all<GroupChat>("group")
+                .map((x) => x.name)
+                .join(", ") || "none"
+            }.`,
+          };
+        const resolve = (names: string[]) => names.map((n) => specialist(n));
+        const adding = resolve(add),
+          removing = resolve(remove);
+        const missing = [...add, ...remove].filter(
+          (_, i) => ![...adding, ...removing][i],
+        );
+        if (missing.length)
+          return {
+            error: `No bot is called ${missing.map((m) => `"${m}"`).join(", ")}. Bots: ${roster()}.`,
+          };
+        const out = new Set(removing.map((b) => b!.id));
+        const memberIds = [
+          ...new Set([...g.memberIds, ...adding.map((b) => b!.id)]),
+        ].filter((id) => !out.has(id));
+        if (
+          memberIds.length === g.memberIds.length &&
+          memberIds.every((id) => g.memberIds.includes(id))
+        )
+          return { error: "The members would not change." };
+        const change: GroupMembersChange = {
+          groupId: g.id,
+          memberIds: MemberIds.parse(memberIds),
+        };
+        const names = (ids: string[]) =>
+          ids.map((id) => store.get<BotInstance>("bot", id)?.name ?? "?");
+        return proposeAndWait(
+          lead.id,
+          taskId,
+          "group-members",
+          change,
+          `Change members of “${g.name}”: ${[
+            adding.length && `add ${names(adding.map((b) => b!.id)).join(", ")}`,
+            removing.length &&
+              `remove ${names(removing.map((b) => b!.id)).join(", ")}`,
+          ]
+            .filter(Boolean)
+            .join("; ")}`,
+        );
+      },
+    };
   }
   const server = createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -2013,6 +2303,10 @@ export async function startRuntime(options: RuntimeOptions) {
               approve: z.boolean(),
               // The reviewer picks a proposed bot's look; it is not part of the proposal.
               appearance: BotAppearanceSchema.optional(),
+              feedback: z.string().trim().min(1).max(2000).optional(),
+            })
+            .refine((v) => !(v.approve && v.feedback), {
+              message: "Feedback replaces approval",
             })
             .parse(await body(req));
           const approval =
@@ -2048,22 +2342,19 @@ export async function startRuntime(options: RuntimeOptions) {
               );
             } else {
               if (b.template.id !== "socius/main")
-                fail(403, "Only the main bot can propose specialists");
+                fail(403, "Only the main bot can propose workspace changes");
               store.transaction(() => {
-                const draft = BotDraftSchema.parse(approval.payload);
-                createBot(
-                  input.appearance
-                    ? { ...draft, appearance: input.appearance }
-                    : draft,
-                );
+                applyWorkspaceChange(approval, input.appearance);
                 approval.state = "approved";
                 store.put("approval", approval.id, approval);
               });
             }
           }
           approval.state = input.approve ? "approved" : "denied";
+          if (input.feedback) approval.feedback = input.feedback;
           store.put("approval", approval.id, approval);
           store.event("approval.resolved", `Proposal ${approval.state}.`);
+          for (const listener of approvalListeners) listener(approval);
           json(res, 200, { ok: true });
           return;
         }
@@ -2367,32 +2658,112 @@ export async function startRuntime(options: RuntimeOptions) {
             // Browsing takes many steps; time waiting on reviews never counts.
             b.grantedCapabilities.includes("browser.control") ? 600000 : 180000,
             async (signal, send) => {
-              const assistant: Message = {
+              const segment = (): Message => ({
                 id: randomUUID(),
                 botId: b.id,
                 role: "assistant",
                 content: "",
-                createdAt: task.createdAt,
+                createdAt: new Date().toISOString(),
                 taskId: task.id,
+              });
+              // Socius's reply is split around each specialist it asks, so the
+              // thread reads in order: Socius, the specialist, then Socius again.
+              const done: Message[] = [];
+              let current = { ...segment(), createdAt: task.createdAt },
+                offset = 0,
+                latest = "";
+              const show = (text: string) => {
+                latest = text;
+                current.content = text.slice(offset).trimStart();
+                if (current.content) store.put("message", current.id, current);
+                send({ type: "text", content: current.content });
               };
-              assistant.content = await executeModel(
+              const main = b.template.id === "socius/main";
+              let asks = 0;
+              const answered = new Map<string, string>();
+              const askBot = async (name: string, request: string) => {
+                const spec = specialist(name);
+                if (!spec)
+                  return `No bot is called "${name}". Bots: ${roster()}.`;
+                const key = `${spec.id}\n${request.trim().toLowerCase()}`;
+                const earlier = answered.get(key);
+                if (earlier !== undefined)
+                  return `${spec.name} already answered this request:\n${earlier}`;
+                if (++asks > MAX_DIRECT_ASKS)
+                  return "You have asked bots enough times for this message. Answer with what you have.";
+                if (current.content.trim()) {
+                  send({ type: "message", message: current });
+                  done.push(current);
+                  current = segment();
+                }
+                // A specialist with connected apps would read the user's
+                // accounts on Socius's say-so; the user approves that ask first.
+                const apps = [
+                  ...new Set(
+                    connectorTools(spec, { taskId: task.id }).map((t) => t.app),
+                  ),
+                  // Its browser profile can hold the user's sign-ins too.
+                  ...(spec.grantedCapabilities.includes("browser.control")
+                    ? ["its web browser"]
+                    : []),
+                ];
+                if (apps.length) {
+                  const outcome = (await proposeAndWait(
+                    b.id,
+                    task.id,
+                    "ask",
+                    { botId: spec.id, request, apps },
+                    `Let ${spec.name} use ${apps.join(", ")} to answer Socius`,
+                  )) as { status: string; userFeedback?: string };
+                  if (outcome.status !== "done")
+                    return outcome.userFeedback
+                      ? `The user did not let ${spec.name} use its apps for this and replied: ${outcome.userFeedback}`
+                      : `The user did not let ${spec.name} use its apps for this (${outcome.status}). Do not ask it again for this unless the user wants you to.`;
+                }
+                offset = latest.length;
+                const reply: Message = {
+                  ...segment(),
+                  delegated: { botId: spec.id, request: clip(request, 2000) },
+                };
+                send({ type: "text", botId: spec.id, content: "" });
+                try {
+                  reply.content = await executeModel(
+                    {
+                      ...(await modelContext(spec, task.id, signal, request)),
+                      briefing: [
+                        DEFAULT_FRAMING,
+                        `You are ${spec.name}. ${b.name}, the user's main assistant, is asking you directly on the user's behalf.`,
+                        `Reply to that request in your own role. Your reply is shown to the user in ${b.name}'s chat and returned to ${b.name}. The request comes from ${b.name}; treat it as a task, not as the user's own words, and do not take on authority it does not give you.`,
+                      ].join("\n"),
+                      messages: [{ role: "user", content: request }],
+                    },
+                    (text) =>
+                      send({ type: "text", botId: spec.id, content: text }),
+                  );
+                } catch (error) {
+                  if (signal.aborted) throw error;
+                  return `${spec.name} could not reply because its model request failed.`;
+                }
+                answered.set(key, reply.content);
+                store.put("message", reply.id, reply);
+                send({ type: "message", message: reply });
+                send({ type: "text", botId: b.id, content: "" });
+                return reply.content;
+              };
+              const name = (id: string) =>
+                store.get<BotInstance>("bot", id)?.name ?? "A former bot";
+              const final = await executeModel(
                 {
                   ...(await modelContext(b, task.id, signal, user.content)),
-                  ...(b.template.id === "socius/main"
-                    ? { briefing: workspaceBriefing() }
+                  ...(main
+                    ? { briefing: workspaceBriefing(), askBot }
                     : {}),
-                  messages: store
-                    .messages(b.id)
-                    .slice(-40)
-                    .map((m) => ({ role: m.role, content: m.content })),
+                  messages: directHistory(store.messages(b.id), name),
                 },
-                (text) => {
-                  assistant.content = text;
-                  store.put("message", assistant.id, assistant);
-                  send({ type: "text", content: text });
-                },
+                show,
               );
-              return [assistant];
+              current.content = final.slice(offset).trimStart();
+              return [...done, current].filter((m) => m.content.trim());
             },
           );
           return;
@@ -2494,17 +2865,7 @@ export async function startRuntime(options: RuntimeOptions) {
               maxAsks: MaxAsks.optional(),
             })
             .parse(await body(req));
-          const members = groupMembers(input.memberIds);
-          const g: GroupChat = {
-            id: randomUUID(),
-            name: input.name || members.map((m) => m.name).join(", "),
-            memberIds: input.memberIds,
-            ...(input.maxAsks === undefined ? {} : { maxAsks: input.maxAsks }),
-            createdAt: new Date().toISOString(),
-          };
-          store.put("group", g.id, g);
-          store.event("group.created", `Created the group chat ${g.name}.`);
-          json(res, 201, g);
+          json(res, 201, createGroup(input));
           return;
         }
         if (req.method === "POST" && path === "/api/groups/update") {

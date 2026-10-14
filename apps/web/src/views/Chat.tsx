@@ -420,14 +420,20 @@ export function Chat({
       a.state === "pending" &&
       Date.parse(a.expiresAt) > Date.now(),
   );
-  // Group work raises its changes in the group; direct chats show only their own.
+  // Group work raises its changes in the group; direct chats show only their own,
+  // including changes a specialist proposes while answering Socius here.
   const groupOf = new Map(state.tasks.map((t) => [t.id, t.groupId ?? null]));
+  const ownTasks = new Set(
+    state.tasks
+      .filter((t) => t.botId === bot.id && !t.groupId)
+      .map((t) => t.id),
+  );
   const actions = state.actions
     .filter(
       (a) =>
         (group
           ? groupOf.get(a.actor.taskId) === group.id
-          : a.actor.botId === bot.id &&
+          : (a.actor.botId === bot.id || ownTasks.has(a.actor.taskId)) &&
             !a.actor.boardId &&
             !groupOf.get(a.actor.taskId)) &&
         (needsAttention(a) || a.state === "succeeded"),
@@ -448,16 +454,16 @@ export function Chat({
     )
     .slice(-3);
   // A running reply that is paused on the user's review.
+  const current = taskId || running?.id;
   const waiting =
-    actions.find(
+    actions.some(
       (a) =>
         a.state === "pending" &&
-        a.actor.taskId === (taskId || running?.id) &&
+        a.actor.taskId === current &&
         Date.parse(a.expiresAt) > Date.now(),
-    ) ??
-    browserActions.find(
-      (a) => a.state === "pending" && a.taskId === (taskId || running?.id),
-    );
+    ) ||
+    approvals.some((a) => a.taskId === current) ||
+    browserActions.some((a) => a.state === "pending" && a.taskId === current);
   /** After Resume, the bot continues the original request in this chat. */
   async function continueBrowsing(session: BrowserSession) {
     const name = author(session.botId)?.name;
@@ -487,8 +493,13 @@ export function Chat({
     }
   }
   // In a group, each run of replies from one bot is labelled with its name.
-  const speaker = (m: Pick<Message, "role" | "botId">) =>
-    m.role === "user" ? "user" : m.botId;
+  const speaker = (m: Pick<Message, "role" | "botId" | "delegated">) =>
+    m.role === "user" ? "user" : (m.delegated?.botId ?? m.botId);
+  // Once Socius has brought other bots into its chat, every speaker is named.
+  const named =
+    !!group ||
+    messages.some((m) => m.delegated) ||
+    (!!stream && stream.botId !== bot.id);
   const label = (botId: string) => {
     const b = author(botId);
     return (
@@ -748,7 +759,15 @@ export function Chat({
                   key={m.id}
                   className={`message ${m.role} ${last ? "last" : ""} ${m.reaction ? "reacted" : ""}`}
                 >
-                  {group && first && m.role === "assistant" && label(m.botId)}
+                  {named &&
+                    first &&
+                    m.role === "assistant" &&
+                    label(speaker(m))}
+                  {m.delegated && (
+                    <p className="delegated-ask" title={m.delegated.request}>
+                      {bot.name} asked: {m.delegated.request}
+                    </p>
+                  )}
                   <div className="bubble-row">
                     <div className="bubble">
                       {m.role === "assistant" ? (
@@ -768,7 +787,7 @@ export function Chat({
                         </button>
                       )}
                     </div>
-                    {m.role === "assistant" && (
+                    {m.role === "assistant" && !m.delegated && (
                       <ReactionPicker
                         current={m.reaction}
                         open={reacting === m.id}
@@ -812,7 +831,7 @@ export function Chat({
           )}
           {busy && (
             <article className="message assistant last">
-              {group &&
+              {named &&
                 stream &&
                 stream.botId !== lastSpeaker &&
                 label(stream.botId)}
@@ -833,7 +852,12 @@ export function Chat({
             </article>
           )}
           {approvals.map((a) => (
-            <ApprovalCard key={a.id} approval={a} onRefresh={onRefresh} />
+            <ApprovalCard
+              key={a.id}
+              approval={a}
+              state={state}
+              onRefresh={onRefresh}
+            />
           ))}
           {actions.map((a) => (
             <ActionCard

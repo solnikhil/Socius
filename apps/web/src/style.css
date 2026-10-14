@@ -4268,6 +4268,33 @@ dialog.create-bot,
     animation: none;
   }
 }
+/* Workspace proposals have no app logo, so their details sit flush. */
+.approval-card.decision-card .decision-details,
+.approval-card.decision-card .decision-outcome {
+  margin-left: 0;
+}
+.decision-look {
+  margin-top: 10px;
+}
+/* A specialist's reply in Socius's chat shows what Socius asked it. */
+.delegated-ask {
+  max-width: min(560px, 78%);
+  margin: 0 0 4px 26px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.decision-card .decision-meta {
+  margin: 8px 2px 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.decision-card .decision-field {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+}
 
 /* ---------- Browser control ---------- */
 .browser-panel {

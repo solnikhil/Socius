@@ -43,8 +43,12 @@ export interface ModelRequest {
   browserBriefing?: string;
   searchMemory: (query: string) => Memory[];
   proposeMemory: (content: string) => { approvalId: string };
-  /** Only direct chats with the main bot can propose specialists. */
-  proposeBot?: (draft: BotDraft) => { approvalId: string };
+  /** Main bot only: proposes a specialist and waits for the user's decision. */
+  proposeBot?: (draft: BotDraft) => Promise<unknown>;
+  /** Main bot only: workspace changes, each approved by the user before it applies. */
+  orchestrate?: Orchestration;
+  /** Main bot, direct chat only: asks a specialist and returns its reply. */
+  askBot?: (bot: string, request: string) => Promise<string>;
   /** The user's recent reactions to this bot's replies, as guidance. */
   feedback?: string;
   /** Dreaming owns automatic collection when enabled; legacy approvals remain readable. */
@@ -57,6 +61,21 @@ export interface ModelRequest {
   askMember?: (member: string, request: string) => Promise<string>;
   signal: AbortSignal;
   fetch?: typeof globalThis.fetch;
+}
+/** Proposals that wait for the user's review card and report the outcome. */
+export interface Orchestration {
+  updateBot: (change: {
+    bot: string;
+    name?: string | undefined;
+    role?: string | undefined;
+    instructions?: string | undefined;
+  }) => Promise<unknown>;
+  createGroup: (draft: { name: string; members: string[] }) => Promise<unknown>;
+  changeMembers: (change: {
+    group: string;
+    add?: string[] | undefined;
+    remove?: string[] | undefined;
+  }) => Promise<unknown>;
 }
 export interface SkillSummary {
   id: string;
@@ -120,13 +139,66 @@ export const runModel: ModelRunner = async (request, onText) => {
     const proposeBot = request.proposeBot;
     tools.createBot = tool({
       description:
-        "Propose a persistent specialist bot when the user asks for one. The user reviews and approves the name, role and instructions before creation. No authority or memory transfers.",
+        "Propose a persistent specialist bot when the user asks for one. The user reviews the name, role and instructions, and you wait for their decision; you then learn whether it was created. No authority or memory transfers.",
       inputSchema: z.object({
         name: z.string().min(1).max(100),
         role: z.string().min(1).max(200),
         instructions: z.string().min(1).max(8000),
       }),
       execute: (draft) => proposeBot(draft),
+    });
+  }
+  if (request.tools && request.askBot && bot.template.id === "socius/main") {
+    const ask = request.askBot;
+    tools.askBot = tool({
+      description:
+        "Ask one of the user's specialist bots to do part of the work, right now. It answers with its own model, memory and connected apps; its reply is shown in this chat and returned to you. It sees only your request, so include the context it needs. Ask several, one at a time, when their roles fit.",
+      inputSchema: z.object({
+        bot: z.string().min(1).max(100).describe("The bot's exact name"),
+        request: z
+          .string()
+          .min(1)
+          .max(8000)
+          .describe("A self-contained request with the context it needs"),
+      }),
+      execute: ({ bot: name, request: text }) => ask(name, text),
+    });
+  }
+  if (request.tools && request.orchestrate && bot.template.id === "socius/main") {
+    const o = request.orchestrate;
+    tools.updateBot = tool({
+      description:
+        "Propose changing a specialist's name, role or instructions. The user reviews the exact change and you wait for their decision. Only include fields that change; instructions replace the old ones completely.",
+      inputSchema: z.object({
+        bot: z.string().min(1).max(100).describe("The bot's current exact name"),
+        name: z.string().min(1).max(100).optional(),
+        role: z.string().min(1).max(200).optional(),
+        instructions: z.string().min(1).max(8000).optional(),
+      }),
+      execute: (change) => o.updateBot(change),
+    });
+    tools.createGroupChat = tool({
+      description:
+        "Propose a new group chat of specialists you will coordinate. The user reviews the name and members, and you wait for their decision.",
+      inputSchema: z.object({
+        name: z.string().min(1).max(100),
+        members: z
+          .array(z.string().min(1).max(100))
+          .min(1)
+          .max(12)
+          .describe("Exact bot names"),
+      }),
+      execute: (draft) => o.createGroup(draft),
+    });
+    tools.changeGroupMembers = tool({
+      description:
+        "Propose adding or removing members of an existing group chat. The user reviews the new member list, and you wait for their decision.",
+      inputSchema: z.object({
+        group: z.string().min(1).max(100).describe("The group chat's exact name"),
+        add: z.array(z.string().min(1).max(100)).max(12).optional(),
+        remove: z.array(z.string().min(1).max(100)).max(12).optional(),
+      }),
+      execute: (change) => o.changeMembers(change),
     });
   }
   if (request.tools && request.askMember) {
@@ -221,7 +293,9 @@ export const runModel: ModelRunner = async (request, onText) => {
     tools,
     maxRetries: 2,
     // Browsing takes many small steps; the runtime also bounds browser commands per task.
-    stopWhen: isStepCount(browsing ? 24 : request.askMember ? 10 : 6),
+    stopWhen: isStepCount(
+      browsing ? 24 : request.askMember || request.askBot ? 12 : 6,
+    ),
     maxOutputTokens: 4000,
     // Provider error payloads can echo sensitive request context. The API
     // boundary records a stable, redacted task error instead. The agent

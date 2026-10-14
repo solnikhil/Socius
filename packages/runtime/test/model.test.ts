@@ -74,10 +74,10 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
         signal: new AbortController().signal,
         searchMemory: () => [],
         proposeMemory: () => ({ approvalId: "unused" }),
-        proposeBot: (draft) => {
+        proposeBot: async (draft) => {
           assert.equal(draft.name, "Planner");
           proposals++;
-          return { approvalId: "review-me" };
+          return { status: "done", bot: "Planner" };
         },
       },
       (value) => {
@@ -162,7 +162,7 @@ test("direct provider adapters use their expected auth boundary and handle HTTP 
           fetch: fetcher,
           searchMemory: () => [],
           proposeMemory: () => ({ approvalId: "unused" }),
-          proposeBot: () => ({ approvalId: "unused" }),
+          proposeBot: async () => ({ status: "declined" }),
         },
         () => undefined,
       ),
