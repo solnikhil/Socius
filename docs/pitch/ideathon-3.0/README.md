@@ -11,14 +11,14 @@ Team: **California Burrito** · Track: **AI Automation**
 - `previews/`: rendered PNGs of all seven slides.
 - `template/`: original supplied PowerPoint template.
 - `source/`: editable slide-content authoring and template merge scripts, plus the architecture flowchart.
-- `validation/presentation-checks.json`: package, slide geometry and import checks for the final deck.
+- `validation/presentation-checks.json`: package, slide geometry and import checks for the previous deck revision (commit f5d8202).
 - `SHA256SUMS`: file checksums.
 
 The final deck separates the problem from the proposed solution. The architecture diagram contains all 13 nodes and 12 directed edges supplied by the team, with editable PowerPoint shapes and connectors.
 
 ## Content snapshot
 
-The presentation reflects the Notion brief read on 14 October 2026: [Socius Ideathon 3.0](https://app.notion.com/p/Socius-Ideathon-3-0-3f910c43ad3e81198b7bdf7be7bf6b06). Proposed capabilities and candidate integrations are labelled as plans. This is a pitch snapshot, not a status report for the repository's current implementation. Detailed context and source links are also in the slide speaker notes.
+The presentation reflects the Notion brief read on 14 October 2026: [Socius Ideathon 3.0](https://app.notion.com/p/Socius-Ideathon-3-0-3f910c43ad3e81198b7bdf7be7bf6b06), and the prototype on `main`. Each slide leads with one judge-facing message: problem, solution, originality, architecture, feasibility and how it scales. Slide 5 marks built components with solid borders and next components with dashed borders, matching the root README's "What works" list. Two figures are cited in the speaker notes: UPI volume (NPCI, September 2026) and India's open-source contributor lead (GitHub Octoverse 2025). Each slide's speaker notes contain a 30–45 second presenter script.
 
 ## Rebuilding
 
@@ -28,6 +28,8 @@ Run from this directory. `source/build.mjs` requires Node.js with `@oai/artifact
 node source/build.mjs
 python3 source/merge.py
 ```
+
+To reapply the current slide copy, layout additions and speaker notes, run `python3 source/content.py <f5d8202 deck> <output>` with python-pptx installed.
 
 The merge script writes `source/candidate.pptx` using the original template's backgrounds, masters, layouts and theme. The checked-in final deck was separately imported, rendered and validated; rerun equivalent validation after editing the sources.
 
