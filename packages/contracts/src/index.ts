@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { BOT_EYES, BOT_SHAPES, type BotAppearance } from "./appearance.js";
+
+export * from "./appearance.js";
 
 // Socius package IDs are `publisher/name`. Agent Skills names may start with a digit.
 export const PackageId = z
@@ -214,6 +217,10 @@ export const TaskState = z.enum([
   "cancelled",
 ]);
 export type TaskState = z.infer<typeof TaskState>;
+export const BotAppearanceSchema = z.strictObject({
+  shape: z.enum(BOT_SHAPES),
+  eyes: z.enum(BOT_EYES),
+});
 export interface BotInstance {
   id: string;
   template: { id: string; version: string };
@@ -223,4 +230,6 @@ export interface BotInstance {
   memoryNamespace: string;
   grantedCapabilities: Capability[];
   routinesEnabled: false;
+  /** Chosen look. Absent on older bots, which derive one from their name. */
+  appearance?: BotAppearance;
 }

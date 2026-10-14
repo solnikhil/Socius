@@ -379,7 +379,13 @@ export function Chat({
     const b = author(botId);
     return (
       <div className="speaker">
-        <Avatar name={b?.name ?? "Bot"} main={botId === bot.id} size={18} />
+        <Avatar
+          name={b?.name ?? "Bot"}
+          main={botId === bot.id}
+          size={18}
+          appearance={b?.appearance}
+          busy={busy && stream?.botId === botId}
+        />
         {b?.name ?? "A former member"}
       </div>
     );
@@ -388,6 +394,7 @@ export function Chat({
     ? speaker(messages[messages.length - 1]!)
     : "";
   const empty = messages.length === 0 && !busy;
+  const working = busy || !!running;
   return (
     <div className="chat">
       <header className="chat-head drag">
@@ -402,9 +409,15 @@ export function Chat({
             <PopoverTrigger asChild>
               <button className="bot-pill" aria-label={`${title} details`}>
                 {group ? (
-                  <GroupAvatar names={faces} size={24} />
+                  <GroupAvatar names={faces} size={24} busy={working} />
                 ) : (
-                  <Avatar name={bot.name} main={main} size={24} />
+                  <Avatar
+                    name={bot.name}
+                    main={main}
+                    size={24}
+                    appearance={bot.appearance}
+                    busy={working}
+                  />
                 )}
                 {title}
               </button>
@@ -427,7 +440,12 @@ export function Chat({
                 <div className="group-members">
                   {[bot, ...members].map((b) => (
                     <div key={b.id} className="group-member">
-                      <Avatar name={b.name} main={b.id === bot.id} size={26} />
+                      <Avatar
+                        name={b.name}
+                        main={b.id === bot.id}
+                        size={26}
+                        appearance={b.appearance}
+                      />
                       <span className="bot-text">
                         <strong>{b.name}</strong>
                         <small>
@@ -479,7 +497,13 @@ export function Chat({
                 className="floating-panel bot-details"
               >
                 <div className="bot-details-head">
-                  <Avatar name={bot.name} main={main} size={40} />
+                  <Avatar
+                    name={bot.name}
+                    main={main}
+                    size={40}
+                    appearance={bot.appearance}
+                    busy={working}
+                  />
                   <div>
                     <strong>{bot.name}</strong>
                     <small>{bot.role}</small>
@@ -539,7 +563,13 @@ export function Chat({
               {group ? (
                 <GroupAvatar names={faces} size={72} />
               ) : (
-                <Avatar name={bot.name} main={main} size={72} badge={main} />
+                <Avatar
+                  name={bot.name}
+                  main={main}
+                  size={72}
+                  badge={main}
+                  appearance={bot.appearance}
+                />
               )}
               <h1>
                 {group

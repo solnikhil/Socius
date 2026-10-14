@@ -15,6 +15,7 @@ import {
 } from "@socius/marketplace/registry";
 import { reviewedConnectors } from "@socius/connectors";
 import {
+  BotAppearanceSchema,
   AssignSkill,
   Capability,
   Digest,
@@ -64,8 +65,12 @@ import { PackageError, PackageService } from "./packages.js";
 import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
 import { SkillAssignments } from "./skills.js";
-import { Dreamer, DreamingInput, type DreamRunner, type DreamerOptions } from "./dreaming.js";
-
+import {
+  Dreamer,
+  DreamingInput,
+  type DreamRunner,
+  type DreamerOptions,
+} from "./dreaming.js";
 
 export type { SecretBox };
 export interface RuntimeOptions {
@@ -105,6 +110,7 @@ const BotDraftSchema = z.strictObject({
   role: z.string().trim().min(1).max(200),
   // Matches the bot template limit, so any valid template can be installed.
   instructions: z.string().trim().min(1).max(20000),
+  appearance: BotAppearanceSchema.optional(),
 });
 const uuid = z.string().uuid();
 const Attachment = z
@@ -540,7 +546,9 @@ export async function startRuntime(options: RuntimeOptions) {
       tools: selected.entry.tools !== false,
       bot: b,
       dreamingEnabled: dreaming.settings().enabled,
-      recalledMemory: b.grantedCapabilities.includes("memory.read") ? store.searchMemory(b.id, query) : [],
+      recalledMemory: b.grantedCapabilities.includes("memory.read")
+        ? store.searchMemory(b.id, query)
+        : [],
       ...(feedback ? { feedback } : {}),
       ...packageTools(b, { taskId }),
       signal,
@@ -894,6 +902,7 @@ export async function startRuntime(options: RuntimeOptions) {
     );
     instance.role = parsed.role;
     instance.instructions = parsed.instructions;
+    if (parsed.appearance) instance.appearance = parsed.appearance;
     store.put("bot", instance.id, instance);
     // Template dependencies install packages; they are suggestions for this
     // private bot's skills, never assignments.
@@ -1032,16 +1041,35 @@ export async function startRuntime(options: RuntimeOptions) {
           const b = bot(uuid.parse(url.searchParams.get("botId")));
           const runId = url.searchParams.get("runId");
           const memoryId = url.searchParams.get("memoryId");
-          if (!!runId === !!memoryId) fail(400, "Choose one dream or memory source");
-          const run = runId ? store.get<import("@socius/contracts/app").DreamRun>("dream-run", uuid.parse(runId)) : undefined;
-          const memory = memoryId ? store.memory(b.id).find((m) => m.id === uuid.parse(memoryId)) : undefined;
-          if (runId && (!run || run.botId !== b.id) || memoryId && !memory) fail(404, "Dreaming source not found");
-          const ids = run?.sourceMessageIds ?? memory?.dream?.sourceMessageIds ?? [];
-          json(res, 200, ids.map((id) => {
-            const m = store.get<Message>("message", id);
-            const available = m?.botId === b.id && !m.groupId && m.role === "user";
-            return { id, content: available ? clip(m.content, 4000) : null, createdAt: available ? m.createdAt : null };
-          }));
+          if (!!runId === !!memoryId)
+            fail(400, "Choose one dream or memory source");
+          const run = runId
+            ? store.get<import("@socius/contracts/app").DreamRun>(
+                "dream-run",
+                uuid.parse(runId),
+              )
+            : undefined;
+          const memory = memoryId
+            ? store.memory(b.id).find((m) => m.id === uuid.parse(memoryId))
+            : undefined;
+          if ((runId && (!run || run.botId !== b.id)) || (memoryId && !memory))
+            fail(404, "Dreaming source not found");
+          const ids =
+            run?.sourceMessageIds ?? memory?.dream?.sourceMessageIds ?? [];
+          json(
+            res,
+            200,
+            ids.map((id) => {
+              const m = store.get<Message>("message", id);
+              const available =
+                m?.botId === b.id && !m.groupId && m.role === "user";
+              return {
+                id,
+                content: available ? clip(m.content, 4000) : null,
+                createdAt: available ? m.createdAt : null,
+              };
+            }),
+          );
           return;
         }
         if (req.method === "POST" && path === "/api/dreaming/settings") {
@@ -1072,13 +1100,21 @@ export async function startRuntime(options: RuntimeOptions) {
           const input = z
             .strictObject({
               id: uuid,
-              name: z.string().trim().min(1).max(100),
+              name: z.string().trim().min(1).max(100).optional(),
+              appearance: BotAppearanceSchema.optional(),
             })
+            .refine(
+              (v) => v.name !== undefined || v.appearance !== undefined,
+              "Choose what to change",
+            )
             .parse(await body(req));
           const b = bot(input.id);
-          b.name = input.name;
+          const renamed = input.name !== undefined && input.name !== b.name;
+          if (input.name !== undefined) b.name = input.name;
+          if (input.appearance) b.appearance = input.appearance;
           store.put("bot", b.id, b);
-          store.event("bot.renamed", `Renamed a bot to ${b.name}.`);
+          if (renamed)
+            store.event("bot.renamed", `Renamed a bot to ${b.name}.`);
           json(res, 200, b);
           return;
         }
@@ -1551,11 +1587,15 @@ export async function startRuntime(options: RuntimeOptions) {
               id: uuid,
               digest: z.string().length(64),
               approve: z.boolean(),
+              // The reviewer picks a proposed bot's look; it is not part of the proposal.
+              appearance: BotAppearanceSchema.optional(),
             })
             .parse(await body(req));
           const approval =
             store.get<Approval>("approval", input.id) ??
             fail(404, "Approval not found");
+          if (input.appearance && approval.kind !== "bot")
+            fail(400, "Only bot proposals have a look");
           if (approval.state !== "pending")
             fail(409, "This proposal was already resolved");
           if (
@@ -1586,7 +1626,12 @@ export async function startRuntime(options: RuntimeOptions) {
               if (b.template.id !== "socius/main")
                 fail(403, "Only the main bot can propose specialists");
               store.transaction(() => {
-                createBot(BotDraftSchema.parse(approval.payload));
+                const draft = BotDraftSchema.parse(approval.payload);
+                createBot(
+                  input.appearance
+                    ? { ...draft, appearance: input.appearance }
+                    : draft,
+                );
                 approval.state = "approved";
                 store.put("approval", approval.id, approval);
               });
