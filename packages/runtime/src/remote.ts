@@ -56,7 +56,14 @@ export function requestOrigin(
   const origin = isLocal ? local : config.origin;
   if (req.headers.origin && req.headers.origin !== origin)
     fail(403, "Invalid origin");
-  if (req.headers["sec-fetch-site"] === "cross-site")
+  // A QR scan or shared link opens the app shell as a cross-site top-level navigation.
+  // Allow only that: GET/HEAD document loads outside /api. The pairing token stays in the
+  // URL fragment, and API calls (sent same-origin by the loaded page) remain blocked cross-site.
+  const shellNavigation =
+    (req.method === "GET" || req.method === "HEAD") &&
+    req.headers["sec-fetch-mode"] === "navigate" &&
+    !(req.url ?? "/").startsWith("/api/");
+  if (req.headers["sec-fetch-site"] === "cross-site" && !shellNavigation)
     fail(403, "Cross-site request blocked");
   if (
     req.method !== "GET" &&

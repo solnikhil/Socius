@@ -415,3 +415,31 @@ test("exact approvals are idempotent, concurrent approve/decline has one winner,
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("QR or link opens of the app shell pass cross-site; cross-site API calls stay blocked", async () => {
+  const { requestOrigin } = await import("../src/remote.js");
+  const config = { enabled: true, origin: remote };
+  const req = (url: string, headers: Record<string, string>, method = "GET") =>
+    ({
+      url,
+      method,
+      headers: { host: new URL(remote).host, ...headers },
+    }) as never;
+  const local = "http://127.0.0.1:47613";
+  const nav = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" };
+  assert.equal(requestOrigin(req("/", nav), local, config).kind, "remote");
+  assert.throws(
+    () => requestOrigin(req("/api/state", nav), local, config),
+    /Cross-site/,
+  );
+  assert.throws(
+    () =>
+      requestOrigin(
+        req("/", { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" }),
+        local,
+        config,
+      ),
+    /Cross-site/,
+  );
+  assert.throws(() => requestOrigin(req("/", nav, "POST"), local, config));
+});
