@@ -1,3 +1,4 @@
+import { github } from "./github.js";
 import { linear } from "./linear.js";
 import { z } from "zod";
 import type { Capability, ConnectorManifest } from "@socius/contracts";
@@ -237,7 +238,7 @@ export const notion: ReviewedConnector = {
   },
   actions: [search, fetchPage, createPage] as unknown as ConnectorAction[],
 };
-export const reviewedConnectors: ReviewedConnector[] = [notion, linear];
+export const reviewedConnectors: ReviewedConnector[] = [notion, linear, github];
 export const reviewedConnector = (id: string) =>
   reviewedConnectors.find((c) => c.id === id);
 
