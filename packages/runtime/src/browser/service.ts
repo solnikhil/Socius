@@ -57,6 +57,17 @@ export interface BrowserTaskContext {
   groupId: string | null;
   /** The request this task is working on, kept so a resumed task can continue it. */
   objective: string;
+  /**
+   * True only when `objective` is the user's own message. A coordinator's or
+   * Socius's request is model-written and may carry injected text, so its
+   * addresses are never trusted.
+   */
+  userWritten: boolean;
+  /**
+   * The call's context already holds untrusted content before any page loads:
+   * an attachment, connected-app data, a group transcript or earlier browsing.
+   */
+  untrusted: boolean;
   signal: AbortSignal;
   /** Notifies the chat stream, e.g. that a review card appeared. */
   send?: ((event: unknown) => void) | undefined;
@@ -748,16 +759,18 @@ export class BrowserService {
     let b = this.budgets.get(ctx.taskId);
     if (!b) {
       const session = this.sessions().find((x) => x.botId === ctx.bot.id);
-      // Only addresses the user wrote start out trusted.
-      const written = `${ctx.objective}\n${session?.objective ?? ""}`;
       b = {
         commands: 0,
         text: 0,
         recent: [],
-        tainted: false,
+        // Earlier browsing can survive in the chat history the model reads.
+        tainted:
+          ctx.untrusted || !ctx.userWritten || !!session?.visits.length,
         known: new Set(),
         trusted: new Set(),
       };
+      // Only addresses in the user's own message start out trusted.
+      const written = ctx.userWritten ? ctx.objective : "";
       for (const m of written.matchAll(URL_IN_TEXT)) {
         const url = normalUrl(m[0]);
         if (!url) continue;
@@ -886,6 +899,8 @@ export class BrowserService {
     const b = this.budgets.get(s.taskId ?? "");
     const final = normalUrl(page.url());
     if (b && final) b.known.add(final);
+    // The title (and from here on, anything else) is page-controlled text.
+    if (b) b.tainted = true;
     this.save(s, {
       lastConfirmedUrl: page.url(),
       visits: [...s.visits.filter((v) => v.url !== visit.url), visit].slice(

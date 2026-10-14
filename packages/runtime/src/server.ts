@@ -743,6 +743,9 @@ export async function startRuntime(options: RuntimeOptions) {
     const feedback = reactionFeedback(b.id);
     // Browsing needs a visible owner, so background routines never get it.
     const running = active.get(taskId);
+    const own = store
+      .all<Message>("message")
+      .find((m) => m.taskId === taskId && m.role === "user");
     const browserTools = runId
       ? []
       : browser.tools({
@@ -750,6 +753,12 @@ export async function startRuntime(options: RuntimeOptions) {
           taskId,
           groupId: store.get<Task>("task", taskId)?.groupId ?? null,
           objective: query,
+          // Only the user's own message seeds trusted addresses.
+          userWritten: own?.content === query,
+          untrusted:
+            !!own?.content.includes("\n\nAttached document:") ||
+            !!store.get<Task>("task", taskId)?.groupId ||
+            connectorTools(b, { taskId }).length > 0,
           signal,
           send: running?.send,
           hold: running?.hold,
