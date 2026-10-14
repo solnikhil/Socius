@@ -609,6 +609,38 @@ main > .error {
   border-color: var(--bg);
 }
 
+.group-avatar {
+  position: relative;
+}
+.group-avatar > span {
+  position: absolute;
+  display: flex;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--sidebar);
+  background: var(--sidebar);
+}
+.bot-row.active .group-avatar > span {
+  box-shadow: 0 0 0 2px var(--surface-2);
+  background: var(--surface-2);
+}
+.bot-row:not(.active):hover .group-avatar > span {
+  box-shadow: 0 0 0 2px var(--surface);
+  background: var(--surface);
+}
+.bot-pill .group-avatar > span {
+  box-shadow: none;
+  background: transparent;
+}
+.welcome .group-avatar > span {
+  box-shadow: 0 0 0 2px var(--bg);
+  background: var(--bg);
+}
+.bot-details .group-avatar > span,
+.palette .group-avatar > span {
+  box-shadow: 0 0 0 1.5px var(--elevated);
+  background: var(--elevated);
+}
+
 /* ---------- Popovers ---------- */
 .popover {
   position: absolute;
@@ -803,6 +835,38 @@ main > .error {
 }
 .plain {
   white-space: pre-wrap;
+}
+.speaker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 0 6px 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.group-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.group-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+}
+.group-member .bot-text strong {
+  font-size: 13.5px;
+}
+.group-member .bot-text small {
+  font-size: 12px;
+}
+.bot-details button:disabled {
+  opacity: 0.5;
 }
 .message-actions {
   display: flex;
@@ -1210,6 +1274,52 @@ dialog::backdrop {
   justify-content: space-between;
   gap: 12px;
   margin: -4px -10px 14px 0;
+}
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0 -8px;
+}
+.member-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+}
+button.member-row:hover {
+  background: var(--surface);
+}
+.member-row.fixed {
+  opacity: 0.85;
+}
+.member-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--solid-text);
+}
+.member-check.checked {
+  background: var(--solid);
+  border-color: var(--solid);
+}
+.group-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 .modal-actions {
   display: flex;

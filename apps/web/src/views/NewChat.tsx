@@ -1,22 +1,29 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, Users, X } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import { Avatar } from "../components/ui.js";
+import type { GroupChat } from "@socius/contracts/app";
+import { Avatar, GroupAvatar } from "../components/ui.js";
 
 type Option = { key: string; label: string; icon: ReactNode; run: () => void };
 
 export function NewChat({
   bots,
+  groups,
   mainId,
   onClose,
   onPick,
+  onPickGroup,
   onCreate,
+  onCreateGroup,
 }: {
   bots: BotInstance[];
+  groups: { group: GroupChat; faces: { name: string; main?: boolean }[] }[];
   mainId: string;
   onClose: () => void;
   onPick: (bot: BotInstance) => void;
+  onPickGroup: (group: GroupChat) => void;
   onCreate: () => void;
+  onCreateGroup: () => void;
 }) {
   const [query, setQuery] = useState(""),
     [active, setActive] = useState(0);
@@ -32,6 +39,12 @@ export function NewChat({
             icon: <Plus size={16} />,
             run: onCreate,
           },
+          {
+            key: "create-group",
+            label: "Create group chat",
+            icon: <Users size={16} />,
+            run: onCreateGroup,
+          },
         ]),
     ...bots
       .filter((b) => `${b.name} ${b.role}`.toLowerCase().includes(q))
@@ -40,6 +53,18 @@ export function NewChat({
         label: b.name,
         icon: <Avatar name={b.name} main={b.id === mainId} size={22} />,
         run: () => onPick(b),
+      })),
+    ...groups
+      .filter(({ group, faces }) =>
+        `${group.name} ${faces.map((f) => f.name).join(" ")}`
+          .toLowerCase()
+          .includes(q),
+      )
+      .map(({ group, faces }) => ({
+        key: group.id,
+        label: group.name,
+        icon: <GroupAvatar names={faces} size={22} />,
+        run: () => onPickGroup(group),
       })),
   ];
   useEffect(() => setActive(0), [q]);
