@@ -199,12 +199,23 @@ export class Store {
       typeof meta.source !== "string"
     )
       throw new Error("Invalid memory metadata");
+    if (
+      meta.dream &&
+      (typeof meta.dream.runId !== "string" ||
+        !Array.isArray(meta.dream.sourceMessageIds) ||
+        meta.dream.sourceMessageIds.length > 48 ||
+        !meta.dream.sourceMessageIds.every(
+          (id: unknown) => typeof id === "string" && /^[\da-f-]{36}$/.test(id),
+        ))
+    )
+      throw new Error("Invalid dream provenance");
     return {
       id,
       botId: meta.botId,
       source: meta.source,
       updatedAt: meta.updatedAt,
       content: text.slice(firstBreak + 1).trim(),
+      ...(meta.dream ? { dream: meta.dream } : {}),
     };
   }
   reconcileMemory() {
@@ -244,6 +255,7 @@ export class Store {
     content: string,
     source: string,
     id: string = randomUUID(),
+    dream?: Memory["dream"],
   ): Memory {
     const memory = {
       id,
@@ -251,6 +263,7 @@ export class Store {
       content,
       source,
       updatedAt: new Date().toISOString(),
+      ...(dream ? { dream } : {}),
     };
     const path = join(this.memoryDir, `${id}.md`),
       temp = `${path}.${randomUUID()}.tmp`;
@@ -264,6 +277,10 @@ export class Store {
     return memory;
   }
   deleteMemory(id: string) {
+    const memory = this.readMemoryFile(id);
+    // Persist the suppression before removing evidence; retries must not relearn it.
+    for (const sourceId of memory.dream?.sourceMessageIds ?? [])
+      this.put("dream-suppressed", sourceId, { botId: memory.botId });
     unlinkSync(join(this.memoryDir, `${id}.md`));
     this.db.prepare("DELETE FROM memory_search WHERE id=?").run(id);
     this.event("memory.deleted", "A memory record was deleted.");

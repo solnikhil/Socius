@@ -58,6 +58,7 @@ import { classify } from "./providers/errors.js";
 import { PackageError, PackageService } from "./packages.js";
 import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
+import { Dreamer, DreamingInput, type DreamRunner } from "./dreaming.js";
 
 export type { SecretBox };
 export interface RuntimeOptions {
@@ -66,6 +67,8 @@ export interface RuntimeOptions {
   port?: number;
   secretBox?: SecretBox;
   runner?: ModelRunner;
+  /** Test-only background synthesis boundary; production uses structured AI SDK output. */
+  dreamRunner?: DreamRunner;
   /** Opens connector sign-in pages in the system browser (desktop). */
   openExternal?: (url: string) => void;
   /** Test-only: fixture endpoints and fetch for connectors and the registry. */
@@ -167,14 +170,23 @@ export async function startRuntime(options: RuntimeOptions) {
     string,
     { controller: AbortController; connections: Set<string> }
   >();
+  let dreamer: Dreamer | undefined;
   const providers = new ProviderService(
     store,
     options.secretBox,
     options.fetch,
     (connectionId) =>
-      [...active.values()].some((t) => t.connections.has(connectionId)),
+      [...active.values()].some((t) => t.connections.has(connectionId)) ||
+      !!dreamer?.usesConnection(connectionId),
     options.env ?? process.env,
   );
+  dreamer = new Dreamer(
+    store,
+    providers,
+    () => active.size > 0,
+    options.dreamRunner,
+  );
+  const dreaming = dreamer;
   const ModelRefSchema = z.strictObject({
     connectionId: uuid,
     modelId: ModelId,
@@ -436,6 +448,7 @@ export async function startRuntime(options: RuntimeOptions) {
     signal: AbortSignal,
   ): Promise<Omit<ModelRequest, "messages">> {
     const selected = await providers.forChat(b.id);
+    b = bot(b.id);
     active.get(taskId)?.connections.add(selected.ref.connectionId);
     const feedback = reactionFeedback(b.id);
     return {
@@ -443,6 +456,18 @@ export async function startRuntime(options: RuntimeOptions) {
       modelRef: selected.ref,
       tools: selected.entry.tools !== false,
       bot: b,
+      dreamingEnabled: dreaming.settings().enabled,
+      recalledMemory: b.grantedCapabilities.includes("memory.read")
+        ? store
+            .searchMemory(
+              b.id,
+              store
+                .messages(b.id)
+                .filter((m) => m.role === "user")
+                .at(-1)?.content ?? "",
+            )
+            .slice(0, 8)
+        : [],
       ...(feedback ? { feedback } : {}),
       ...packageTools(b, { taskId }),
       signal,
@@ -452,6 +477,11 @@ export async function startRuntime(options: RuntimeOptions) {
         return store.searchMemory(b.id, q);
       },
       proposeMemory: (c) => {
+        if (dreaming.settings().enabled)
+          fail(
+            409,
+            "Dreaming consolidates memories in the background. Use the memory editor for immediate changes.",
+          );
         if (!bot(b.id).grantedCapabilities.includes("memory.write"))
           fail(403, "Memory access revoked");
         return proposal(b.id, taskId, "memory", c);
@@ -480,6 +510,7 @@ export async function startRuntime(options: RuntimeOptions) {
       send: (event: unknown) => void,
     ) => Promise<Message[]>,
   ) {
+    dreaming.foregroundStarted();
     store.transaction(() => {
       store.put("task", task.id, task);
       store.put("message", user.id, user);
@@ -529,6 +560,7 @@ export async function startRuntime(options: RuntimeOptions) {
     } finally {
       clearTimeout(timeout);
       active.delete(task.id);
+      dreaming.foregroundFinished();
       broker.forgetTask(task.id);
       res.end();
     }
@@ -872,7 +904,32 @@ export async function startRuntime(options: RuntimeOptions) {
             selection: store.providers.selection(),
             environment: providers.environment(),
             secretStorage: !!options.secretBox,
+            dreaming: dreaming.status(),
           });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/dreaming") {
+          json(res, 200, dreaming.status());
+          return;
+        }
+        if (req.method === "POST" && path === "/api/dreaming/settings") {
+          json(
+            res,
+            200,
+            dreaming.configure(DreamingInput.parse(await body(req))),
+          );
+          return;
+        }
+        if (req.method === "POST" && path === "/api/dreaming/run") {
+          const input = z.strictObject({ botId: uuid }).parse(await body(req));
+          bot(input.botId);
+          json(res, 202, dreaming.runNow(input.botId));
+          return;
+        }
+        if (req.method === "POST" && path === "/api/dreaming/cancel") {
+          const input = z.strictObject({ id: uuid }).parse(await body(req));
+          dreaming.cancel(input.id);
+          json(res, 200, { ok: true });
           return;
         }
         if (req.method === "POST" && path === "/api/bots") {
@@ -977,6 +1034,7 @@ export async function startRuntime(options: RuntimeOptions) {
             store.delete("bot", b.id);
             store.event("bot.deleted", `Deleted ${b.name}.`);
           });
+          dreaming.permissionsChanged();
           json(res, 200, { ok: true });
           return;
         }
@@ -1021,6 +1079,10 @@ export async function startRuntime(options: RuntimeOptions) {
               input.content,
               "User editor",
               input.id,
+              input.id
+                ? store.memory(input.botId).find((m) => m.id === input.id)
+                    ?.dream
+                : undefined,
             ),
           );
           return;
@@ -1082,6 +1144,7 @@ export async function startRuntime(options: RuntimeOptions) {
             );
           }
           store.put("bot", b.id, b);
+          dreaming.permissionsChanged();
           json(res, 200, b);
           return;
         }
@@ -1767,6 +1830,7 @@ export async function startRuntime(options: RuntimeOptions) {
   if (!address || typeof address === "string")
     throw new Error("Runtime failed to bind");
   origin = `http://127.0.0.1:${address.port}`;
+  dreaming.start();
   return {
     origin,
     pairingURL: `${origin}/pair?token=${pairingToken}`,
@@ -1774,7 +1838,9 @@ export async function startRuntime(options: RuntimeOptions) {
     packages,
     connections,
     broker,
+    dreaming,
     close: async () => {
+      await dreaming.close();
       for (const t of active.values()) t.controller.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
       await new Promise<void>((resolve, reject) =>

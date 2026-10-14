@@ -218,7 +218,7 @@ export function MemoryView({
                 <p>
                   Add a preference or useful context for {bot.name}.
                   <br />
-                  The bot can also propose memories for your approval.
+                  Enable Dreaming in Settings to remember useful facts automatically.
                 </p>
               </div>
             )}
