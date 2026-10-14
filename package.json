@@ -62,6 +62,7 @@
     "@ai-sdk/togetherai": "3.0.69",
     "@ai-sdk/xai": "5.0.21",
     "@ai-sdk/zai": "3.0.30",
+    "@lobehub/icons-static-svg": "1.95.1",
     "@modelcontextprotocol/sdk": "1.32.1",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "ai": "^7.0.140",
