@@ -38,11 +38,11 @@ export interface GroupChat {
   createdAt: string;
 }
 /**
- * A sidebar folder for organising bots. Folders are labels only: bots in a
- * folder share nothing and never talk to each other. Use a group chat for that.
- * A bot is in at most one folder; the main bot is never in one.
+ * A sidebar category for organising bots. Categories are labels only: bots in
+ * a category share nothing and never talk to each other. Use a group chat for
+ * that. A bot is in at most one category; the main bot is never in one.
  */
-export interface BotFolder {
+export interface Category {
   id: string;
   name: string;
   botIds: string[];
@@ -177,7 +177,7 @@ export interface ActionRecord {
 export interface Snapshot {
   bots: BotInstance[];
   groups: GroupChat[];
-  folders: BotFolder[];
+  categories: Category[];
   catalog: Manifest[];
   releases: Release[];
   installations: Installation[];

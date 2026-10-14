@@ -459,16 +459,6 @@ button.icon.ghost.sidebar-reveal:hover {
   color: var(--text-3);
   margin: 14px 12px 4px;
 }
-button.icon.section-add {
-  width: 22px;
-  height: 22px;
-  margin-right: -4px;
-  color: var(--text-3);
-}
-button.icon.section-add:hover {
-  color: var(--text);
-  background: var(--surface);
-}
 .bot-row {
   width: 100%;
   display: grid;
@@ -518,27 +508,6 @@ button.icon.section-add:hover {
 }
 .pulse {
   animation: pulse 1.4s ease-in-out infinite;
-}
-.bot-group.compact {
-  margin-top: 18px;
-}
-.group-link {
-  width: 100%;
-  justify-content: space-between;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 13px;
-  padding: 9px 12px;
-  border-radius: 10px;
-}
-.group-link:hover,
-.group-link.active {
-  background: var(--surface);
-  color: var(--text);
-}
-.group-link span {
-  color: var(--text-2);
 }
 .sidebar-bottom {
   display: flex;
@@ -2645,11 +2614,11 @@ h4.with-mark {
 .search.sidebar-bot-search input {
   font-size: 13px;
 }
-/* Sidebar folders: labels for bots, not collaboration. */
-.folder-group {
+/* Sidebar categories: labels for bots, not collaboration. */
+.category-group {
   margin-bottom: 2px;
 }
-.folder-row {
+.category-row {
   width: 100%;
   display: flex;
   align-items: center;
@@ -2660,10 +2629,10 @@ h4.with-mark {
   background: transparent;
   text-align: left;
 }
-.folder-row:hover {
+.category-row:hover {
   background: var(--surface);
 }
-.folder-row strong {
+.category-row strong {
   flex: 1;
   min-width: 0;
   font-size: 14px;
@@ -2672,18 +2641,18 @@ h4.with-mark {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.folder-chevron,
-.folder-icon {
+.category-chevron,
+.category-icon {
   flex-shrink: 0;
   color: var(--text-3);
 }
-.folder-chevron {
+.category-chevron {
   transition: transform 0.12s;
 }
-.folder-row[aria-expanded="true"] .folder-chevron {
+.category-row[aria-expanded="true"] .category-chevron {
   transform: rotate(90deg);
 }
-.folder-members {
+.category-members {
   margin: 0 0 6px 14px;
   padding-left: 8px;
   border-left: 1px solid var(--sidebar-line);

@@ -45,7 +45,7 @@ Boards were retired on 2026-10-14. Group chats are the single collaboration surf
 - [x] Group action approvals and cancellation.
 - [x] Per-group member-request budgets, @mention steering and repeat-request reuse.
 - [x] Retry for failed, stopped or restart-interrupted group replies.
-- [x] Sidebar folders for organising bots, separate from group chats.
+- [x] Sidebar categories for organising bots, separate from group chats.
 - [ ] Record a live-model group run (only deterministic fixtures so far).
 
 ### Teammate: Skills & Connectors Marketplace

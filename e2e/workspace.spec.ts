@@ -249,32 +249,40 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(
     page.getByRole("button", { name: /Launch crew Socius, Planner$/ }),
   ).toBeVisible();
-  // Folders only organise the sidebar; filing a bot leaves its groups alone.
-  await page.getByRole("button", { name: "New folder" }).click();
+  // Categories only organise the sidebar; filing a bot leaves its groups alone.
+  // Everything is created from the top + menu; section headings have no +.
+  await expect(
+    page.getByRole("button", { name: "New group chat", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Create", exact: true })
+    .first()
+    .click();
+  await page.getByRole("menuitem", { name: "New category" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Work");
   await page.getByRole("checkbox", { name: /Planner/ }).click();
-  await page.getByRole("button", { name: "Create folder" }).click();
-  const workFolder = page.getByRole("group", { name: "Work bots" });
+  await page.getByRole("button", { name: "Create category" }).click();
+  const workCategory = page.getByRole("group", { name: "Work bots" });
   await expect(
-    workFolder.getByRole("button", { name: /Planner/ }),
+    workCategory.getByRole("button", { name: /Planner/ }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Launch crew Socius, Planner$/ }),
   ).toBeVisible();
   await page.screenshot({
-    path: "test-results/socius-folders-dark.png",
+    path: "test-results/socius-categories-dark.png",
     animations: "disabled",
   });
-  await workFolder
+  await workCategory
     .getByRole("button", { name: /Planner/ })
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Remove from Work" }).click();
-  await expect(workFolder.getByText("Right-click a bot")).toBeVisible();
+  await expect(workCategory.getByText("Right-click a bot")).toBeVisible();
   await page.getByRole("button", { name: /Work/, expanded: true }).click({
     button: "right",
   });
-  await page.getByRole("menuitem", { name: "Delete folder" }).click();
-  await expect(workFolder).toBeHidden();
+  await page.getByRole("menuitem", { name: "Delete category" }).click();
+  await expect(workCategory).toBeHidden();
   await expect(
     page.getByRole("button", { name: /Planner Planning specialist/ }),
   ).toBeVisible();

@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { BotFolder, GroupChat, Snapshot } from "@socius/contracts/app";
+import type { Category, GroupChat, Snapshot } from "@socius/contracts/app";
 import { api } from "./api.js";
 import {
   Avatar,
@@ -37,8 +37,8 @@ import { CreateBot } from "./views/CreateBot.js";
 import { CreateGroup } from "./views/CreateGroup.js";
 import { BotMenu } from "./components/BotMenu.js";
 import { CreateMenu } from "./components/CreateMenu.js";
-import { FolderMenu } from "./components/FolderMenu.js";
-import { EditFolder } from "./views/EditFolder.js";
+import { CategoryMenu } from "./components/CategoryMenu.js";
+import { EditCategory } from "./views/EditCategory.js";
 
 const FOLDED_KEY = "socius.sidebar.folded";
 // Collapsed sidebar sections are a per-device preference.
@@ -71,13 +71,13 @@ export function App() {
       x: number;
       y: number;
     } | null>(null),
-    [folderMenu, setFolderMenu] = useState<{
+    [categoryMenu, setCategoryMenu] = useState<{
       id: string;
       x: number;
       y: number;
     } | null>(null),
-    [editingFolder, setEditingFolder] = useState<{
-      folder?: BotFolder;
+    [editingCategory, setEditingCategory] = useState<{
+      category?: Category;
     } | null>(null),
     [apps, setApps] = useState(false),
     [collapsed, setCollapsed] = useState(false),
@@ -207,7 +207,7 @@ export function App() {
       onClick={() => open(b)}
       onContextMenu={(e) => {
         e.preventDefault();
-        setFolderMenu(null);
+        setCategoryMenu(null);
         setBotMenu({ id: b.id, x: e.clientX, y: e.clientY });
       }}
     >
@@ -224,12 +224,8 @@ export function App() {
       )}
     </button>
   );
-  const sectionHeading = (
-    key: string,
-    label: string,
-    count: number,
-    action?: { label: string; onClick: () => void },
-  ) => {
+  // Everything is created from the top + menu; headings only fold.
+  const sectionHeading = (key: string, label: string, count: number) => {
     const open = !folded.has(`section:${key}`);
     return (
       <h3>
@@ -242,37 +238,27 @@ export function App() {
           {!open && count > 0 && <span className="section-count">{count}</span>}
           <ChevronRight size={12} />
         </button>
-        {action && (
-          <button
-            className="icon ghost section-add"
-            aria-label={action.label}
-            title={action.label}
-            onClick={action.onClick}
-          >
-            <Plus size={14} />
-          </button>
-        )}
       </h3>
     );
   };
-  // Folders only group rows in the sidebar; bots outside one list directly under Bots.
-  const filed = new Set(state.folders.flatMap((f) => f.botIds));
+  // Categories only group rows in the sidebar; bots outside one list directly under Bots.
+  const filed = new Set(state.categories.flatMap((f) => f.botIds));
   const loose = specialists.filter((b) => !filed.has(b.id));
   const botQueryText = botQuery.trim().toLowerCase();
   const botMatches = (b: BotInstance) =>
     b.name.toLowerCase().includes(botQueryText) ||
     b.role.toLowerCase().includes(botQueryText);
   const visibleLoose = botQueryText ? loose.filter(botMatches) : loose;
-  const visibleFolders = botQueryText
-    ? state.folders.filter((f) => {
+  const visibleCategories = botQueryText
+    ? state.categories.filter((f) => {
         if (f.name.toLowerCase().includes(botQueryText)) return true;
         return f.botIds.some((id) => {
           const bot = specialists.find((b) => b.id === id);
           return !!bot && botMatches(bot);
         });
       })
-    : state.folders;
-  const folderRow = (f: BotFolder) => {
+    : state.categories;
+  const categoryRow = (f: Category) => {
     const nameHit =
       !!botQueryText && f.name.toLowerCase().includes(botQueryText);
     const members = f.botIds
@@ -280,27 +266,27 @@ export function App() {
       .filter((b): b is BotInstance => !!b);
     const bots =
       botQueryText && !nameHit ? members.filter(botMatches) : members;
-    const expanded = botQueryText ? true : !folded.has(`folder:${f.id}`);
+    const expanded = botQueryText ? true : !folded.has(`category:${f.id}`);
     return (
-      <div key={f.id} className="folder-group">
+      <div key={f.id} className="category-group">
         <button
-          className="folder-row"
+          className="category-row"
           aria-expanded={expanded}
-          onClick={() => toggleFold(`folder:${f.id}`)}
+          onClick={() => toggleFold(`category:${f.id}`)}
           onContextMenu={(e) => {
             e.preventDefault();
             setBotMenu(null);
-            setFolderMenu({ id: f.id, x: e.clientX, y: e.clientY });
+            setCategoryMenu({ id: f.id, x: e.clientX, y: e.clientY });
           }}
         >
-          <ChevronRight size={13} className="folder-chevron" />
-          <Folder size={15} className="folder-icon" />
+          <ChevronRight size={13} className="category-chevron" />
+          <Folder size={15} className="category-icon" />
           <strong>{f.name}</strong>
           <span className="section-count">{bots.length}</span>
         </button>
         {expanded && (
           <div
-            className="folder-members"
+            className="category-members"
             role="group"
             aria-label={`${f.name} bots`}
           >
@@ -315,8 +301,8 @@ export function App() {
       </div>
     );
   };
-  const menuFolder = folderMenu
-    ? state.folders.find((f) => f.id === folderMenu.id)
+  const menuCategory = categoryMenu
+    ? state.categories.find((f) => f.id === categoryMenu.id)
     : undefined;
   const menuBot = botMenu
     ? state.bots.find((b) => b.id === botMenu.id)
@@ -348,7 +334,7 @@ export function App() {
         aria-label="Create"
         aria-haspopup="menu"
         aria-expanded={!!createMenu}
-        title="New chat, group chat, bot or folder"
+        title="New chat, group chat, bot or category"
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           setCreateMenu((m) => (m ? null : { x: r.left, y: r.bottom + 6 }));
@@ -390,10 +376,10 @@ export function App() {
             </button>
           </div>
           <section className="bot-group" aria-label="Group chats">
-            {sectionHeading("groups", "Group chats", state.groups.length, {
-              label: "New group chat",
-              onClick: () => setGrouping("new"),
-            })}
+            {sectionHeading("groups", "Group chats", state.groups.length)}
+            {!folded.has("section:groups") && !state.groups.length && (
+              <small className="bots-empty">Start one from + at the top.</small>
+            )}
             {!folded.has("section:groups") &&
               state.groups.map((g) => (
                 <button
@@ -422,22 +408,19 @@ export function App() {
               ))}
           </section>
           <section className="bot-group" aria-label="Specialist bots">
-            {sectionHeading("bots", "Bots", specialists.length, {
-              label: "New folder",
-              onClick: () => setEditingFolder({}),
-            })}
+            {sectionHeading("bots", "Bots", specialists.length)}
             {!folded.has("section:bots") && (
               <>
                 <label className="search sidebar-bot-search">
                   <Search size={14} />
                   <input
-                    aria-label="Search bots"
+                    aria-label="Filter bots"
                     placeholder="Search bots"
                     value={botQuery}
                     onChange={(e) => setBotQuery(e.target.value)}
                   />
                 </label>
-                {visibleFolders.map(folderRow)}
+                {visibleCategories.map(categoryRow)}
                 {visibleLoose.map((b) => botRow(b, false))}
                 {!botQueryText && !specialists.length && (
                   <small className="bots-empty">
@@ -445,7 +428,7 @@ export function App() {
                   </small>
                 )}
                 {botQueryText &&
-                  !visibleFolders.length &&
+                  !visibleCategories.length &&
                   !visibleLoose.length && (
                     <small className="bots-empty">No matching bots</small>
                   )}
@@ -638,7 +621,7 @@ export function App() {
           onChat={() => setPage("new")}
           onGroup={() => setGrouping("new")}
           onBot={() => setCreating(true)}
-          onFolder={() => setEditingFolder({})}
+          onCategory={() => setEditingCategory({})}
         />
       )}
       {botMenu && menuBot && (
@@ -656,28 +639,30 @@ export function App() {
             setBotMenu(null);
           }}
           onRefresh={refresh}
-          {...(menuBot.id === main.id ? {} : { folders: state.folders })}
+          {...(menuBot.id === main.id ? {} : { categories: state.categories })}
         />
       )}
-      {folderMenu && menuFolder && (
-        <FolderMenu
-          folder={menuFolder}
-          x={folderMenu.x}
-          y={folderMenu.y}
-          onClose={() => setFolderMenu(null)}
+      {categoryMenu && menuCategory && (
+        <CategoryMenu
+          category={menuCategory}
+          x={categoryMenu.x}
+          y={categoryMenu.y}
+          onClose={() => setCategoryMenu(null)}
           onEdit={() => {
-            setEditingFolder({ folder: menuFolder });
-            setFolderMenu(null);
+            setEditingCategory({ category: menuCategory });
+            setCategoryMenu(null);
           }}
           onRefresh={refresh}
         />
       )}
-      {editingFolder && (
-        <EditFolder
+      {editingCategory && (
+        <EditCategory
           specialists={specialists}
-          folders={state.folders}
-          {...(editingFolder.folder ? { folder: editingFolder.folder } : {})}
-          onClose={() => setEditingFolder(null)}
+          categories={state.categories}
+          {...(editingCategory.category
+            ? { category: editingCategory.category }
+            : {})}
+          onClose={() => setEditingCategory(null)}
           onSaved={() => void refresh()}
         />
       )}

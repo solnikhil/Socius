@@ -1,20 +1,20 @@
 import { useCallback, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
-import type { BotFolder } from "@socius/contracts/app";
+import type { Category } from "@socius/contracts/app";
 import { api } from "../api.js";
 import { ErrorNote, useDismiss } from "./ui.js";
 import { useMenuPlacement } from "./menu.js";
 
-/** Right-click menu for a sidebar folder. */
-export function FolderMenu({
-  folder,
+/** Right-click menu for a sidebar category. */
+export function CategoryMenu({
+  category,
   x,
   y,
   onClose,
   onEdit,
   onRefresh,
 }: {
-  folder: BotFolder;
+  category: Category;
   x: number;
   y: number;
   onClose: () => void;
@@ -28,7 +28,7 @@ export function FolderMenu({
   async function remove() {
     setError("");
     try {
-      await api("folders", { id: folder.id }, "DELETE");
+      await api("categories", { id: category.id }, "DELETE");
       await onRefresh();
       onClose();
     } catch (e) {
@@ -40,17 +40,17 @@ export function FolderMenu({
       ref={ref}
       className="popover context-menu"
       role="menu"
-      aria-label={`${folder.name} options`}
+      aria-label={`${category.name} options`}
       style={position}
       onContextMenu={(e) => e.preventDefault()}
     >
       <button role="menuitem" autoFocus onClick={onEdit}>
         <Pencil size={15} />
-        Edit folder
+        Edit category
       </button>
       <button role="menuitem" onClick={() => void remove()}>
         <Trash2 size={15} />
-        Delete folder
+        Delete category
       </button>
       <small className="menu-note">Its bots move back to Bots.</small>
       <ErrorNote error={error} />

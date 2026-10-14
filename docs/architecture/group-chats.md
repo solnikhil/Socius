@@ -42,7 +42,7 @@ Group chats use the same chat view as direct chats: floating name pill, bubbles 
 
 - A small avatar and name label marks each run of replies from one bot.
 - The pill opens the roster, **Edit members** and **Delete group chat**.
-- Create a group from the **+** on the **Group chats** heading, or press ⌘2 in the `To:` palette. Groups are listed under **Group chats** in the sidebar.
+- Create a group from **New group chat** in the top **+** menu, or press ⌘2 in the `To:` palette. Groups are listed under **Group chats** in the sidebar.
 
 ## API
 
@@ -72,15 +72,15 @@ Stream events:
 - Model calls are not checkpointed. A retry re-runs Socius from the start of the turn; only finished member replies carry over, and a member cut off mid-reply is asked again.
 - Deterministic fixtures exercise the API and UI. No live-model group run has been recorded yet.
 
-## Folders are not groups
+## Categories are not groups
 
-Sidebar **folders** (`BotFolder` in `packages/contracts/src/app.ts`) only organise the Bots list. Bots in a folder share no context, memory or thread, and never talk to each other. A bot is in at most one folder; the main bot is never in one. Folder changes never touch group membership, and deleting a folder returns its bots to the Bots list.
+Sidebar **categories** (`Category` in `packages/contracts/src/app.ts`, stored as `folder` records) only organise the Bots list. Bots in a category share no context, memory or thread, and never talk to each other. A bot is in at most one category; the main bot is never in one. Category changes never touch group membership, and deleting a category returns its bots to the Bots list. Group chats always stay in the **Group chats** section.
 
 ```
-POST   /api/folders         {"name", "botIds"?}             → 201 BotFolder (filed bots leave any other folder)
-POST   /api/folders/update  {"id", "name"?, "botIds"?}      → 200 BotFolder
-POST   /api/folders/move    {"botId", "folderId" | null}    → 200 (null removes the bot from its folder)
-DELETE /api/folders         {"id"}                          → 200 (bots are kept)
+POST   /api/categories         {"name", "botIds"?}               → 201 Category (filed bots leave any other category)
+POST   /api/categories/update  {"id", "name"?, "botIds"?}        → 200 Category
+POST   /api/categories/move    {"botId", "categoryId" | null}    → 200 (null removes the bot from its category)
+DELETE /api/categories         {"id"}                            → 200 (bots are kept)
 ```
 
-Create a folder from the **+** on the **Bots** heading or **New folder** in the create menu. Right-click a folder to edit or delete it, and right-click a bot to move it.
+Everything is created from the top **+** menu: New chat, New group chat, New bot and New category. Section headings only fold. Right-click a category to edit or delete it, and right-click a bot to move it.

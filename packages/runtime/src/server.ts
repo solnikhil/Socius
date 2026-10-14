@@ -24,7 +24,7 @@ import {
 import type {
   Approval,
   BotDraft,
-  BotFolder,
+  Category,
   GroupChat,
   Installation,
   Message,
@@ -104,7 +104,7 @@ const MemberIds = z
   .min(1)
   .max(8)
   .refine((a) => new Set(a).size === a.length, "Duplicate member");
-const FolderBotIds = z
+const CategoryBotIds = z
   .array(uuid)
   .max(200)
   .refine((a) => new Set(a).size === a.length, "Duplicate bot");
@@ -302,17 +302,18 @@ export async function startRuntime(options: RuntimeOptions) {
       fail(404, "Group chat not found")
     );
   }
-  function folder(id: string): BotFolder {
+  // Categories are stored under the record kind "folder", their original name.
+  function category(id: string): Category {
     return (
-      store.get<BotFolder>("folder", uuid.parse(id)) ??
-      fail(404, "Folder not found")
+      store.get<Category>("folder", uuid.parse(id)) ??
+      fail(404, "Category not found")
     );
   }
   /**
-   * Files bots into `target` (or no folder when null). A bot is in at most one
-   * folder, so it leaves any other folder first. Runs inside a transaction.
+   * Files bots into `target` (or no category when null). A bot is in at most
+   * one category, so it leaves any other first. Runs inside a transaction.
    */
-  function fileBots(ids: string[], target: BotFolder | null) {
+  function fileBots(ids: string[], target: Category | null) {
     const lead = coordinator().id;
     for (const id of ids) {
       if (id === lead)
@@ -320,7 +321,7 @@ export async function startRuntime(options: RuntimeOptions) {
       bot(id);
     }
     const moving = new Set(ids);
-    for (const f of store.all<BotFolder>("folder")) {
+    for (const f of store.all<Category>("folder")) {
       if (f.id === target?.id) continue;
       const kept = f.botIds.filter((id) => !moving.has(id));
       if (kept.length !== f.botIds.length)
@@ -774,7 +775,7 @@ export async function startRuntime(options: RuntimeOptions) {
           json(res, 200, {
             bots: store.all("bot"),
             groups: store.all("group"),
-            folders: store.all("folder"),
+            categories: store.all("folder"),
             catalog: packages.catalog.list(),
             releases: packages.releases(),
             installations: store.all("installation"),
@@ -1339,14 +1340,14 @@ export async function startRuntime(options: RuntimeOptions) {
           );
           return;
         }
-        if (req.method === "POST" && path === "/api/folders") {
+        if (req.method === "POST" && path === "/api/categories") {
           const input = z
             .strictObject({
               name: z.string().trim().min(1).max(100),
-              botIds: FolderBotIds.default([]),
+              botIds: CategoryBotIds.default([]),
             })
             .parse(await body(req));
-          const f: BotFolder = {
+          const f: Category = {
             id: randomUUID(),
             name: input.name,
             botIds: input.botIds,
@@ -1355,20 +1356,20 @@ export async function startRuntime(options: RuntimeOptions) {
           store.transaction(() => {
             fileBots(f.botIds, f);
             store.put("folder", f.id, f);
-            store.event("folder.created", `Created the folder ${f.name}.`);
+            store.event("category.created", `Created the category ${f.name}.`);
           });
           json(res, 201, f);
           return;
         }
-        if (req.method === "POST" && path === "/api/folders/update") {
+        if (req.method === "POST" && path === "/api/categories/update") {
           const input = z
             .strictObject({
               id: uuid,
               name: z.string().trim().min(1).max(100).optional(),
-              botIds: FolderBotIds.optional(),
+              botIds: CategoryBotIds.optional(),
             })
             .parse(await body(req));
-          const f = folder(input.id);
+          const f = category(input.id);
           store.transaction(() => {
             if (input.botIds) {
               fileBots(input.botIds, f);
@@ -1376,16 +1377,16 @@ export async function startRuntime(options: RuntimeOptions) {
             }
             if (input.name) f.name = input.name;
             store.put("folder", f.id, f);
-            store.event("folder.updated", `Updated the folder ${f.name}.`);
+            store.event("category.updated", `Updated the category ${f.name}.`);
           });
           json(res, 200, f);
           return;
         }
-        if (req.method === "POST" && path === "/api/folders/move") {
+        if (req.method === "POST" && path === "/api/categories/move") {
           const input = z
-            .strictObject({ botId: uuid, folderId: uuid.nullable() })
+            .strictObject({ botId: uuid, categoryId: uuid.nullable() })
             .parse(await body(req));
-          const target = input.folderId ? folder(input.folderId) : null;
+          const target = input.categoryId ? category(input.categoryId) : null;
           store.transaction(() => {
             fileBots([input.botId], target);
             if (target && !target.botIds.includes(input.botId))
@@ -1397,12 +1398,12 @@ export async function startRuntime(options: RuntimeOptions) {
           json(res, 200, { ok: true });
           return;
         }
-        if (req.method === "DELETE" && path === "/api/folders") {
+        if (req.method === "DELETE" && path === "/api/categories") {
           const input = z.strictObject({ id: uuid }).parse(await body(req));
-          const f = folder(input.id);
+          const f = category(input.id);
           // Only the label goes; its bots return to the main Bots list.
           store.delete("folder", f.id);
-          store.event("folder.deleted", `Deleted the folder ${f.name}.`);
+          store.event("category.deleted", `Deleted the category ${f.name}.`);
           json(res, 200, { ok: true });
           return;
         }

@@ -1,41 +1,41 @@
 import { useState, type FormEvent } from "react";
 import { Check } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { BotFolder } from "@socius/contracts/app";
+import type { Category } from "@socius/contracts/app";
 import { api } from "../api.js";
 import { Avatar, ErrorNote, Modal } from "../components/ui.js";
 
-/** Creates a sidebar folder, or edits one when `folder` is given. */
-export function EditFolder({
+/** Creates a sidebar category, or edits one when `category` is given. */
+export function EditCategory({
   specialists,
-  folders,
-  folder,
+  categories,
+  category,
   onClose,
   onSaved,
 }: {
   specialists: BotInstance[];
-  folders: BotFolder[];
-  folder?: BotFolder;
+  categories: Category[];
+  category?: Category;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [picked, setPicked] = useState<string[]>(folder?.botIds ?? []),
-    [name, setName] = useState(folder?.name ?? ""),
+  const [picked, setPicked] = useState<string[]>(category?.botIds ?? []),
+    [name, setName] = useState(category?.name ?? ""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const toggle = (id: string) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const elsewhere = (id: string) =>
-    folders.find((f) => f.id !== folder?.id && f.botIds.includes(id));
+    categories.find((f) => f.id !== category?.id && f.botIds.includes(id));
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
       await api(
-        folder ? "folders/update" : "folders",
-        folder
-          ? { id: folder.id, name, botIds: picked }
+        category ? "categories/update" : "categories",
+        category
+          ? { id: category.id, name, botIds: picked }
           : { name, botIds: picked },
       );
       onSaved();
@@ -48,12 +48,12 @@ export function EditFolder({
   }
   return (
     <Modal
-      title={folder ? "Edit folder" : "New folder"}
+      title={category ? "Edit category" : "New category"}
       className="group-dialog"
       onClose={onClose}
     >
       <p className="muted">
-        Folders only organise the sidebar. Bots in a folder don’t share
+        Categories only organise the sidebar. Bots in a category don’t share
         anything; start a group chat to have them work together.
       </p>
       <form className="form" onSubmit={submit}>
@@ -102,7 +102,7 @@ export function EditFolder({
         )}
         <ErrorNote error={error} />
         <button className="primary" disabled={busy || !name.trim()}>
-          {busy ? "Saving…" : folder ? "Save changes" : "Create folder"}
+          {busy ? "Saving…" : category ? "Save changes" : "Create category"}
         </button>
       </form>
     </Modal>
