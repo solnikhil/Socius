@@ -156,9 +156,29 @@ New record kinds: `release`, `connection`, `action`, `registry-cache`. The curat
 - Release trust has no publisher signatures yet. `curated`/`reviewed` reflect Socius review; registry metadata is not cryptographically verified.
 - Only Notion is implemented. Calendar and other connectors follow the same `ReviewedConnector` contract.
 
+## Next connector batch — user-selected priority
+
+Implement the productivity connectors in this order. These are requirements for the next batch, not installed/reviewed adapters or verified account access.
+
+| Stage | Connector(s) |
+| --- | --- |
+| 1 | Linear |
+| 2 | GitHub |
+| 3 | Gmail and Google Calendar |
+| 4 | Slack |
+| 5 | Google Drive |
+
+Gmail and Google Calendar share one priority stage but remain separate connectors, with separate reviewed scopes and setup. Reuse the existing connection, bot-grant and action-approval services. Each adapter needs supported-access/authentication review, strict action contracts, cancellation/recovery tests and real-account acceptance before being labelled connectable. This order does not imply that all providers support the same MCP or OAuth flow.
+
+The Indian-service discovery directory remains a separate backlog; these priorities do not remove its entries or turn catalog listings into working integrations. Existing Notion support remains in place.
+
 ## Requested connector directory
 
-IRCTC, DigiLocker, MakeMyTrip, Air India, IndiGo, Zomato, Swiggy, Airtel and Jio appear as searchable **Planned** listings in Connect Apps → Connectors. `packages/marketplace/src/connector-directory.ts` holds these discovery entries separately from installable, verified releases. They have no authentication endpoints, executable adapters, tools or permission grants. A listing disappears automatically when a compatible release with its ID is available.
+Connect Apps hides the Skills catalog and skill import for now. Skill packages, import and export remain in the runtime for a later release.
+
+Connect Apps → Connectors lists Indian services as searchable **Planned** rows, grouped by payments, travel, food, documents, government, telecom, work and health. The current set is Razorpay, Cashfree, PhonePe, Paytm, IRCTC, redBus, MakeMyTrip, IndiGo, Air India, Ola, Zomato, Swiggy, Blinkit, Zepto, DigiLocker, India Post, GST, UMANG, Airtel, Jio, Vi, Zoho and Practo. `packages/marketplace/src/connector-directory.ts` holds these discovery entries separately from installable, verified releases. They have no authentication endpoints, executable adapters, tools or permission grants. A listing disappears automatically when a compatible release with its ID is available.
+
+Razorpay (`https://mcp.razorpay.com/mcp`) and Cashfree (`https://mcp.cashfree.com`) publish hosted MCP servers. Those servers sign in with an API key. Socius connector sign-in completes through OAuth, so neither server is reviewed or connectable yet. Connect Apps → MCP Registry has India, Razorpay, Cashfree, Zoho and Rail shortcuts that search the official registry. A result can be installed only when its exact name, version and remote URL match `reviewedServers`. Notion remains the only reviewed connector.
 
 Each integration still needs a supported access method, account authentication, reviewed action schemas, capability enforcement, approval rules and end-to-end account validation before becoming connectable. The existing Notion integration retains its normal installation and authentication flow.
 

@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 // Both tests share one fixture runtime and its one-time pairing, so they run in order.
 test.describe.configure({ mode: "serial" });
 test("configure a model, create bots manually and through Socius, install skills and edit memory", async ({
@@ -151,25 +150,22 @@ test("configure a model, create bots manually and through Socius, install skills
     page.getByRole("textbox", { name: "Message Planner" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Connect apps" }).click();
-  const card = page
-    .locator(".app-row")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "Document summary",
-        exact: true,
-      }),
-    })
-    .first();
+  await expect(page.getByRole("tab", { name: "Skills" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Skills" })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Razorpay", exact: true }),
+  ).toBeVisible();
   await page.screenshot({
     path: "test-results/socius-connect-apps.png",
     animations: "disabled",
   });
-  await card.getByRole("button", { name: "Add", exact: true }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Install skill" })
-    .click();
-  await expect(card.getByRole("button", { name: "Added" })).toBeVisible();
+  await page.getByRole("tab", { name: "Connectors", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Payments", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "IRCTC", exact: true }),
+  ).toBeVisible();
   await page.getByRole("tab", { name: "Bots", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Researcher", exact: true }),
@@ -463,7 +459,7 @@ test("configure a model, create bots manually and through Socius, install skills
   await page.context().storageState({ path: "test-results/paired-state.json" });
   expect(errors).toEqual([]);
 });
-test("import a standard skill, connect Notion, read, approve one exact page and see the result", async ({
+test("connect Notion, read, approve one exact page and see the result", async ({
   browser,
 }) => {
   const context = await browser.newContext({
@@ -477,37 +473,11 @@ test("import a standard skill, connect Notion, read, approve one exact page and 
     page.getByRole("button", { name: "Socius", exact: true }),
   ).toBeVisible();
 
-  // Import the example SKILL.md directory and review it before installing.
   await page.getByRole("button", { name: "Connect apps" }).click();
-  await page
-    .getByLabel("Skill folder")
-    .setInputFiles(resolve("examples/skills/document-brief"));
-  const detail = page.getByRole("dialog", { name: "document-brief" });
-  await expect(
-    detail.getByText("Imported locally · publisher not verified"),
-  ).toBeVisible();
-  await expect(
-    detail.getByText("references/brief-template.md", { exact: true }),
-  ).toBeVisible();
-  const installSkill = detail.getByRole("button", { name: "Install skill" });
-  await expect(installSkill).toBeDisabled();
-  await detail.getByRole("checkbox").check();
-  await page.screenshot({
-    path: "test-results/socius-skill-review.png",
-    animations: "disabled",
-  });
-  await installSkill.click();
-  await expect(detail).not.toBeVisible();
-  await page.getByRole("tab", { name: "Skills", exact: true }).click();
-  await expect(
-    page
-      .locator(".app-row")
-      .filter({ hasText: "document-brief" })
-      .getByRole("button", { name: "Added" }),
-  ).toBeVisible();
 
   // Registry discovery is metadata-only; unreviewed servers cannot be installed.
   await page.getByRole("tab", { name: "MCP Registry" }).click();
+  await page.getByRole("button", { name: "India", exact: true }).click();
   await expect(page.getByText("io.example/unreviewed")).toBeVisible();
   await expect(
     page

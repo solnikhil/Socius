@@ -2,6 +2,8 @@
 
 Status: planned, not implemented or assigned. These additions complement the [Notion roadmap](https://app.notion.com/p/3f910c43ad3e81198b7bdf7be7bf6b06) and [team handoff](team-handoff.md); checked foundation items there remain separate from the new behavior below. The user owns UI/visual decisions. New work needs coordinated runtime/contracts and verified acceptance before its checkbox is ticked.
 
+The [complete feature specification](specs/product-expansion.md) maps all ten requested items to detailed work packages, dependencies, failure/recovery behavior and acceptance tests. Merging that spec does not complete the features.
+
 ## Orchestration and bot capabilities
 
 - [ ] **A07 — Approved delegation from Socius's direct chat — highest priority in these additions.** Socius can propose a task for a named specialist, show the exact task and context for approval each time, dispatch only that approved work, and bring the attributed answer back to the originating chat. Support progress, cancel/failure/retry and durable task/approval links. Each bot retains its model, private context and permissions; delegation approval does not approve the specialist's external writes. Existing group delegation does not complete this item. Coordinate approval persistence with A04 without restoring board execution.
