@@ -1,12 +1,19 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   ArrowUp,
-  Bot,
   BookOpen,
+  Check,
   ChevronDown,
+  Copy,
+  Download,
   FileText,
-  LoaderCircle,
-  MessageSquare,
   Plus,
   Settings,
   Square,
@@ -15,16 +22,30 @@ import {
 import type { BotInstance } from "@socius/contracts";
 import type { Message, Snapshot } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { Avatar, Modal, ErrorNote } from "../components/ui.js";
+import {
+  Avatar,
+  ErrorNote,
+  Markdown,
+  Modal,
+  useDismiss,
+} from "../components/ui.js";
 import { ApprovalCard } from "../components/ApprovalCard.js";
+
+const suggestions = [
+  "Create a research bot that turns my supplied sources into evidence-based briefs.",
+  "Help me summarise a document. I’ll attach it here.",
+  "Help me make a plan for the work I need to get done today.",
+];
 
 export function Chat({
   bot,
+  main,
   state,
   onRefresh,
   onSettings,
 }: {
   bot: BotInstance;
+  main: boolean;
   state: Snapshot;
   onRefresh: () => Promise<void>;
   onSettings: () => void;
@@ -39,12 +60,18 @@ export function Chat({
       name: string;
       text: string;
     } | null>(null),
-    [consent, setConsent] = useState(false);
+    [consent, setConsent] = useState(false),
+    [details, setDetails] = useState(false),
+    [copied, setCopied] = useState("");
   const bottom = useRef<HTMLDivElement>(null),
-    upload = useRef<HTMLInputElement>(null);
+    upload = useRef<HTMLInputElement>(null),
+    input = useRef<HTMLTextAreaElement>(null);
+  const closeDetails = useCallback(() => setDetails(false), []);
+  const detailsRef = useDismiss(details, closeDetails);
   const running = state.tasks.find(
     (t) => t.botId === bot.id && t.state === "running",
   );
+  const memory = bot.grantedCapabilities.includes("memory.read");
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -65,8 +92,17 @@ export function Chat({
     };
   }, [bot.id, busy]);
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
+    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, stream]);
+  useEffect(() => {
+    input.current?.focus();
+  }, [bot.id]);
+  useLayoutEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+  }, [text]);
   async function submit(e?: FormEvent) {
     e?.preventDefault();
     if (!text.trim() || busy || running) return;
@@ -133,138 +169,232 @@ export function Chat({
       setError((e as Error).message);
     }
   }
+  function download(content: string) {
+    const url = URL.createObjectURL(
+      new Blob([content], { type: "text/markdown" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${bot.name}-response.md`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function copy(m: Message) {
+    try {
+      await navigator.clipboard.writeText(m.content);
+      setCopied(m.id);
+      setTimeout(() => setCopied((c) => (c === m.id ? "" : c)), 1500);
+    } catch {
+      setError("Clipboard access is unavailable.");
+    }
+  }
+  async function grant(allow: boolean) {
+    try {
+      await api("grants", { botId: bot.id, memory: allow });
+      setConsent(false);
+      await onRefresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   const approvals = state.approvals.filter(
     (a) =>
       a.botId === bot.id &&
       a.state === "pending" &&
       Date.parse(a.expiresAt) > Date.now(),
   );
+  const empty = messages.length === 0 && !busy;
   return (
     <div className="chat">
-      <div className="chat-scroll">
-        {messages.length === 0 && !busy ? (
-          <div className="welcome">
-            <Avatar name={bot.name} large />
-            <span className="eyebrow">
-              YOUR {bot.name === "Socius" ? "AI ALLY" : "SPECIALIST"}
-            </span>
-            <h1>What shall we work on?</h1>
-            <p>
-              {bot.name === "Socius"
-                ? "A little more headspace. A lot more done."
-                : "Give me a clear outcome and I’ll help you get there."}
-            </p>
-            <div className="suggestions">
-              {[
-                {
-                  icon: <Bot size={19} />,
-                  title: "Build your bot team",
-                  text: "Create a research bot that turns my supplied sources into evidence-based briefs.",
-                },
-                {
-                  icon: <FileText size={19} />,
-                  title: "Make sense of a document",
-                  text: "Help me summarise a document. I’ll attach it here.",
-                },
-                {
-                  icon: <MessageSquare size={19} />,
-                  title: "Think something through",
-                  text: "Help me make a plan for the work I need to get done today.",
-                },
-              ].map((s) => (
-                <button key={s.title} onClick={() => setText(s.text)}>
-                  {s.icon}
-                  <strong>{s.title}</strong>
-                  <span>{s.text}</span>
-                </button>
-              ))}
-            </div>
-            {!state.settings.model && (
-              <button className="setup-notice" onClick={onSettings}>
-                <Settings size={17} />
-                <span>Connect a model to start your first conversation</span>
-                <span>Set up →</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="messages">
-            {messages.map((m) => (
-              <article key={m.id} className={`message ${m.role}`}>
-                <Avatar name={m.role === "user" ? "You" : bot.name} />
+      <header className="chat-head drag">
+        <div className="bot-pill-wrap" ref={detailsRef}>
+          <button
+            className="bot-pill"
+            aria-expanded={details}
+            aria-label={`${bot.name} details`}
+            onClick={() => setDetails((d) => !d)}
+          >
+            <Avatar name={bot.name} main={main} size={24} />
+            {bot.name}
+          </button>
+          {details && (
+            <div className="popover bot-details">
+              <div className="bot-details-head">
+                <Avatar name={bot.name} main={main} size={40} />
                 <div>
-                  <div className="message-label">
-                    {m.role === "user" ? "You" : bot.name}
+                  <strong>{bot.name}</strong>
+                  <small>{bot.role}</small>
+                </div>
+              </div>
+              <button onClick={onSettings}>
+                <Settings size={15} />
+                <span>Model</span>
+                <em>{state.settings.model || "Not set"}</em>
+              </button>
+              <button
+                onClick={() => {
+                  setDetails(false);
+                  setConsent(true);
+                }}
+              >
+                <BookOpen size={15} />
+                <span>Memory</span>
+                <em>{memory ? "On" : "Off"}</em>
+              </button>
+              <p>
+                {state.settings.provider === "ollama"
+                  ? "Uses a local model connection."
+                  : state.settings.provider === "compatible"
+                    ? "Uses a custom model endpoint."
+                    : "Context is sent to your selected cloud provider."}
+              </p>
+            </div>
+          )}
+        </div>
+      </header>
+      <div className="chat-scroll">
+        <div className="thread">
+          {empty ? (
+            <div className="welcome">
+              <Avatar name={bot.name} main={main} size={72} badge={main} />
+              <h1>What shall we work on?</h1>
+              <p>
+                {main
+                  ? "A little more headspace. A lot more done."
+                  : `${bot.role}. Give me a clear outcome and I’ll help you get there.`}
+              </p>
+              <div className="suggestions">
+                {suggestions.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setText(s);
+                      input.current?.focus();
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              {!state.settings.model && (
+                <button className="setup-notice" onClick={onSettings}>
+                  <Settings size={16} />
+                  <span>Connect a model to start your first conversation</span>
+                  <strong>Set up →</strong>
+                </button>
+              )}
+            </div>
+          ) : (
+            messages.map((m, i) => {
+              const next = messages[i + 1];
+              const last = !next || next.role !== m.role;
+              return (
+                <article
+                  key={m.id}
+                  className={`message ${m.role} ${last ? "last" : ""}`}
+                >
+                  <div className="bubble">
+                    {m.role === "assistant" ? (
+                      <Markdown text={m.content} />
+                    ) : (
+                      <div className="plain">{m.content}</div>
+                    )}
+                  </div>
+                  <div className="message-actions">
                     <time>
                       {new Date(m.createdAt).toLocaleTimeString([], {
-                        hour: "2-digit",
+                        hour: "numeric",
                         minute: "2-digit",
                       })}
                     </time>
-                  </div>
-                  <div className="message-content">{m.content}</div>
-                  {m.role === "assistant" && (
                     <button
-                      className="text-button"
-                      onClick={() => {
-                        const url = URL.createObjectURL(
-                          new Blob([m.content], { type: "text/markdown" }),
-                        );
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `${bot.name}-response.md`;
-                        a.click();
-                        setTimeout(() => URL.revokeObjectURL(url), 1000);
-                      }}
+                      className="icon ghost tiny"
+                      aria-label="Copy message"
+                      onClick={() => void copy(m)}
                     >
-                      Save as Markdown
+                      {copied === m.id ? (
+                        <Check size={13} />
+                      ) : (
+                        <Copy size={13} />
+                      )}
                     </button>
-                  )}
-                </div>
-              </article>
-            ))}
-            {busy && (
-              <article className="message assistant">
-                <Avatar name={bot.name} />
-                <div>
-                  <div className="message-label">
-                    {bot.name}
-                    <LoaderCircle size={13} className="spin" />
+                    {m.role === "assistant" && (
+                      <button
+                        className="icon ghost tiny"
+                        aria-label="Save as Markdown"
+                        title="Save as Markdown"
+                        onClick={() => download(m.content)}
+                      >
+                        <Download size={13} />
+                      </button>
+                    )}
                   </div>
-                  <div className="message-content" aria-live="polite">
-                    {stream || "Working on it…"}
-                  </div>
-                </div>
-              </article>
-            )}
-          </div>
-        )}
-        {approvals.map((a) => (
-          <ApprovalCard key={a.id} approval={a} onRefresh={onRefresh} />
-        ))}
-        <div ref={bottom} />
+                </article>
+              );
+            })
+          )}
+          {busy && (
+            <article className="message assistant last">
+              <div className="bubble" aria-live="polite">
+                {stream ? (
+                  <Markdown text={stream} />
+                ) : (
+                  <span className="typing" aria-label="Working on it">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                )}
+              </div>
+            </article>
+          )}
+          {approvals.map((a) => (
+            <ApprovalCard key={a.id} approval={a} onRefresh={onRefresh} />
+          ))}
+          <div ref={bottom} />
+        </div>
       </div>
       <div className="composer-wrap">
         <ErrorNote error={error} />
         {attachment && (
           <div className="attachment">
-            <FileText size={16} />
+            <FileText size={15} />
             {attachment.name}
             <button
+              className="icon ghost tiny"
               aria-label="Remove attachment"
               onClick={() => setAttachment(null)}
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           </div>
         )}
         <form className="composer" onSubmit={submit}>
+          <button
+            type="button"
+            className="icon round composer-plus"
+            aria-label="Attach a text document"
+            onClick={() => upload.current?.click()}
+          >
+            <Plus size={18} />
+          </button>
+          <input
+            className="hidden"
+            ref={upload}
+            type="file"
+            accept=".txt,.md"
+            onChange={(e) => {
+              void loadAttachment(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
           <textarea
+            ref={input}
             aria-label={`Message ${bot.name}`}
-            placeholder={`Message ${bot.name}…`}
+            placeholder={`Message ${bot.name}`}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            rows={2}
+            rows={1}
             onKeyDown={(e) => {
               if (
                 e.key === "Enter" &&
@@ -276,97 +406,44 @@ export function Chat({
               }
             }}
           />
-          <div className="composer-tools">
-            <div>
-              <button
-                type="button"
-                className="icon"
-                aria-label="Attach a text document"
-                onClick={() => upload.current?.click()}
-              >
-                <Plus size={20} />
-              </button>
-              <input
-                className="hidden"
-                ref={upload}
-                type="file"
-                accept=".txt,.md"
-                onChange={(e) => void loadAttachment(e.target.files?.[0])}
-              />
-              <button type="button" className="model-chip" onClick={onSettings}>
-                {state.settings.model || "Choose model"}
-                <ChevronDown size={13} />
-              </button>
-            </div>
-            {busy || running ? (
-              <button
-                type="button"
-                className="send"
-                aria-label="Stop task"
-                onClick={() =>
-                  void api("tasks/cancel", { id: taskId || running?.id }).catch(
-                    (e) => setError(e.message),
-                  )
-                }
-              >
-                <Square size={15} />
-              </button>
-            ) : (
-              <button
-                className="send"
-                aria-label="Send message"
-                disabled={!text.trim() || !state.settings.model}
-              >
-                <ArrowUp size={20} />
-              </button>
-            )}
-          </div>
-        </form>
-        <div className="composer-foot">
-          <span>
-            {state.settings.provider === "ollama"
-              ? "Local model connection"
-              : state.settings.provider === "compatible"
-                ? "Custom model endpoint"
-                : "Context is sent to your selected cloud provider"}
-          </span>
-          <button className="text-button" onClick={() => setConsent(true)}>
-            <BookOpen size={12} />
-            {bot.grantedCapabilities.includes("memory.read")
-              ? "Memory enabled"
-              : "Enable memory"}
+          <button type="button" className="model-chip" onClick={onSettings}>
+            {state.settings.model || "Choose model"}
+            <ChevronDown size={12} />
           </button>
-        </div>
+          {busy || running ? (
+            <button
+              type="button"
+              className="send"
+              aria-label="Stop task"
+              onClick={() =>
+                void api("tasks/cancel", { id: taskId || running?.id }).catch(
+                  (e) => setError(e.message),
+                )
+              }
+            >
+              <Square size={12} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              className="send"
+              aria-label="Send message"
+              disabled={!text.trim() || !state.settings.model}
+            >
+              <ArrowUp size={18} strokeWidth={2.4} />
+            </button>
+          )}
+        </form>
       </div>
       {consent && (
         <Modal title="Memory permissions" onClose={() => setConsent(false)}>
-          <p>
+          <p className="muted">
             Allow {bot.name} to search its private memory and propose new
             records. Each proposed save still needs your approval. Memory may be
             included in requests to your selected model provider.
           </p>
           <div className="modal-actions">
-            <button
-              onClick={() =>
-                void api("grants", { botId: bot.id, memory: false }).then(
-                  () => {
-                    setConsent(false);
-                    void onRefresh();
-                  },
-                )
-              }
-            >
-              Revoke access
-            </button>
-            <button
-              className="primary"
-              onClick={() =>
-                void api("grants", { botId: bot.id, memory: true }).then(() => {
-                  setConsent(false);
-                  void onRefresh();
-                })
-              }
-            >
+            <button onClick={() => void grant(false)}>Revoke access</button>
+            <button className="primary" onClick={() => void grant(true)}>
               Allow memory
             </button>
           </div>

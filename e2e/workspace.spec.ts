@@ -13,10 +13,17 @@ test("configure a model, create bots manually and through Socius, install skills
     path: "test-results/socius-chat.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Account and settings" }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
   await page.getByLabel("Model ID").fill("fixture-model");
   await page.getByRole("button", { name: "Save connection" }).click();
   await expect(page.getByRole("status")).toHaveText("Connection saved");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({
+    path: "test-results/socius-settings-dark.png",
+    animations: "disabled",
+  });
+  await page.emulateMedia({ colorScheme: "light" });
   await page.getByRole("button", { name: "New bot", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("College assistant");
   await page.getByLabel("Role", { exact: true }).fill("College planning");
@@ -25,9 +32,7 @@ test("configure a model, create bots manually and through Socius, install skills
     .fill("Help me organise coursework from supplied documents.");
   await page.getByRole("button", { name: "Create bot", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
-  await page
-    .getByRole("button", { name: /Socius Personal coordinator/ })
-    .click();
+  await page.getByRole("button", { name: "Socius", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Message Socius" })
     .fill("Create a planning bot");
@@ -37,24 +42,58 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(
     page.getByRole("button", { name: /Planner Planning specialist/ }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Marketplace", exact: true }).click();
   await page.screenshot({
-    path: "test-results/socius-marketplace.png",
-    fullPage: true,
+    path: "test-results/socius-chat-light.png",
+    animations: "disabled",
   });
-  const card = page.locator(".catalog-card").filter({
-    has: page.getByRole("heading", { name: "Document summary", exact: true }),
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({
+    path: "test-results/socius-chat-dark.png",
+    animations: "disabled",
   });
-  await card.getByRole("button", { name: "Install", exact: true }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
+  await expect(
+    page.getByRole("option", { name: /Create new bot/ }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/socius-new-chat.png",
+    animations: "disabled",
+  });
+  await page
+    .getByRole("combobox", { name: "Start a chat with" })
+    .fill("planner");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("textbox", { name: "Message Planner" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Connect apps" }).click();
+  const card = page
+    .locator(".app-row")
+    .filter({
+      has: page.getByRole("heading", {
+        name: "Document summary",
+        exact: true,
+      }),
+    })
+    .first();
+  await page.screenshot({
+    path: "test-results/socius-connect-apps.png",
+    animations: "disabled",
+  });
+  await card.getByRole("button", { name: "Add", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Install skill" })
     .click();
-  await expect(card.getByRole("button", { name: "Installed" })).toBeVisible();
-  await page.getByRole("button", { name: "Bots", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Added" })).toBeVisible();
+  await page.getByRole("tab", { name: "Bots", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Researcher", exact: true }),
   ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.getByRole("button", { name: "Socius", exact: true }).click();
   await page.getByRole("button", { name: "Memory", exact: true }).click();
   await page.getByRole("button", { name: "Add memory" }).click();
   await page

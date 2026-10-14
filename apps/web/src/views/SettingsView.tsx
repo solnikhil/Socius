@@ -1,15 +1,33 @@
 import { useState, type FormEvent } from "react";
-import { Check, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  Check,
+  Monitor,
+  Moon,
+  Palette,
+  ShieldCheck,
+  Sparkles,
+  Sun,
+} from "lucide-react";
 import type { ModelSettings, Snapshot } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { ErrorNote } from "../components/ui.js";
+import { ErrorNote, type ThemePreference } from "../components/ui.js";
+
+const themes = [
+  { value: "system", label: "System", icon: Monitor },
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+] as const;
 
 export function SettingsView({
   state,
   onRefresh,
+  theme,
+  onTheme,
 }: {
   state: Snapshot;
   onRefresh: () => Promise<void>;
+  theme: ThemePreference;
+  onTheme: (theme: ThemePreference) => void;
 }) {
   const [settings, setSettings] = useState<ModelSettings>(state.settings),
     [key, setKey] = useState(""),
@@ -47,6 +65,35 @@ export function SettingsView({
       <p className="subtitle">
         Choose where your model runs and how your workspace works.
       </p>
+      <div className="settings-card">
+        <div className="settings-heading">
+          <Palette size={20} />
+          <div>
+            <h2>Appearance</h2>
+            <p>Follow your system, or keep Socius light or dark.</p>
+          </div>
+        </div>
+        <div className="theme-options" role="radiogroup" aria-label="Theme">
+          {themes.map((t) => (
+            <button
+              key={t.value}
+              role="radio"
+              aria-checked={theme === t.value}
+              className={`theme-option ${t.value} ${theme === t.value ? "selected" : ""}`}
+              onClick={() => onTheme(t.value)}
+            >
+              <span className="theme-preview" aria-hidden="true">
+                <i />
+                <b />
+              </span>
+              <span>
+                <t.icon size={14} />
+                {t.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="settings-card">
         <div className="settings-heading">
           <Sparkles size={20} />

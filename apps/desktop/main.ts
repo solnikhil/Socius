@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  nativeTheme,
   safeStorage,
   utilityProcess,
 } from "electron";
@@ -26,8 +27,10 @@ function showWindow(url: string) {
     height: 880,
     minWidth: 850,
     minHeight: 620,
-    backgroundColor: "#f7f8fa",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#ffffff",
     title: "Socius",
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    trafficLightPosition: { x: 18, y: 20 },
     show: false,
     webPreferences: {
       nodeIntegration: false,

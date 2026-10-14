@@ -1,6 +1,6 @@
 # Socius
 
-A desktop AI ally with a persistent main bot, private specialist bots, editable local memory, and two marketplace sections: **Skills & Connectors** and **Bots**.
+A desktop AI ally with a persistent main bot, private specialist bots, editable local memory, and a **Connect Apps** catalog of skills, connectors and bot templates. Light and dark themes follow the system or a saved preference.
 
 ## Start the desktop app
 
@@ -25,6 +25,7 @@ Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The 
 - Curated install previews show dependencies/capabilities. Installation verifies the reviewed digest and persists receipts atomically. Connector entries clearly state that execution is unavailable.
 - Memory is private per bot: editable Markdown files plus SQLite FTS5 search. External file edits reconcile when memory is read.
 - Enable memory per bot explicitly; model-proposed saves require review and recheck permissions.
+- Messaging-style interface: bot sidebar with the main bot featured, a `To:` new-chat palette (⌘N/⌘K, ⌘1–9 to pick), chat bubbles with safe Markdown rendering, and a Connect Apps modal. Appearance (System/Light/Dark) is in Settings and the account menu; the choice is stored locally.
 - Activity records omit provider keys and exception bodies. Analytics and remote crash reporting are off.
 
 Pending approvals survive restart and cannot be approved twice. An interrupted running task is marked failed and requires explicit retry; model execution is not checkpoint-resumed. Creating specialist bots does not yet delegate tasks to them automatically.
