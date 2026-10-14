@@ -146,3 +146,30 @@ export const slackManifest = productivityConnector(
     },
   ],
 );
+
+export const driveManifest = productivityConnector(
+  "google-drive",
+  "Google Drive",
+  "https://drivemcp.googleapis.com/mcp/v1",
+  "Requires Google Workspace MCP Developer Preview, enabled Drive and Drive MCP APIs, and a Web OAuth AI-agent client. Configure SOCIUS_DRIVE_CLIENT_ID and SOCIUS_DRIVE_CLIENT_SECRET with callback http://127.0.0.1:37377/oauth/callback. Read scope covers eligible accessible files; create uses drive.file. New documents inherit the approved folder's access. No share, overwrite or delete actions.",
+  [
+    {
+      id: "drive.search",
+      access: "read",
+      capability: "documents.read",
+      description: "Search eligible Drive files.",
+    },
+    {
+      id: "drive.fetch",
+      access: "read",
+      capability: "documents.read",
+      description: "Read an eligible file as text.",
+    },
+    {
+      id: "drive.create-document",
+      access: "write",
+      capability: "documents.write",
+      description: "Create a text document after folder/content approval.",
+    },
+  ],
+);
