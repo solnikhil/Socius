@@ -196,8 +196,17 @@ export function Chat({
           if (event.type === "text")
             setStream({ botId: event.botId ?? bot.id, content: event.content });
           // A member finished its reply in a group chat.
-          if (event.type === "message")
-            setMessages((m) => [...m, event.message as Message]);
+          if (event.type === "message") {
+            const message = event.message as Message;
+            setMessages((messages) =>
+              messages.some((m) => m.id === message.id)
+                ? messages.map((m) => (m.id === message.id ? message : m))
+                : [...messages, message],
+            );
+            setStream((current) =>
+              current?.botId === message.botId ? null : current,
+            );
+          }
           if (event.type === "error") fail(event.error, event.code ?? "");
         }
       }
