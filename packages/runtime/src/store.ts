@@ -83,7 +83,15 @@ export class Store {
     this.put("activity", event.id, event);
   }
   messages(botId: string): Message[] {
-    return this.all<Message>("message").filter((m) => m.botId === botId);
+    return this.all<Message>("message").filter(
+      (m) => m.botId === botId && !m.groupId,
+    );
+  }
+  groupMessages(groupId: string): Message[] {
+    return this.all<Message>("message").filter((m) => m.groupId === groupId);
+  }
+  delete(kind: string, id: string) {
+    this.db.prepare("DELETE FROM records WHERE kind=? AND id=?").run(kind, id);
   }
   private indexMemory(memory: Memory) {
     this.db.prepare("DELETE FROM memory_search WHERE id=?").run(memory.id);

@@ -308,15 +308,76 @@ button.pill:hover {
 /* ---------- Shell ---------- */
 .shell {
   display: grid;
-  grid-template-columns: 264px 1fr;
+  grid-template-columns: 264px minmax(0, 1fr);
   height: 100vh;
   min-height: 560px;
+  transition: grid-template-columns 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .shell.collapsed {
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 0px minmax(0, 1fr);
 }
 .shell.collapsed .sidebar {
+  opacity: 0;
   visibility: hidden;
+  pointer-events: none;
+  border-right-color: transparent;
+  transition:
+    opacity 160ms ease,
+    border-color 160ms ease,
+    visibility 0s linear 200ms;
+}
+/* The closed-sidebar button sits in the macOS title bar. A transparent
+   no-drag control there is ignored, and the chat header's drag region
+   covers the same spot, so the click never reaches the button. */
+.shell.collapsed .chat-head,
+.shell.collapsed .page-bar,
+.shell.collapsed .to-bar {
+  -webkit-app-region: no-drag;
+}
+button.icon.ghost.sidebar-reveal {
+  position: absolute;
+  z-index: 40;
+  top: 10px;
+  left: 14px;
+  -webkit-app-region: no-drag;
+  background: var(--surface);
+  border-color: var(--border);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-8px);
+  transition:
+    opacity 280ms ease,
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 280ms,
+    background 0.12s,
+    border-color 0.12s;
+}
+.shell.collapsed button.icon.ghost.sidebar-reveal {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition:
+    opacity 320ms ease 90ms,
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 0s,
+    background 0.12s,
+    border-color 0.12s;
+}
+.mac-desktop button.icon.ghost.sidebar-reveal {
+  left: 86px;
+}
+button.icon.ghost.sidebar-reveal:hover {
+  background: var(--surface-2);
+}
+.shell.collapsed .page-bar,
+.shell.collapsed .to-bar {
+  padding-left: 60px;
+}
+.mac-desktop .shell.collapsed .page-bar,
+.mac-desktop .shell.collapsed .to-bar {
+  padding-left: 132px;
 }
 .sidebar {
   background: var(--sidebar);
@@ -325,6 +386,10 @@ button.pill:hover {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  transition:
+    opacity 200ms ease,
+    border-color 200ms ease,
+    visibility 0s linear 0s;
 }
 .sidebar-top {
   height: 56px;
@@ -333,8 +398,7 @@ button.pill:hover {
   align-items: center;
   padding: 0 14px;
 }
-.mac-desktop .sidebar-top,
-.mac-desktop .floating-tools {
+.mac-desktop .sidebar-top {
   padding-left: 86px;
 }
 .window-tools {
@@ -513,24 +577,6 @@ main > .error {
   transform: translateX(-50%);
   z-index: 20;
 }
-.floating-tools {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  padding: 0 14px;
-  z-index: 12;
-}
-.shell.collapsed .to-bar,
-.shell.collapsed .page-bar {
-  padding-left: 200px;
-}
-.mac-desktop .shell.collapsed .to-bar,
-.mac-desktop .shell.collapsed .page-bar {
-  padding-left: 230px;
-}
 
 /* ---------- Avatars ---------- */
 .avatar {
@@ -561,6 +607,38 @@ main > .error {
 }
 .welcome .avatar-badge {
   border-color: var(--bg);
+}
+
+.group-avatar {
+  position: relative;
+}
+.group-avatar > span {
+  position: absolute;
+  display: flex;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--sidebar);
+  background: var(--sidebar);
+}
+.bot-row.active .group-avatar > span {
+  box-shadow: 0 0 0 2px var(--surface-2);
+  background: var(--surface-2);
+}
+.bot-row:not(.active):hover .group-avatar > span {
+  box-shadow: 0 0 0 2px var(--surface);
+  background: var(--surface);
+}
+.bot-pill .group-avatar > span {
+  box-shadow: none;
+  background: transparent;
+}
+.welcome .group-avatar > span {
+  box-shadow: 0 0 0 2px var(--bg);
+  background: var(--bg);
+}
+.bot-details .group-avatar > span,
+.palette .group-avatar > span {
+  box-shadow: 0 0 0 1.5px var(--elevated);
+  background: var(--elevated);
 }
 
 /* ---------- Popovers ---------- */
@@ -757,6 +835,38 @@ main > .error {
 }
 .plain {
   white-space: pre-wrap;
+}
+.speaker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 0 6px 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.group-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.group-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+}
+.group-member .bot-text strong {
+  font-size: 13.5px;
+}
+.group-member .bot-text small {
+  font-size: 12px;
+}
+.bot-details button:disabled {
+  opacity: 0.5;
 }
 .message-actions {
   display: flex;
@@ -1060,6 +1170,7 @@ main > .error {
   gap: 10px;
   padding: 0 12px 0 16px;
   border-bottom: 1px solid var(--sidebar-line);
+  transition: padding-left 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .to-bar label {
   flex: 1;
@@ -1163,6 +1274,52 @@ dialog::backdrop {
   justify-content: space-between;
   gap: 12px;
   margin: -4px -10px 14px 0;
+}
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0 -8px;
+}
+.member-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+}
+button.member-row:hover {
+  background: var(--surface);
+}
+.member-row.fixed {
+  opacity: 0.85;
+}
+.member-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--solid-text);
+}
+.member-check.checked {
+  background: var(--solid);
+  border-color: var(--solid);
+}
+.group-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 .modal-actions {
   display: flex;
@@ -1395,6 +1552,7 @@ dialog::backdrop {
   border-bottom: 1px solid var(--sidebar-line);
   color: var(--text-2);
   font-size: 14px;
+  transition: padding-left 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .page {
   flex: 1;
@@ -1503,6 +1661,67 @@ dialog::backdrop {
 .detail-list strong {
   font-weight: 500;
   text-align: right;
+}
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.activity-list li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.activity-list li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.activity-list li:first-child {
+  padding-top: 0;
+}
+.activity-mark {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.activity-mark.good {
+  background: var(--success);
+}
+.activity-mark.warn {
+  background: var(--accent);
+}
+.activity-mark.bad {
+  background: var(--danger);
+}
+.activity-list strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+}
+.activity-list p {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.activity-list time {
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.activity-empty {
+  margin: 0;
+  color: var(--text-2);
+}
+.activity-more {
+  margin-top: 12px;
+  padding-left: 0;
 }
 .theme-options {
   display: grid;
@@ -1722,7 +1941,7 @@ dialog::backdrop {
 /* ---------- Narrow windows ---------- */
 @media (max-width: 1040px) {
   .shell {
-    grid-template-columns: 236px 1fr;
+    grid-template-columns: 236px minmax(0, 1fr);
   }
   .thread,
   .composer-wrap {

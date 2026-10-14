@@ -450,3 +450,183 @@ test("connections cannot change while a task is using them", () =>
       await r.close();
     }
   }));
+
+test("group specialists use their selected provider and lock every connection during work", () =>
+  workspace("group-providers", async (dir) => {
+    let entered!: () => void;
+    const memberStarted = new Promise<void>((resolve) => (entered = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const seen: string[] = [];
+    const r = await paired(dir, async (request) => {
+      seen.push(request.modelRef.modelId);
+      if (request.askMember) {
+        await request.askMember("Specialist", "Help");
+        return "Combined answer";
+      }
+      entered();
+      await gate;
+      return "Specialist answer";
+    });
+    try {
+      const lead = (await (
+        await r.request("providers", { provider: "ollama" })
+      ).json()) as ProviderConnection;
+      const member = (await (
+        await r.request("providers", { provider: "lmstudio" })
+      ).json()) as ProviderConnection;
+      await r.request("models", {
+        connectionId: lead.id,
+        modelId: "lead-model",
+      });
+      await r.request("models", {
+        connectionId: member.id,
+        modelId: "member-model",
+      });
+      const specialist = await (
+        await r.request("bots", {
+          name: "Specialist",
+          role: "Research",
+          instructions: "Research supplied context",
+        })
+      ).json();
+      await r.request("models/select", {
+        botId: specialist.id,
+        model: { connectionId: member.id, modelId: "member-model" },
+      });
+      const group = await (
+        await r.request("groups", { memberIds: [specialist.id] })
+      ).json();
+      const chat = await r.request("groups/chat", {
+        groupId: group.id,
+        content: "Work together",
+      });
+      await memberStarted;
+      for (const c of [lead, member]) {
+        assert.equal(
+          (await r.request("providers", { id: c.id }, "DELETE")).status,
+          409,
+        );
+        assert.equal(
+          (await r.request("providers/update", { id: c.id, label: "Changed" }))
+            .status,
+          409,
+        );
+      }
+      release();
+      assert.match(await chat.text(), /"type":"done"/);
+      assert.deepEqual(seen, ["lead-model", "member-model"]);
+      assert.equal((await state(r)).tasks[0]!.model!.connectionId, lead.id);
+      assert.equal(
+        (await r.request("providers", { id: member.id }, "DELETE")).status,
+        200,
+      );
+    } finally {
+      release();
+      await r.close();
+    }
+  }));
+
+test("tool rejection after a proposal never replays the task", () =>
+  workspace("no-tool-replay", async (dir) => {
+    let attempts = 0;
+    const r = await paired(dir, async (request) => {
+      attempts++;
+      request.proposeBot({
+        name: "Planner",
+        role: "Planning",
+        instructions: "Plan",
+      });
+      throw new APICallError({
+        message: "unsupported tools",
+        url: "http://localhost",
+        requestBodyValues: {},
+        statusCode: 400,
+        responseBody: "model does not support tools",
+      });
+    });
+    try {
+      const c = await (
+        await r.request("providers", { provider: "ollama" })
+      ).json();
+      await r.request("models", { connectionId: c.id, modelId: "model" });
+      const botId = (await state(r)).bots[0]!.id;
+      const result = await (
+        await r.request("chat", { botId, content: "Create a planner" })
+      ).text();
+      assert.match(result, /"code":"tools_unsupported"/);
+      assert.equal(attempts, 1);
+      assert.equal((await state(r)).approvals.length, 1);
+    } finally {
+      await r.close();
+    }
+  }));
+
+test("connection edits reset tool capability and cannot commit after work starts during encryption", () =>
+  workspace("connection-race", async (dir) => {
+    let encrypted!: () => void;
+    const encryptStarted = new Promise<void>(
+      (resolve) => (encrypted = resolve),
+    );
+    let releaseEncryption!: () => void;
+    const encryptionGate = new Promise<void>(
+      (resolve) => (releaseEncryption = resolve),
+    );
+    let releaseWork!: () => void;
+    const workGate = new Promise<void>((resolve) => (releaseWork = resolve));
+    let started!: () => void;
+    const workStarted = new Promise<void>((resolve) => (started = resolve));
+    const r = await paired(
+      dir,
+      async () => {
+        started();
+        await workGate;
+        return "done";
+      },
+      {
+        secretBox: {
+          ...box,
+          encrypt: async (value) => {
+            encrypted();
+            await encryptionGate;
+            return box.encrypt(value);
+          },
+        },
+      },
+    );
+    try {
+      const c = await (
+        await r.request("providers", { provider: "ollama" })
+      ).json();
+      const ref = { connectionId: c.id, modelId: "model" };
+      await r.request("models", ref);
+      r.store.providers.setModelTools(ref, false);
+      assert.equal(
+        (
+          await r.request("providers/update", {
+            id: c.id,
+            config: { baseURL: "http://127.0.0.1:1234/v1" },
+          })
+        ).status,
+        200,
+      );
+      assert.equal((await state(r)).models[0]!.tools, null);
+      const edit = r.request("providers/update", {
+        id: c.id,
+        secrets: { apiKey: "new-key" },
+      });
+      await encryptStarted;
+      const botId = (await state(r)).bots[0]!.id;
+      const chat = await r.request("chat", { botId, content: "Work" });
+      await workStarted;
+      releaseEncryption();
+      assert.equal((await edit).status, 409);
+      assert.deepEqual((await state(r)).connections[0]!.secrets, []);
+      releaseWork();
+      await chat.text();
+    } finally {
+      releaseEncryption();
+      releaseWork();
+      await r.close();
+    }
+  }));

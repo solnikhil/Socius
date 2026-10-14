@@ -10,9 +10,11 @@ const themes = [
 export function GeneralPane({
   theme,
   onTheme,
+  onOpenActivity,
 }: {
   theme: ThemePreference;
   onTheme: (theme: ThemePreference) => void;
+  onOpenActivity: () => void;
 }) {
   return (
     <>
@@ -42,6 +44,15 @@ export function GeneralPane({
             </button>
           ))}
         </div>
+      </div>
+      <div className="pane-section">
+        <h4>Activity</h4>
+        <p className="muted">
+          Review tasks, approvals and changes in your workspace.
+        </p>
+        <button className="secondary" onClick={onOpenActivity}>
+          Open activity
+        </button>
       </div>
     </>
   );

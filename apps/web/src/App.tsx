@@ -12,11 +12,12 @@ import {
   X,
 } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { Snapshot } from "@socius/contracts/app";
+import type { GroupChat, Snapshot } from "@socius/contracts/app";
 import { api } from "./api.js";
 import {
   Avatar,
   ErrorNote,
+  GroupAvatar,
   MAIN_BOT_TEMPLATE,
   useDismiss,
   useTheme,
@@ -29,15 +30,19 @@ import { ConnectApps } from "./views/ConnectApps.js";
 import { MemoryView } from "./views/MemoryView.js";
 import { SettingsDialog } from "./views/settings/SettingsDialog.js";
 import type { OpenSettings, SettingsTab } from "./models.js";
+import { ActivityView } from "./views/ActivityView.js";
 import { CreateBot } from "./views/CreateBot.js";
+import { CreateGroup } from "./views/CreateGroup.js";
 
-type Page = "chat" | "new" | "memory";
+type Page = "chat" | "new" | "memory" | "activity";
 const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
 export function App() {
   const [state, setState] = useState<Snapshot | null>(null),
     [selected, setSelected] = useState(""),
+    [groupId, setGroupId] = useState(""),
+    [grouping, setGrouping] = useState<"new" | "edit" | null>(null),
     [page, setPage] = useState<Page>("chat"),
     [creating, setCreating] = useState(false),
     [apps, setApps] = useState(false),
@@ -117,11 +122,33 @@ export function App() {
     state.bots[0]!;
   const specialists = state.bots.filter((b) => b.id !== main.id);
   const running = (b: BotInstance) =>
-    state.tasks.some((t) => t.botId === b.id && t.state === "running");
+    state.tasks.some(
+      (t) => t.botId === b.id && !t.groupId && t.state === "running",
+    );
   const waiting = (b: BotInstance) => pending.some((a) => a.botId === b.id);
   const open = (b: BotInstance) => {
     setSelected(b.id);
+    setGroupId("");
     setPage("chat");
+  };
+  const openGroup = (g: GroupChat) => {
+    setGroupId(g.id);
+    setPage("chat");
+  };
+  const group = state.groups.find((g) => g.id === groupId);
+  const faces = (g: GroupChat) => [
+    { name: main.name, main: true },
+    ...g.memberIds
+      .map((id) => state.bots.find((b) => b.id === id))
+      .filter((b): b is BotInstance => !!b),
+  ];
+  const groupRunning = (g: GroupChat) =>
+    state.tasks.some((t) => t.groupId === g.id && t.state === "running");
+  const groupWaiting = (g: GroupChat) => {
+    const tasks = new Set(
+      state.tasks.filter((t) => t.groupId === g.id).map((t) => t.id),
+    );
+    return pending.some((a) => tasks.has(a.taskId));
   };
   const connected = state.catalog.filter((p) =>
     state.installations.some((i) => i.id === p.id && p.kind !== "bot"),
@@ -131,8 +158,8 @@ export function App() {
     <div className="window-tools">
       <button
         className="icon ghost"
-        aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
-        title={"Toggle sidebar  ⌘\\"}
+        aria-label="Hide sidebar"
+        title={"Hide sidebar  ⌘\\"}
         onClick={() => setCollapsed((c) => !c)}
       >
         <PanelLeft size={17} />
@@ -164,12 +191,12 @@ export function App() {
 
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""}`}>
-      <aside className="sidebar" aria-label="Bots">
+      <aside className="sidebar" aria-label="Bots" inert={collapsed}>
         <div className="sidebar-top drag">{toolbar}</div>
         <div className="sidebar-scroll">
           <div className="featured">
             <button
-              className={`featured-bot ${page === "chat" && current.id === main.id ? "active" : ""}`}
+              className={`featured-bot ${page === "chat" && !group && current.id === main.id ? "active" : ""}`}
               onClick={() => open(main)}
             >
               <Avatar name={main.name} main size={66} badge />
@@ -182,13 +209,43 @@ export function App() {
               )}
             </button>
           </div>
+          {state.groups.length > 0 && (
+            <section className="bot-group">
+              <h3>Group chats</h3>
+              {state.groups.map((g) => (
+                <button
+                  key={g.id}
+                  className={`bot-row ${page === "chat" && group?.id === g.id ? "active" : ""}`}
+                  onClick={() => openGroup(g)}
+                >
+                  <GroupAvatar names={faces(g)} size={42} />
+                  <span className="bot-text">
+                    <strong>{g.name}</strong>
+                    <small>
+                      {groupRunning(g)
+                        ? "Working…"
+                        : faces(g)
+                            .map((b) => b.name)
+                            .join(", ")}
+                    </small>
+                  </span>
+                  {(groupWaiting(g) || groupRunning(g)) && (
+                    <span
+                      className={`unread ${groupRunning(g) ? "pulse" : ""}`}
+                      aria-label={groupRunning(g) ? "Working" : "Needs review"}
+                    />
+                  )}
+                </button>
+              ))}
+            </section>
+          )}
           {specialists.length > 0 && (
             <section className="bot-group">
               <h3>Specialists</h3>
               {specialists.map((b) => (
                 <button
                   key={b.id}
-                  className={`bot-row ${page === "chat" && b.id === current.id ? "active" : ""}`}
+                  className={`bot-row ${page === "chat" && !group && b.id === current.id ? "active" : ""}`}
                   onClick={() => open(b)}
                 >
                   <Avatar name={b.name} size={42} />
@@ -210,6 +267,16 @@ export function App() {
             <button className="group-link" onClick={() => setCreating(true)}>
               New bot
               <Plus size={14} />
+            </button>
+            <button className="group-link" onClick={() => setGrouping("new")}>
+              New group chat
+              <Plus size={14} />
+            </button>
+            <button
+              className={`group-link ${page === "activity" ? "active" : ""}`}
+              onClick={() => setPage("activity")}
+            >
+              Activity
             </button>
             <button
               className={`group-link ${page === "memory" ? "active" : ""}`}
@@ -283,9 +350,38 @@ export function App() {
         </div>
       </aside>
       <main>
-        {collapsed && <div className="floating-tools drag">{toolbar}</div>}
+        <button
+          className="sidebar-reveal icon ghost"
+          aria-label="Show sidebar"
+          title={"Show sidebar  ⌘\\"}
+          tabIndex={collapsed ? 0 : -1}
+          aria-hidden={!collapsed}
+          onClick={() => setCollapsed(false)}
+        >
+          <PanelLeft size={17} />
+        </button>
         <ErrorNote error={error} />
-        {page === "chat" && (
+        {page === "chat" && group && (
+          <Chat
+            key={group.id}
+            bot={main}
+            main
+            group={group}
+            state={state}
+            onRefresh={refresh}
+            onSettings={() => openSettings("general")}
+            onEditGroup={() => setGrouping("edit")}
+            onDeleteGroup={() =>
+              void api("groups", { id: group.id }, "DELETE")
+                .then(() => {
+                  open(main);
+                  return refresh();
+                })
+                .catch((e: Error) => setError(e.message))
+            }
+          />
+        )}
+        {page === "chat" && !group && (
           <Chat
             key={current.id}
             bot={current}
@@ -298,19 +394,25 @@ export function App() {
         {page === "new" && (
           <NewChat
             bots={[main, ...specialists]}
+            groups={state.groups.map((g) => ({ group: g, faces: faces(g) }))}
             mainId={main.id}
             onClose={() => setPage("chat")}
             onPick={open}
+            onPickGroup={openGroup}
+            onCreateGroup={() => {
+              setPage("chat");
+              setGrouping("new");
+            }}
             onCreate={() => {
               setPage("chat");
               setCreating(true);
             }}
           />
         )}
-        {page === "memory" && (
+        {(page === "memory" || page === "activity") && (
           <div className="page-frame">
             <header className="page-bar drag">
-              <span>Memory</span>
+              <span>{page === "memory" ? "Memory" : "Activity"}</span>
               <button
                 className="icon ghost"
                 aria-label="Close"
@@ -319,12 +421,15 @@ export function App() {
                 <X size={17} />
               </button>
             </header>
-            <MemoryView
-              key={current.id}
-              bot={current}
-              bots={state.bots}
-              onSelect={setSelected}
-            />
+            {page === "memory" && (
+              <MemoryView
+                key={current.id}
+                bot={current}
+                bots={state.bots}
+                onSelect={setSelected}
+              />
+            )}
+            {page === "activity" && <ActivityView events={state.activity} />}
           </div>
         )}
       </main>
@@ -333,6 +438,10 @@ export function App() {
           state={state}
           onRefresh={refresh}
           onClose={() => setSettings(null)}
+          onOpenActivity={() => {
+            setSettings(null);
+            setPage("activity");
+          }}
           initialTab={settings.tab}
           initialConnection={settings.connectionId}
           theme={theme}
@@ -344,6 +453,22 @@ export function App() {
           state={state}
           onRefresh={refresh}
           onClose={() => setApps(false)}
+        />
+      )}
+      {grouping && (
+        <CreateGroup
+          lead={main}
+          specialists={specialists}
+          {...(grouping === "edit" && group ? { group } : {})}
+          onClose={() => setGrouping(null)}
+          onSaved={(g) => {
+            openGroup(g);
+            void refresh();
+          }}
+          onCreateBot={() => {
+            setGrouping(null);
+            setCreating(true);
+          }}
         />
       )}
       {creating && (

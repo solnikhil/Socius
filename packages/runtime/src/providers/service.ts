@@ -261,6 +261,11 @@ export class ProviderService {
     const invalidate =
       Object.keys(changes).length > 0 ||
       JSON.stringify(config) !== JSON.stringify(current.config);
+    // Encryption yields to other requests: revalidate before committing.
+    if (this.inUse(current.id))
+      fail(409, "Wait for running tasks that use this provider to finish");
+    if (JSON.stringify(this.get(current.id)) !== JSON.stringify(current))
+      fail(409, "This connection changed. Refresh it before saving.");
     this.store.providers.updateConnection(
       {
         id: current.id,
@@ -440,11 +445,11 @@ export class ProviderService {
       fail(409, "Choose a model in Settings → Models first");
     const entry = this.entry(ref);
     const c = this.get(entry.connectionId);
-    return {
-      ref,
-      entry,
-      providerName: describe(c.provider).name,
-      model: await this.build(c, entry.modelId),
-    };
+    const model = await this.build(c, entry.modelId);
+    // Credential decryption can yield while another request edits the connection.
+    if (JSON.stringify(this.get(c.id)) !== JSON.stringify(c))
+      fail(409, "This connection changed. Try sending the message again.");
+    this.entry(ref);
+    return { ref, entry, providerName: describe(c.provider).name, model };
   }
 }

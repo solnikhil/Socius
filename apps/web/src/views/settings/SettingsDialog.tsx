@@ -24,6 +24,7 @@ export function SettingsDialog({
   initialConnection,
   theme,
   onTheme,
+  onOpenActivity,
 }: {
   state: Snapshot;
   onRefresh: () => Promise<void>;
@@ -32,6 +33,7 @@ export function SettingsDialog({
   initialConnection?: string | undefined;
   theme: ThemePreference;
   onTheme: (theme: ThemePreference) => void;
+  onOpenActivity: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState(initialTab),
@@ -100,7 +102,13 @@ export function SettingsDialog({
         >
           <X size={18} />
         </button>
-        {tab === "general" && <GeneralPane theme={theme} onTheme={onTheme} />}
+        {tab === "general" && (
+          <GeneralPane
+            theme={theme}
+            onTheme={onTheme}
+            onOpenActivity={onOpenActivity}
+          />
+        )}
         {tab === "models" && (
           <ModelsPane
             key={focus ?? "models"}

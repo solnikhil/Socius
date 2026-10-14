@@ -24,7 +24,12 @@ export interface ModelRequest {
   searchMemory: (query: string) => Memory[];
   proposeMemory: (content: string) => { approvalId: string };
   proposeBot: (draft: BotDraft) => { approvalId: string };
+  /** Group chat context added to the bot's instructions. */
+  briefing?: string;
+  /** Coordinator only: asks one group member and returns its reply. */
+  askMember?: (member: string, request: string) => Promise<string>;
   signal: AbortSignal;
+  fetch?: typeof globalThis.fetch;
 }
 export type ModelRunner = (
   request: ModelRequest,
@@ -44,6 +49,24 @@ export const runModel: ModelRunner = async (request, onText) => {
       }),
       execute: (draft) => request.proposeBot(draft),
     });
+  if (request.tools && request.askMember) {
+    const ask = request.askMember;
+    tools.askMember = tool({
+      description:
+        "Ask one member of this group chat to do part of the work. Their reply is shown in the group and returned to you. Ask members whose role fits; you may ask several, one at a time.",
+      inputSchema: z.object({
+        member: z.string().min(1).max(100).describe("The member's exact name"),
+        request: z
+          .string()
+          .min(1)
+          .max(8000)
+          .describe(
+            "A self-contained request with the context the member needs",
+          ),
+      }),
+      execute: ({ member, request }) => ask(member, request),
+    });
+  }
   if (request.tools && bot.grantedCapabilities.includes("memory.read"))
     tools.searchMemory = tool({
       description:
@@ -62,14 +85,16 @@ export const runModel: ModelRunner = async (request, onText) => {
     model: request.model,
     tools,
     maxRetries: 2,
-    stopWhen: isStepCount(6),
+    stopWhen: isStepCount(request.askMember ? 10 : 6),
     maxOutputTokens: 4000,
-    // The default handler logs the raw error, which includes the request body
-    // and provider response. The chunk is still surfaced and classified below.
+    // Provider error payloads can echo sensitive request context. The API
+    // boundary records a stable, redacted task error instead. The agent
+    // forwards this to streamText, though its settings type omits it.
     onError: () => undefined,
     instructions: [
       bot.instructions,
-      "You are running in Socius. Only the tools supplied in this call exist. The main bot can propose new specialists for approval, but cannot delegate tasks yet. No web browsing, external messaging or file-system access is available. Do not claim to perform unavailable actions.",
+      `You are running in Socius. Only the tools supplied in this call exist. ${request.askMember ? "You can ask group members for help with askMember." : "The main bot can propose new specialists for approval, and delegates only inside group chats."} No web browsing, external messaging or file-system access is available. Do not claim to perform unavailable actions.`,
+      ...(request.briefing ? [request.briefing] : []),
       ...(request.tools
         ? []
         : [
@@ -81,9 +106,14 @@ export const runModel: ModelRunner = async (request, onText) => {
     messages: request.messages,
     abortSignal: request.signal,
   });
-  let text = "";
+  let text = "",
+    stepEnded = false;
   for await (const chunk of stream.fullStream) {
+    // Text written before and after a tool call belongs to separate paragraphs.
+    if (chunk.type === "finish-step") stepEnded = true;
     if (chunk.type === "text-delta") {
+      if (stepEnded && text && !text.endsWith("\n")) text += "\n\n";
+      stepEnded = false;
       text += chunk.text;
       onText(text);
     }

@@ -90,3 +90,83 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+test("direct provider adapters use their expected auth boundary and handle HTTP failures", async () => {
+  const cases = [
+    {
+      provider: "openai" as const,
+      baseURL: "https://api.openai.com/v1",
+      authHeader: "authorization",
+      authValue: "Bearer synthetic-provider-key",
+      expectedPath: "/v1/responses",
+    },
+    {
+      provider: "anthropic" as const,
+      baseURL: "https://api.anthropic.com",
+      authHeader: "x-api-key",
+      authValue: "synthetic-provider-key",
+      expectedPath: "/v1/messages",
+    },
+    {
+      provider: "openai-compatible" as const,
+      baseURL: "http://127.0.0.1:1234/v1",
+      authHeader: "authorization",
+      authValue: "Bearer synthetic-provider-key",
+      expectedPath: "/v1/chat/completions",
+    },
+    {
+      provider: "openai-compatible" as const,
+      baseURL: "https://openrouter.ai/api/v1",
+      authHeader: "authorization",
+      authValue: "Bearer synthetic-provider-key",
+      expectedPath: "/api/v1/chat/completions",
+    },
+  ];
+  for (const entry of cases) {
+    let attempts = 0;
+    let observed:
+      { url: URL; auth: string | null; method: string | undefined } | undefined;
+    const fetcher: typeof globalThis.fetch = async (input, init) => {
+      attempts++;
+      observed = {
+        url: new URL(input instanceof Request ? input.url : input.toString()),
+        auth: new Headers(init?.headers).get(entry.authHeader),
+        method: init?.method,
+      };
+      return new Response(
+        JSON.stringify({
+          error: { type: "synthetic_failure", message: "controlled failure" },
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    await assert.rejects(
+      runModel(
+        {
+          model: languageModel(
+            entry.provider,
+            { apiKey: "synthetic-provider-key", baseURL: entry.baseURL },
+            "synthetic-model",
+            fetcher,
+          ),
+          modelRef: { connectionId: "test", modelId: "synthetic-model" },
+          tools: true,
+          bot: instantiateBot(mainBot),
+          messages: [{ role: "user", content: "Small synthetic request." }],
+          skills: [],
+          signal: new AbortController().signal,
+          fetch: fetcher,
+          searchMemory: () => [],
+          proposeMemory: () => ({ approvalId: "unused" }),
+          proposeBot: () => ({ approvalId: "unused" }),
+        },
+        () => undefined,
+      ),
+    );
+    assert.ok(observed, `${entry.provider} made a provider request`);
+    assert.equal(observed.method, "POST");
+    assert.equal(observed.url.pathname, entry.expectedPath);
+    assert.equal(observed.auth, entry.authValue);
+    assert.equal(attempts, 1, "non-retryable errors are not retried");
+  }
+});

@@ -9,15 +9,27 @@ import type {
 } from "./providers.js";
 export interface Message {
   id: string;
+  /** The bot whose conversation this is, or in a group the bot that wrote it. */
   botId: string;
   role: "user" | "assistant";
   content: string;
   createdAt: string;
   taskId: string;
+  /** Set on group chat messages. Direct chats never include them. */
+  groupId?: string;
+}
+/** A shared thread where the main bot coordinates the member bots. */
+export interface GroupChat {
+  id: string;
+  name: string;
+  /** Specialists in the group. The main bot always coordinates and is not listed. */
+  memberIds: string[];
+  createdAt: string;
 }
 export interface Task {
   id: string;
   botId: string;
+  groupId?: string;
   state: "running" | "completed" | "failed" | "cancelled";
   error: string | null;
   /** Stable error category for failed model calls. */
@@ -64,6 +76,7 @@ export interface Installation {
 }
 export interface Snapshot {
   bots: BotInstance[];
+  groups: GroupChat[];
   catalog: Manifest[];
   installations: Installation[];
   activity: Activity[];

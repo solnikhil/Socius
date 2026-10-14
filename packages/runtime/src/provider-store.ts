@@ -110,7 +110,7 @@ export class ProviderStore {
     if (invalidate) {
       this.db
         .prepare(
-          "UPDATE provider_models SET check_result=NULL WHERE connection_id=?",
+          "UPDATE provider_models SET check_result=NULL, tools=NULL WHERE connection_id=?",
         )
         .run(c.id);
       this.db

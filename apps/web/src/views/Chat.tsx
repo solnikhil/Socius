@@ -13,17 +13,20 @@ import {
   Copy,
   Download,
   FileText,
+  Pencil,
   Plus,
   Settings,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { Message, Snapshot } from "@socius/contracts/app";
+import type { GroupChat, Message, Snapshot } from "@socius/contracts/app";
 import { api } from "../api.js";
 import {
   Avatar,
   ErrorNote,
+  GroupAvatar,
   Markdown,
   Modal,
   useDismiss,
@@ -43,23 +46,41 @@ const suggestions = [
   "Help me summarise a document. I’ll attach it here.",
   "Help me make a plan for the work I need to get done today.",
 ];
+const groupSuggestions = [
+  "Plan a product launch: research the risks first, then draft the announcement.",
+  "Each of you, tell me how you’d help with my week.",
+  "Review this idea from every angle and give me one recommendation.",
+];
 
+/**
+ * One conversation: a direct chat with `bot`, or a group chat that `bot`
+ * (the main bot) coordinates. Both look and behave the same.
+ */
 export function Chat({
   bot,
   main,
+  group,
   state,
   onRefresh,
   onSettings,
+  onEditGroup,
+  onDeleteGroup,
 }: {
   bot: BotInstance;
   main: boolean;
+  group?: GroupChat;
   state: Snapshot;
   onRefresh: () => Promise<void>;
   onSettings: OpenSettings;
+  onEditGroup?: () => void;
+  onDeleteGroup?: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]),
     [text, setText] = useState(""),
-    [stream, setStream] = useState(""),
+    [stream, setStream] = useState<{ botId: string; content: string } | null>(
+      null,
+    ),
+    [confirmDelete, setConfirmDelete] = useState(false),
     [busy, setBusy] = useState(false),
     [taskId, setTaskId] = useState(""),
     [error, setError] = useState(""),
@@ -74,10 +95,27 @@ export function Chat({
   const bottom = useRef<HTMLDivElement>(null),
     upload = useRef<HTMLInputElement>(null),
     input = useRef<HTMLTextAreaElement>(null);
-  const closeDetails = useCallback(() => setDetails(false), []);
+  const closeDetails = useCallback(() => {
+    setDetails(false);
+    setConfirmDelete(false);
+  }, []);
   const detailsRef = useDismiss(details, closeDetails);
+  const conversation = group?.id ?? bot.id;
+  const title = group?.name ?? bot.name;
+  const messagesPath = group
+    ? `groups/messages?groupId=${group.id}`
+    : `messages?botId=${bot.id}`;
+  const members = group
+    ? group.memberIds
+        .map((id) => state.bots.find((b) => b.id === id))
+        .filter((b): b is BotInstance => !!b)
+    : [];
+  const faces = [{ name: bot.name, main: true }, ...members];
+  const author = (id: string) => state.bots.find((b) => b.id === id);
   const running = state.tasks.find(
-    (t) => t.botId === bot.id && t.state === "running",
+    (t) =>
+      t.state === "running" &&
+      (group ? t.groupId === group.id : t.botId === bot.id && !t.groupId),
   );
   const memory = bot.grantedCapabilities.includes("memory.read");
   const model = resolvedModel(state, bot.id);
@@ -90,7 +128,7 @@ export function Chat({
     let mounted = true;
     async function load() {
       try {
-        const next = await api<Message[]>(`messages?botId=${bot.id}`);
+        const next = await api<Message[]>(messagesPath);
         if (mounted) setMessages(next);
       } catch (e) {
         if (mounted) fail((e as Error).message);
@@ -104,13 +142,13 @@ export function Chat({
       mounted = false;
       clearInterval(timer);
     };
-  }, [bot.id, busy]);
+  }, [messagesPath, busy]);
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, stream]);
   useEffect(() => {
     input.current?.focus();
-  }, [bot.id]);
+  }, [conversation]);
   useLayoutEffect(() => {
     const el = input.current;
     if (!el) return;
@@ -122,15 +160,15 @@ export function Chat({
     if (!text.trim() || busy || running) return;
     setBusy(true);
     fail("");
-    setStream("");
+    setStream(null);
     const content = text;
     setText("");
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch(group ? "/api/groups/chat" : "/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          botId: bot.id,
+          ...(group ? { groupId: group.id } : { botId: bot.id }),
           content,
           ...(attachment ? { attachment } : {}),
         }),
@@ -142,7 +180,7 @@ export function Chat({
         });
       }
       setAttachment(null);
-      setMessages(await api<Message[]>(`messages?botId=${bot.id}`));
+      setMessages(await api<Message[]>(messagesPath));
       const reader = response.body!.getReader(),
         decoder = new TextDecoder();
       let buffer = "";
@@ -155,12 +193,16 @@ export function Chat({
           const event = JSON.parse(buffer.slice(0, newline));
           buffer = buffer.slice(newline + 1);
           if (event.type === "started") setTaskId(event.taskId);
-          if (event.type === "text") setStream(event.content);
+          if (event.type === "text")
+            setStream({ botId: event.botId ?? bot.id, content: event.content });
+          // A member finished its reply in a group chat.
+          if (event.type === "message")
+            setMessages((m) => [...m, event.message as Message]);
           if (event.type === "error") fail(event.error, event.code ?? "");
         }
       }
-      setStream("");
-      setMessages(await api<Message[]>(`messages?botId=${bot.id}`));
+      setStream(null);
+      setMessages(await api<Message[]>(messagesPath));
       await onRefresh();
     } catch (e) {
       fail((e as Error).message, (e as { code?: string }).code ?? "");
@@ -191,7 +233,7 @@ export function Chat({
     );
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${bot.name}-response.md`;
+    a.download = `${title}-response.md`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -213,12 +255,30 @@ export function Chat({
       fail((e as Error).message);
     }
   }
+  const groupTasks = new Set(
+    state.tasks.filter((t) => group && t.groupId === group.id).map((t) => t.id),
+  );
   const approvals = state.approvals.filter(
     (a) =>
-      a.botId === bot.id &&
+      (group ? groupTasks.has(a.taskId) : a.botId === bot.id) &&
       a.state === "pending" &&
       Date.parse(a.expiresAt) > Date.now(),
   );
+  // In a group, each run of replies from one bot is labelled with its name.
+  const speaker = (m: Pick<Message, "role" | "botId">) =>
+    m.role === "user" ? "user" : m.botId;
+  const label = (botId: string) => {
+    const b = author(botId);
+    return (
+      <div className="speaker">
+        <Avatar name={b?.name ?? "Bot"} main={botId === bot.id} size={18} />
+        {b?.name ?? "A former member"}
+      </div>
+    );
+  };
+  const lastSpeaker = messages.length
+    ? speaker(messages[messages.length - 1]!)
+    : "";
   const empty = messages.length === 0 && !busy;
   return (
     <div className="chat">
@@ -227,13 +287,66 @@ export function Chat({
           <button
             className="bot-pill"
             aria-expanded={details}
-            aria-label={`${bot.name} details`}
+            aria-label={`${title} details`}
             onClick={() => setDetails((d) => !d)}
           >
-            <Avatar name={bot.name} main={main} size={24} />
-            {bot.name}
+            {group ? (
+              <GroupAvatar names={faces} size={24} />
+            ) : (
+              <Avatar name={bot.name} main={main} size={24} />
+            )}
+            {title}
           </button>
-          {details && (
+          {details && group && (
+            <div className="popover bot-details">
+              <div className="bot-details-head">
+                <GroupAvatar names={faces} size={40} />
+                <div>
+                  <strong>{group.name}</strong>
+                  <small>
+                    {members.length + 1} bots · {bot.name} coordinates
+                  </small>
+                </div>
+              </div>
+              <div className="group-members">
+                {[bot, ...members].map((b) => (
+                  <div key={b.id} className="group-member">
+                    <Avatar name={b.name} main={b.id === bot.id} size={26} />
+                    <span className="bot-text">
+                      <strong>{b.name}</strong>
+                      <small>{b.id === bot.id ? "Coordinator" : b.role}</small>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  closeDetails();
+                  onEditGroup?.();
+                }}
+              >
+                <Pencil size={15} />
+                <span>Edit members</span>
+              </button>
+              <button
+                className={confirmDelete ? "danger" : ""}
+                disabled={!!running}
+                onClick={() =>
+                  confirmDelete ? onDeleteGroup?.() : setConfirmDelete(true)
+                }
+              >
+                <Trash2 size={15} />
+                <span>
+                  {confirmDelete ? "Delete for good?" : "Delete group chat"}
+                </span>
+              </button>
+              <p>
+                Members see the recent group conversation when {bot.name} asks
+                them, and each uses its own permissions.
+              </p>
+            </div>
+          )}
+          {details && !group && (
             <div className="popover bot-details">
               <div className="bot-details-head">
                 <Avatar name={bot.name} main={main} size={40} />
@@ -275,15 +388,25 @@ export function Chat({
         <div className="thread">
           {empty ? (
             <div className="welcome">
-              <Avatar name={bot.name} main={main} size={72} badge={main} />
-              <h1>What shall we work on?</h1>
+              {group ? (
+                <GroupAvatar names={faces} size={72} />
+              ) : (
+                <Avatar name={bot.name} main={main} size={72} badge={main} />
+              )}
+              <h1>
+                {group
+                  ? "What shall we work on together?"
+                  : "What shall we work on?"}
+              </h1>
               <p>
-                {main
-                  ? "A little more headspace. A lot more done."
-                  : `${bot.role}. Give me a clear outcome and I’ll help you get there.`}
+                {group
+                  ? `${bot.name} coordinates ${members.map((b) => b.name).join(", ") || "this group"} and brings in whoever fits.`
+                  : main
+                    ? "A little more headspace. A lot more done."
+                    : `${bot.role}. Give me a clear outcome and I’ll help you get there.`}
               </p>
               <div className="suggestions">
-                {suggestions.map((s) => (
+                {(group ? groupSuggestions : suggestions).map((s) => (
                   <button
                     key={s}
                     onClick={() => {
@@ -312,13 +435,18 @@ export function Chat({
             </div>
           ) : (
             messages.map((m, i) => {
-              const next = messages[i + 1];
-              const last = !next || next.role !== m.role;
+              const next = messages[i + 1],
+                prev = messages[i - 1];
+              const last =
+                (!next || speaker(next) !== speaker(m)) &&
+                !(busy && !next && stream && stream.botId === speaker(m));
+              const first = !prev || speaker(prev) !== speaker(m);
               return (
                 <article
                   key={m.id}
                   className={`message ${m.role} ${last ? "last" : ""}`}
                 >
+                  {group && first && m.role === "assistant" && label(m.botId)}
                   <div className="bubble">
                     {m.role === "assistant" ? (
                       <Markdown text={m.content} />
@@ -361,9 +489,13 @@ export function Chat({
           )}
           {busy && (
             <article className="message assistant last">
+              {group &&
+                stream &&
+                stream.botId !== lastSpeaker &&
+                label(stream.botId)}
               <div className="bubble" aria-live="polite">
-                {stream ? (
-                  <Markdown text={stream} />
+                {stream?.content ? (
+                  <Markdown text={stream.content} />
                 ) : (
                   <span className="typing" aria-label="Working on it">
                     <i />
@@ -434,8 +566,8 @@ export function Chat({
           />
           <textarea
             ref={input}
-            aria-label={`Message ${bot.name}`}
-            placeholder={`Message ${bot.name}`}
+            aria-label={`Message ${title}`}
+            placeholder={`Message ${title}`}
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={1}
