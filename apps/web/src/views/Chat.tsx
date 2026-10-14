@@ -43,7 +43,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ApprovalCard } from "../components/ApprovalCard.js";
-import { useSmoothText, useStickToBottom } from "../components/streaming.js";
+import {
+  closeOpenMarks,
+  useSmoothText,
+  useStickToBottom,
+} from "../components/streaming.js";
 import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
@@ -235,6 +239,8 @@ export function Chat({
           const event = JSON.parse(buffer.slice(0, newline));
           buffer = buffer.slice(newline + 1);
           if (event.type === "started") setTaskId(event.taskId);
+          // The bot is waiting on a review card; show it right away.
+          if (event.type === "approval") void onRefresh();
           if (event.type === "text")
             setStream({ botId: event.botId ?? bot.id, content: event.content });
           // A member finished its reply in a group chat.
@@ -359,6 +365,30 @@ export function Chat({
         (needsAttention(a) || a.state === "succeeded"),
     )
     .slice(-5);
+  // A running reply that is paused on the user's review.
+  const waiting = actions.find(
+    (a) =>
+      a.state === "pending" &&
+      a.actor.taskId === (taskId || running?.id) &&
+      Date.parse(a.expiresAt) > Date.now(),
+  );
+  const waitingCard = useRef<string>("");
+  useEffect(() => {
+    if (!waiting || waitingCard.current === waiting.id) return;
+    waitingCard.current = waiting.id;
+    // Hand the keyboard to the card unless the user is typing something.
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLTextAreaElement
+        ? !active.value.trim()
+        : !(active instanceof HTMLInputElement)
+    )
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>(`[data-action="${waiting.id}"]`)
+          ?.focus({ preventScroll: true }),
+      );
+  }, [waiting]);
   // In a group, each run of replies from one bot is labelled with its name.
   const speaker = (m: Pick<Message, "role" | "botId">) =>
     m.role === "user" ? "user" : m.botId;
@@ -655,10 +685,11 @@ export function Chat({
                 aria-busy="true"
               >
                 {streamed ? (
-                  <Markdown text={streamed} />
+                  <Markdown text={closeOpenMarks(streamed)} />
                 ) : (
-                  <span className="thinking" aria-label="Working on it">
-                    Thinking
+                  <span className="thinking">
+                    {(stream && author(stream.botId)?.name) ?? bot.name} is{" "}
+                    {waiting ? "waiting for you" : "working"}
                   </span>
                 )}
               </div>

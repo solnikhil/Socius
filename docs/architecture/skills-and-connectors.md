@@ -110,12 +110,23 @@ import type { ActionRequest } from "@socius/contracts";
 // }
 const result = await runtime.broker.request(request);
 // { status: "completed", summary, data } for reads
-// { status: "awaiting-approval", actionId, summary } for writes
+// { status: "awaiting-approval", actionId, summary } for writes; the model
+// tool then waits for the user's decision (see "Waiting for the user")
 ```
 
 Callers cannot supply code, tool names outside the reviewed list or permissions. Every request and every execution rechecks: the bot exists; the connector is installed, enabled and matches the requested release digest and reviewed code; the capability was consented at install; the bot holds the grant; the connection is ready; the arguments parse. A coordinator or parent task confers nothing; checks use the acting bot's own grants. Roster size does not matter.
 
 **Writes** create a durable `ActionRecord` whose digest binds actor, release, action, connection ID, normalized arguments and expiry (24 h). Approval (`POST /api/actions/resolve`) requires the matching digest, recomputes it to detect tampering, rejects expired records and re-authorizes. Failed checks mark the record `blocked`. Approved records execute once.
+
+**Waiting for the user.** A bot's write request does not return "awaiting approval" to the model. The runtime streams an `approval` event, which shows a review card in that chat, and the model call waits on `broker.waitForDecision` for up to 15 minutes. That time does not count against the task deadline. The bot then receives the real outcome and replies from it:
+
+- `done`, with the result summary and link.
+- `declined`.
+- `declined-with-feedback`: the user typed an answer instead, which declines the exact change and is passed back as `userFeedback`. `POST /api/actions/resolve` accepts `feedback` only with `approve: false`.
+- `not-done` or `outcome-unclear`, with the error.
+- `still-waiting`: the wait ended, or the task was stopped or shut down. The card stays reviewable until it expires.
+
+The card shows the change as a question with the app's logo, readable fields (raw IDs hidden, long text as prose), the options A "Yes, go ahead" / B "No, don't" (also keys A/B), and a "Type your own answer" box. Bots describe connectors as connected apps, never as tools or internal names.
 
 **Idempotency and reconciliation.** Notion has no idempotency keys, so Socius does not promise exactly-once effects.
 
@@ -192,7 +203,7 @@ The Indian-service discovery directory remains a separate backlog; these priorit
 
 Connect Apps hides the Skills catalog and skill import for now. Skill packages, import and export remain in the runtime for a later release.
 
-Connect Apps → Connectors lists Indian services as searchable **Planned** rows, grouped by payments, travel, food, documents, government, telecom, work and health. The current set is Razorpay, Cashfree, PhonePe, Paytm, IRCTC, redBus, MakeMyTrip, IndiGo, Air India, Ola, Zomato, Swiggy, Blinkit, Zepto, DigiLocker, India Post, GST, UMANG, Airtel, Jio, Vi, Zoho and Practo. `packages/marketplace/src/connector-directory.ts` holds these discovery entries separately from installable, verified releases. They have no authentication endpoints, executable adapters, tools or permission grants. A listing disappears automatically when a compatible release with its ID is available.
+`packages/marketplace/src/connector-directory.ts` keeps the requested Indian services as backlog data: Razorpay, Cashfree, PhonePe, Paytm, IRCTC, redBus, MakeMyTrip, IndiGo, Air India, Ola, Zomato, Swiggy, Blinkit, Zepto, DigiLocker, India Post, GST, UMANG, Airtel, Jio, Vi, Zoho and Practo. Connect Apps no longer shows them; it lists only installable connectors. The entries have no authentication endpoints, executable adapters, tools or permission grants. The MCP Registry tab keeps its India search shortcuts.
 
 Razorpay (`https://mcp.razorpay.com/mcp`) and Cashfree (`https://mcp.cashfree.com`) publish hosted MCP servers. Those servers sign in with an API key. Socius connector sign-in completes through OAuth, so neither server is reviewed or connectable yet. Connect Apps → MCP Registry has India, Razorpay, Cashfree, Zoho and Rail shortcuts that search the official registry. A result can be installed only when its exact name, version and remote URL match `reviewedServers`. Notion remains the only reviewed connector.
 
