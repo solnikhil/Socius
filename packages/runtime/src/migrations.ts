@@ -102,65 +102,17 @@ const migrations: { version: number; up: (db: DatabaseSync) => void }[] = [
   },
   {
     version: 5,
-    up: (db) => {
-      // Skills become per-bot assignments. Before this, every bot saw every installed
-      // skill. Nothing is assigned automatically: each existing bot gets a review marker
-      // instead, so the user chooses its skills. Chats, memory and grants are untouched.
-      // The runtime fills `suggested` from the installed catalog on first start.
-      if (!db.prepare("SELECT 1 FROM records WHERE kind='installation'").get())
-        return;
-      const insert = db.prepare(
-        "INSERT OR IGNORE INTO records VALUES('skill-review',?,?)",
-      );
-      const now = new Date().toISOString();
-      for (const row of db
-        .prepare("SELECT id FROM records WHERE kind='bot'")
-        .all())
-        insert.run(
-          row.id as string,
-          JSON.stringify({
-            botId: row.id,
-            reason: "migration",
-            createdAt: now,
-          }),
-        );
-    },
+    up: (db) => markSkillReviews(db),
   },
+  { version: 6, up: (db) => createRoutineTables(db) },
   {
-    version: 6,
-    up: (db) =>
-      // Routines (A03–A05). Occurrence keys are unique per routine, so a duplicate
-      // tick or a second runtime cannot claim the same occurrence twice. Manual runs
-      // have no key. The lease row gives one runtime at a time ownership of
-      // execution; its fence increases on every change of owner.
-      db.exec(`
-        CREATE TABLE routines(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, data TEXT NOT NULL);
-        CREATE TABLE routine_runs(
-          id TEXT PRIMARY KEY,
-          routine_id TEXT NOT NULL,
-          occurrence_key TEXT,
-          state TEXT NOT NULL,
-          due_at TEXT NOT NULL,
-          data TEXT NOT NULL,
-          UNIQUE(routine_id, occurrence_key));
-        CREATE INDEX routine_runs_state ON routine_runs(state, due_at);
-        CREATE INDEX routine_runs_routine ON routine_runs(routine_id, due_at);
-        CREATE TABLE routine_steps(run_id TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(run_id, key));
-        CREATE TABLE routine_state(routine_id TEXT PRIMARY KEY, data TEXT NOT NULL);
-        CREATE TABLE routine_notifications(
-          id TEXT PRIMARY KEY,
-          routine_id TEXT NOT NULL,
-          dedupe_key TEXT NOT NULL UNIQUE,
-          deliver_at TEXT NOT NULL,
-          data TEXT NOT NULL);
-        CREATE INDEX routine_notifications_deliver ON routine_notifications(deliver_at);
-        CREATE TABLE runtime_lease(id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, fence INTEGER NOT NULL, expires_at INTEGER NOT NULL);`),
-  },
-  {
+    // IF NOT EXISTS (here and in 8): early phone-pairing builds created these tables
+    // as versions 5 and 6, before skills and routines took those numbers. Fresh
+    // databases are unaffected; repaired ones must not fail on an existing table.
     version: 7,
     up: (db) =>
       db.exec(`
-      CREATE TABLE devices(
+      CREATE TABLE IF NOT EXISTS devices(
         id TEXT PRIMARY KEY, label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
         created_at TEXT NOT NULL, last_used_at TEXT NOT NULL, expires_at TEXT NOT NULL,
         revoked_at TEXT, origin_kind TEXT NOT NULL CHECK(origin_kind IN ('local','remote'))
@@ -169,11 +121,79 @@ const migrations: { version: number; up: (db: DatabaseSync) => void }[] = [
   {
     version: 8,
     up: (db) =>
-      db.exec(`CREATE TABLE remote_requests(
+      db.exec(`CREATE TABLE IF NOT EXISTS remote_requests(
       device_id TEXT NOT NULL REFERENCES devices(id), key TEXT NOT NULL, hash TEXT NOT NULL,
       status INTEGER, result TEXT, created_at TEXT NOT NULL, PRIMARY KEY(device_id,key));`),
   },
+  {
+    // Repair for databases from early phone-pairing builds: they recorded 5 and 6 for
+    // devices/remote_requests, so the real 5 (skill review) and 6 (routines) never ran.
+    // Only those databases lack the routine tables; on every other database this is a
+    // no-op, so nobody is asked to review skills twice.
+    version: 9,
+    up: (db) => {
+      const hasRoutines = db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='routine_runs'",
+        )
+        .get();
+      if (hasRoutines) return;
+      createRoutineTables(db);
+      markSkillReviews(db);
+    },
+  },
 ];
+
+function markSkillReviews(db: DatabaseSync) {
+  // Skills become per-bot assignments. Before this, every bot saw every installed
+  // skill. Nothing is assigned automatically: each existing bot gets a review marker
+  // instead, so the user chooses its skills. Chats, memory and grants are untouched.
+  // The runtime fills `suggested` from the installed catalog on first start.
+  if (!db.prepare("SELECT 1 FROM records WHERE kind='installation'").get())
+    return;
+  const insert = db.prepare(
+    "INSERT OR IGNORE INTO records VALUES('skill-review',?,?)",
+  );
+  const now = new Date().toISOString();
+  for (const row of db.prepare("SELECT id FROM records WHERE kind='bot'").all())
+    insert.run(
+      row.id as string,
+      JSON.stringify({
+        botId: row.id,
+        reason: "migration",
+        createdAt: now,
+      }),
+    );
+}
+
+function createRoutineTables(db: DatabaseSync) {
+  // Routines (A03–A05). Occurrence keys are unique per routine, so a duplicate
+  // tick or a second runtime cannot claim the same occurrence twice. Manual runs
+  // have no key. The lease row gives one runtime at a time ownership of
+  // execution; its fence increases on every change of owner.
+  db.exec(`
+        CREATE TABLE IF NOT EXISTS routines(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, data TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS routine_runs(
+          id TEXT PRIMARY KEY,
+          routine_id TEXT NOT NULL,
+          occurrence_key TEXT,
+          state TEXT NOT NULL,
+          due_at TEXT NOT NULL,
+          data TEXT NOT NULL,
+          UNIQUE(routine_id, occurrence_key));
+        CREATE INDEX IF NOT EXISTS routine_runs_state ON routine_runs(state, due_at);
+        CREATE INDEX IF NOT EXISTS routine_runs_routine ON routine_runs(routine_id, due_at);
+        CREATE TABLE IF NOT EXISTS routine_steps(run_id TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(run_id, key));
+        CREATE TABLE IF NOT EXISTS routine_state(routine_id TEXT PRIMARY KEY, data TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS routine_notifications(
+          id TEXT PRIMARY KEY,
+          routine_id TEXT NOT NULL,
+          dedupe_key TEXT NOT NULL UNIQUE,
+          deliver_at TEXT NOT NULL,
+          data TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS routine_notifications_deliver ON routine_notifications(deliver_at);
+        CREATE TABLE IF NOT EXISTS runtime_lease(id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, fence INTEGER NOT NULL, expires_at INTEGER NOT NULL);`);
+}
 
 /** Moves the v1 single-provider settings row into a provider connection. */
 function importLegacySettings(db: DatabaseSync) {
