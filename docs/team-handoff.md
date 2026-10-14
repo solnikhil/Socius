@@ -23,6 +23,14 @@ Draft regression evidence: typecheck, all 114 existing tests, catalog check, bui
 
 The assignee owns the background service, policy/recovery, tests and focused settings integration, coordinating shared DTO/runtime hooks with other workstreams and visual decisions with the user. Complete correction/deletion protection, bounded scheduling, retention, useful source inspection and dedicated-model consent before acceptance. Keep group/shared memory, semantic search, cloud wakeups and general routine scheduling separate. Notion has the issue, spec and checklist; keep feature boxes unchecked until verified integration.
 
+## Scheduling, durability and proactivity — ready for assignment
+
+[Issue #10](https://github.com/solnikhil/Socius/issues/10) is a separate workstream for **A03 Scheduling**, **A04 Durable execution** and **A05 Proactivity**. **Owner: unassigned; the user will assign it.** Read the [complete work package](issues/scheduling-durability-proactivity.md) for requirements, PR sequence and acceptance tests. No implementation is claimed.
+
+Deliver disabled-by-default private routines with persisted schedules, explicit timezone/missed-run policy and history; a documented checkpoint/resume model with controlled crash tests and the existing action/approval boundary; and opt-in briefs/watchers/finite goal follow-ups with quiet/no-change behavior. The same scheduler, queue, execution records and policy service must support these flows; avoid separate engines per feature.
+
+Coordinate shared contracts/runtime/provider-budget/cancellation hooks with Dreaming #8 and the group/connector workstreams. Dreaming remains a separate issue and is not a dependency on an unmerged draft. The user owns UI/visual refinement. Cloud hosting, OS wake, new delivery channels, new connector adapters and board execution remain out of scope. Keep Notion A03/A04/A05 and scheduled-workflow I05 unchecked until verified integration.
+
 ## Completed and integrated
 
 - Runnable Electron desktop shell and separate local runtime.
@@ -84,7 +92,7 @@ Boards were retired on 2026-10-14. Group chats are the single collaboration surf
 
 ## Explicitly deferred / not assigned in the current two issues
 
-Ollama testing is deferred at the user's request. LM Studio/llama.cpp checks can follow. Recurring routines/proactivity, browser automation/takeover, PDF/Office parsing, Tailscale/phone pairing, Telegram, public hosting/accounts/billing, signing/updates, agent email, semantic memory, voice, India Stack and optional cloud execution remain backlog items. Do not treat these as already assigned to the two teammates or required before your immediate UI refinement.
+Ollama testing is deferred at the user's request. LM Studio/llama.cpp checks can follow. Recurring routines/durable execution/proactivity are now specified in unassigned Issue #10; implementation remains pending. Browser automation/takeover, PDF/Office parsing, Tailscale/phone pairing, Telegram, public hosting/accounts/billing, signing/updates, agent email, semantic memory, voice, India Stack and optional cloud execution remain backlog items. Do not treat these as already assigned to the two teammates or required before your immediate UI refinement.
 
 ## Coordination rules
 
