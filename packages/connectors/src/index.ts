@@ -26,7 +26,10 @@ export interface ConnectorAction<
   execute(client: McpToolClient, args: A): Promise<ActionOutput>;
   /** For writes: observe state before writing, so reconciliation can detect a new effect. */
   prepare?(client: McpToolClient, args: A): Promise<string>;
-  /** For writes: look for the effect after an ambiguous outcome. Null means not found. */
+  /**
+   * For writes: look for the effect after an ambiguous outcome. Null means verifiably
+   * absent; throw when the check cannot tell, so nobody retries on a guess.
+   */
   reconcile?(
     client: McpToolClient,
     args: A,
@@ -197,8 +200,12 @@ const createPage: ConnectorAction<{
   async reconcile(client, { parentPage, title }, baseline) {
     // Notion has no idempotency keys. A page counts as ours only if the number of
     // same-titled children grew since just before the write; without a baseline we
-    // cannot tell, so we report "not found" and leave the decision to the user.
-    if (baseline === null) return null;
+    // cannot tell, so the check reports "unknown" instead of guessing.
+    if (baseline === null)
+      throw new ConnectorError(
+        "ambiguous",
+        "No snapshot from before the write exists, so Socius cannot tell.",
+      );
     const pages = childPages(
       await call(client, "notion-fetch", { id: parentPage }),
       title,

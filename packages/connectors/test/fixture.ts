@@ -21,6 +21,11 @@ export interface NotionFixture {
   createMode: "ok" | "rate-limit" | "hang-after-create" | "reject";
   /** Drop a required tool input to simulate upstream schema drift. */
   driftSchema: boolean;
+  /** Answer every MCP request with 503, as if the service were unreachable. */
+  offline: boolean;
+  /** Expire access tokens; refresh tokens keep working (and rotate on use). */
+  expireAccess(): void;
+  refreshes: number;
   revoked: string[];
   revokeAll(): void;
   close(): Promise<void>;
@@ -52,6 +57,11 @@ export async function startNotionFixture(): Promise<NotionFixture> {
     calls: [],
     createMode: "ok",
     driftSchema: false,
+    offline: false,
+    refreshes: 0,
+    expireAccess() {
+      tokens.clear();
+    },
     revoked: [],
     revokeAll() {
       tokens.clear();
@@ -237,8 +247,10 @@ export async function startNotionFixture(): Promise<NotionFixture> {
         )
           return send(400, { error: "invalid_grant" });
       } else if (form.get("grant_type") === "refresh_token") {
-        if (!refresh.has(form.get("refresh_token") ?? ""))
+        // Refresh tokens rotate: each one works exactly once, like many providers.
+        if (!refresh.delete(form.get("refresh_token") ?? ""))
           return send(400, { error: "invalid_grant" });
+        state.refreshes++;
       } else return send(400, { error: "unsupported_grant_type" });
       const access = randomBytes(16).toString("hex"),
         renew = randomBytes(16).toString("hex");
@@ -257,6 +269,10 @@ export async function startNotionFixture(): Promise<NotionFixture> {
       tokens.delete(token);
       refresh.delete(token);
       return send(200, {});
+    }
+    if (url.pathname === "/mcp" && state.offline) {
+      res.writeHead(503);
+      return res.end();
     }
     if (url.pathname === "/mcp") {
       const token = req.headers.authorization?.replace(/^Bearer /, "") ?? "";

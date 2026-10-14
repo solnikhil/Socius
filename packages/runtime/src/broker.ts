@@ -16,12 +16,11 @@ import {
   verifyManifest,
   type ActionOutput,
   type ConnectorAction,
-  type McpToolClient,
   type ReviewedConnector,
 } from "@socius/connectors";
 import type { Store } from "./store.js";
 import { PackageError, type PackageService } from "./packages.js";
-import type { ConnectionService } from "./connections.js";
+import { OpenError, type ConnectionService } from "./connections.js";
 
 const fail = (status: number, message: string): never => {
   throw new PackageError(status, message);
@@ -39,6 +38,27 @@ export type BrokerResult =
 const MAX_ATTEMPTS = 3;
 const MAX_PENDING_PER_TASK = 5;
 const MAX_READS_PER_TASK = 20;
+/**
+ * A failure that happened before the write request was sent (opening the session or
+ * the pre-write check) proves nothing was written, so it is a definite failure.
+ */
+function beforeWrite(error: unknown): ConnectorError {
+  const failure =
+    error instanceof OpenError
+      ? error.failure
+      : error instanceof ConnectorError
+        ? error
+        : null;
+  if (failure?.kind === "auth" || failure?.kind === "rate-limited")
+    return failure;
+  return new ConnectorError(
+    "rejected",
+    failure?.kind === "rejected"
+      ? failure.message
+      : "Socius could not reach the service, so nothing was written.",
+  );
+}
+type ReconcileResult = "found" | "absent" | "unknown";
 
 export class ActionBroker {
   private readonly reads = new Map<string, number>();
@@ -50,6 +70,10 @@ export class ActionBroker {
   ) {}
   private now() {
     return this.options.now?.() ?? Date.now();
+  }
+  /** Releases per-task bookkeeping once a task ends. */
+  forgetTask(taskId: string) {
+    this.reads.delete(taskId);
   }
   private find(actionId: string): {
     connector: ReviewedConnector;
@@ -147,10 +171,10 @@ export class ActionBroker {
       if (count > MAX_READS_PER_TASK)
         fail(429, "Read limit for this task reached");
       this.reads.set(request.actor.taskId, count);
-      let client: McpToolClient | undefined;
       try {
-        client = await this.connections.client(connection.id);
-        const output = await this.withTimeout(action.execute(client, args));
+        const output = await this.connections.use(connection.id, (client) =>
+          this.withTimeout(action.execute(client, args)),
+        );
         this.store.event("connector.read", output.summary);
         return {
           status: "completed",
@@ -158,14 +182,10 @@ export class ActionBroker {
           data: output.data ?? null,
         };
       } catch (error) {
-        if (error instanceof ConnectorError) {
-          if (error.kind === "auth")
-            this.connections.markAuthRequired(connection.id);
-          return fail(502, error.message);
-        }
+        const failure = error instanceof OpenError ? error.failure : error;
+        if (failure instanceof ConnectorError)
+          return fail(502, failure.message);
         throw error;
-      } finally {
-        await client?.close().catch(() => undefined);
       }
     }
     const pending = this.store
@@ -304,12 +324,18 @@ export class ActionBroker {
       fail(409, "Only changes with an unknown outcome can be checked");
     const { action } = this.find(record.action);
     const args = action.input.parse(record.arguments);
-    const found = await this.reconcile(record, action, args);
-    if (!found)
+    const result = await this.reconcile(record, action, args);
+    // Only a check that ran and found nothing makes a retry reasonable.
+    if (result === "absent")
       this.save(record, {
         retryable: true,
         error:
           "Socius could not find the change. You can retry; if the service is still processing it, a retry may create a duplicate.",
+      });
+    if (result === "unknown")
+      this.save(record, {
+        error:
+          "Socius could not check the service right now (offline, signed out or no earlier snapshot). Try Check again later.",
       });
     return record;
   }
@@ -318,29 +344,24 @@ export class ActionBroker {
     record: ActionRecord,
     action: ConnectorAction,
     args: Record<string, unknown>,
-  ) {
-    if (!action.reconcile) return false;
-    let client: McpToolClient | undefined;
+  ): Promise<ReconcileResult> {
+    if (!action.reconcile) return "unknown";
+    const reconcile = action.reconcile;
     try {
-      client = await this.connections.client(record.connectionId);
-      const output = await this.withTimeout(
-        action.reconcile(
-          client,
-          args,
-          record.attempts.at(-1)?.baseline ?? null,
+      const output = await this.connections.use(record.connectionId, (client) =>
+        this.withTimeout(
+          reconcile(client, args, record.attempts.at(-1)?.baseline ?? null),
         ),
       );
-      if (!output) return false;
+      if (!output) return "absent";
       this.succeed(
         record,
         output,
         "Confirmed by checking the service after an unclear response.",
       );
-      return true;
+      return "found";
     } catch {
-      return false;
-    } finally {
-      await client?.close().catch(() => undefined);
+      return "unknown";
     }
   }
   private succeed(
@@ -384,36 +405,36 @@ export class ActionBroker {
       retryable: false,
     });
     const current = record.attempts.at(-1)!;
-    let client: McpToolClient | undefined;
     try {
-      client = await this.connections.client(record.connectionId);
-      if (action.prepare) {
-        try {
-          current.baseline = await this.withTimeout(
-            action.prepare(client, args),
-          );
-        } catch (error) {
-          // Nothing was written yet, so any failure here is a definite non-execution.
-          const failure = error instanceof ConnectorError ? error : null;
-          throw new ConnectorError(
-            failure?.kind === "auth" || failure?.kind === "rate-limited"
-              ? failure.kind
-              : "rejected",
-            failure?.message ??
-              "Socius could not check the page before writing.",
-          );
-        }
-        this.save(record, {});
-      }
-      const output = await this.withTimeout(action.execute(client, args));
+      const output = await this.connections.use(
+        record.connectionId,
+        async (client) => {
+          if (action.prepare) {
+            try {
+              current.baseline = await this.withTimeout(
+                action.prepare(client, args),
+              );
+            } catch (error) {
+              throw beforeWrite(error);
+            }
+            this.save(record, {});
+          }
+          return this.withTimeout(action.execute(client, args));
+        },
+      );
       current.finishedAt = new Date(this.now()).toISOString();
       this.succeed(record, output);
     } catch (error) {
       current.finishedAt = new Date(this.now()).toISOString();
       const failure =
-        error instanceof ConnectorError
-          ? error
-          : new ConnectorError("ambiguous", "The change failed unexpectedly.");
+        error instanceof OpenError
+          ? beforeWrite(error)
+          : error instanceof ConnectorError
+            ? error
+            : new ConnectorError(
+                "ambiguous",
+                "The change failed unexpectedly.",
+              );
       current.detail = failure.message;
       if (failure.kind === "auth")
         this.connections.markAuthRequired(record.connectionId);
@@ -429,8 +450,6 @@ export class ActionBroker {
           "action.unknown",
           `Outcome unknown: ${record.summary}`,
         );
-        await client?.close().catch(() => undefined);
-        client = undefined;
         await this.reconcile(record, action, args);
       } else {
         current.outcome =
@@ -442,8 +461,6 @@ export class ActionBroker {
         });
         this.store.event("action.failed", `Not completed: ${record.summary}`);
       }
-    } finally {
-      await client?.close().catch(() => undefined);
     }
     return record;
   }

@@ -390,8 +390,10 @@ function RegistryBrowser({
   onOpen: (connectorId: string) => void;
 }) {
   const [page, setPage] = useState<RegistryPage | null>(null),
-    [cursor, setCursor] = useState(""),
+    [paging, setPaging] = useState({ query, cursor: "" }),
     [loading, setLoading] = useState(false);
+  const cursor = paging.query === query ? paging.cursor : "";
+  const setCursor = (next: string) => setPaging({ query, cursor: next });
   useEffect(() => {
     const timer = setTimeout(() => {
       setLoading(true);

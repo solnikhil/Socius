@@ -270,7 +270,7 @@ export function PackageDetail({
       )}
       <ErrorNote error={error} />
       <div className="modal-actions wrap">
-        {receipt && installedHere && item.kind !== "bot" && (
+        {receipt && item.kind !== "bot" && (
           <>
             <button
               disabled={busy}
@@ -282,6 +282,7 @@ export function PackageDetail({
               }
             >
               {receipt.enabled ? "Disable" : "Enable"}
+              {installedHere ? "" : ` ${receipt.version}`}
             </button>
             {receipt.history.length > 0 && (
               <button
@@ -304,7 +305,7 @@ export function PackageDetail({
                   onClose();
               }}
             >
-              Uninstall
+              Uninstall{installedHere ? "" : ` ${receipt.version}`}
             </button>
           </>
         )}

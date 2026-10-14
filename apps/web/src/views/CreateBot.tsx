@@ -63,7 +63,7 @@ export function CreateBot({
             name="instructions"
             placeholder="Describe how it should work, what it should return, and when it should ask you."
             required
-            maxLength={8000}
+            maxLength={20000}
             rows={5}
           />
         </label>

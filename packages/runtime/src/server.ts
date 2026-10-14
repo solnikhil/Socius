@@ -68,7 +68,8 @@ const callbackPage = (message: string) =>
 const BotDraftSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
   role: z.string().trim().min(1).max(200),
-  instructions: z.string().trim().min(1).max(8000),
+  // Matches the bot template limit, so any valid template can be installed.
+  instructions: z.string().trim().min(1).max(20000),
 });
 const uuid = z.string().uuid();
 const digest = (value: unknown) =>
@@ -131,10 +132,23 @@ export async function startRuntime(options: RuntimeOptions) {
     () => origin,
   );
   const broker = new ActionBroker(store, packages, connections, options.broker);
+  // Persist only the few most recent registry pages so searches cannot grow the database.
+  type CachedPages = { entries: { key: string; page: RegistryPage }[] };
+  const REGISTRY_CACHE_ENTRIES = 10;
   const registry = new RegistryClient({
     cache: {
-      get: (key) => store.get<RegistryPage>("registry-cache", digest(key)),
-      set: (key, page) => store.put("registry-cache", digest(key), page),
+      get: (key) =>
+        store
+          .get<CachedPages>("registry-cache", "recent")
+          ?.entries.find((e) => e.key === key)?.page,
+      set: (key, page) => {
+        const entries = (
+          store.get<CachedPages>("registry-cache", "recent")?.entries ?? []
+        ).filter((e) => e.key !== key);
+        store.put("registry-cache", "recent", {
+          entries: [{ key, page }, ...entries].slice(0, REGISTRY_CACHE_ENTRIES),
+        });
+      },
     },
     ...options.registry,
   });
@@ -911,6 +925,7 @@ export async function startRuntime(options: RuntimeOptions) {
           } finally {
             clearTimeout(timeout);
             active.delete(task.id);
+            broker.forgetTask(task.id);
             res.end();
           }
           return;

@@ -194,6 +194,30 @@ export class PackageService {
         `Consent is required for newly requested permissions: ${missing.join(", ")}`,
       );
     const plan = this.plan(input.id, input.version);
+    // Exact dependencies: replacing an installed version must not break another
+    // installed package that pins the current one.
+    const planned = new Set(plan.releases.map((r) => r.manifest.id));
+    for (const release of plan.releases) {
+      const prior = this.installation(release.manifest.id);
+      if (!prior || prior.version === release.manifest.version) continue;
+      const blockers = this.store
+        .all<Installation>("installation")
+        .filter((i) => !planned.has(i.id))
+        .filter((i) =>
+          this.catalog
+            .release(i.id, i.version)
+            ?.manifest.dependencies.some(
+              (d) =>
+                d.id === release.manifest.id && d.version === prior.version,
+            ),
+        )
+        .map((i) => i.id);
+      if (blockers.length)
+        fail(
+          409,
+          `Version conflict: ${blockers.join(", ")} requires ${release.manifest.id}@${prior.version}, but this installs ${release.manifest.version}`,
+        );
+    }
     for (const release of plan.releases) {
       this.verifyFiles(release);
       if (release.manifest.kind === "connector") {

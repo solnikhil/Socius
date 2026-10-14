@@ -73,6 +73,7 @@ Arguments are validated by strict schemas: page references must be Notion IDs or
 - Tokens, client registration, PKCE verifier and discovery state are one JSON blob, encrypted through Electron `safeStorage` (the existing `SecretBox`) and stored in a separate `connector_secrets` table. They never appear in `/api/state`, activity, model context or logs.
 - Desktop ports are ephemeral, so a new sign-in re-registers the client for the current redirect URI. Refresh tokens keep working between launches.
 - Bot actions never start a sign-in. An expired or revoked grant sets the connection to **Authentication required**.
+- Sessions on one connection run one at a time, so parallel tool calls share a single token refresh and never overwrite each other's stored credentials. A failed decrypt fails the call instead of falling back to empty state.
 - **Disconnect** asks the provider to revoke the token (best effort), deletes the local blob and marks the connection `disconnected`. The next connect creates a new connection ID, so approvals bound to the old account stay blocked.
 
 **Nango.** Not adopted for V1. Nango is a hosted or self-hosted OAuth broker that needs a server we would operate. Notion's MCP endpoint already supports standards-based DCR + PKCE, which the MCP SDK implements client-side, and secrets stay on the user's machine. Credential handling sits behind `ConnectionService`, so a broker can replace it later when Socius owns integrations without MCP OAuth.
@@ -105,7 +106,8 @@ Callers cannot supply code, tool names outside the reviewed list or permissions.
 1. Before writing, the broker records a baseline: the number of child pages with the same title under the parent.
 2. The attempt is persisted as `executing` before any remote call.
 3. Outcomes are classified by what they prove: `auth`, `rate-limited` and `rejected` mean nothing happened (`failed`, retryable by the user only). Timeouts, disconnects and 5xx responses are `ambiguous`: the record becomes `unknown` and Socius checks once, counting same-titled children again. A higher count marks it `succeeded` (“confirmed by checking”). Otherwise it stays `unknown` and not retryable.
-4. **Check again** repeats only the read. If the page is still absent, retry becomes available, with a warning that a slow service could still produce a duplicate.
+4. **Check again** repeats only the read. Retry becomes available only when the check actually ran and the page is absent, with a warning that a slow service could still produce a duplicate. If the check cannot run (offline, signed out, no pre-write snapshot), the outcome stays unknown.
+   Failures before the write request is sent (unreachable service, failed pre-write check) are definite failures, not unknown outcomes.
 5. Retries are never automatic, are capped at 3 attempts, and re-run every authorization check.
 6. If the runtime stops mid-write, the `executing` record becomes `unknown` on restart and is never replayed.
 

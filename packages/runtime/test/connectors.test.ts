@@ -19,9 +19,16 @@ import {
 } from "../../connectors/test/fixture.js";
 
 // Test-only reversible box standing in for OS encryption.
+let failNextDecrypt = false;
 const box: SecretBox = {
   encrypt: async (v) => `sealed:${Buffer.from(v).toString("base64")}`,
-  decrypt: async (v) => Buffer.from(v.slice(7), "base64").toString(),
+  decrypt: async (v) => {
+    if (failNextDecrypt) {
+      failNextDecrypt = false;
+      throw new Error("Credential storage timed out");
+    }
+    return Buffer.from(v.slice(7), "base64").toString();
+  },
 };
 const PARENT = "11111111-1111-1111-1111-111111111111";
 // Deterministic model: reads with the granted tools, then proposes one page.
@@ -73,6 +80,7 @@ async function boot(
   dir: string,
   fixture: NotionFixture,
   extra: Parameters<typeof startRuntime>[0]["broker"] = {},
+  registryFetch?: typeof fetch,
 ) {
   const runtime = await startRuntime({
     dataDir: dir,
@@ -80,6 +88,7 @@ async function boot(
     secretBox: box,
     connectorEndpoints: { "socius/notion": `${fixture.url}/mcp` },
     broker: { timeoutMs: 1000, ...extra },
+    ...(registryFetch ? { registry: { fetch: registryFetch } } : {}),
   });
   const pairing = await fetch(runtime.pairingURL, { redirect: "manual" });
   const cookie = pairing.headers.get("set-cookie")!.split(";")[0]!;
@@ -968,6 +977,205 @@ test("bot export uses an allowlist, flags private text and requires review", asy
     assert.deepEqual(fresh.grantedCapabilities, []);
   } finally {
     await r.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("review fixes: unreachable checks stay unknown, offline approvals fail definitely", async () => {
+  const fixture = await startNotionFixture();
+  const dir = await mkdtemp(join(tmpdir(), "socius-review-"));
+  const r = await boot(dir, fixture);
+  const creates = () =>
+    fixture.calls.filter((c) => c.tool === "notion-create-pages").length;
+  try {
+    const { main, action } = await proposed(r, fixture);
+    // Offline before the write: nothing was sent, so it is a definite, retryable failure.
+    fixture.offline = true;
+    let result = await r.ok<ActionRecord>("actions/resolve", {
+      id: action.id,
+      digest: action.digest,
+      approve: true,
+    });
+    assert.equal(result.state, "failed");
+    assert.equal(result.retryable, true);
+    assert.match(result.error!, /nothing was written/);
+    assert.equal(creates(), 0);
+    fixture.offline = false;
+    result = await r.ok<ActionRecord>("actions/retry", { id: action.id });
+    assert.equal(result.state, "succeeded");
+    assert.equal(creates(), 1);
+
+    // Ambiguous write, then a check that cannot reach the service: never retryable.
+    await chat(r, main.id, "brief again");
+    const second = (await r.state()).actions.find(
+      (a) => a.state === "pending",
+    )!;
+    fixture.createMode = "hang-after-create";
+    const before = fixture.pages.length;
+    const originalPush = fixture.pages.push.bind(fixture.pages);
+    fixture.pages.push = (...items) => {
+      fixture.pages.push = originalPush;
+      return before + items.length;
+    };
+    result = await r.ok<ActionRecord>("actions/resolve", {
+      id: second.id,
+      digest: second.digest,
+      approve: true,
+    });
+    assert.equal(result.state, "unknown");
+    fixture.offline = true;
+    result = await r.ok<ActionRecord>("actions/check", { id: second.id });
+    assert.equal(result.state, "unknown");
+    assert.equal(result.retryable, false);
+    assert.match(result.error!, /could not check/);
+    assert.equal(
+      (await r.request("actions/retry", { id: second.id })).status,
+      409,
+    );
+    fixture.offline = false;
+    fixture.createMode = "ok";
+    result = await r.ok<ActionRecord>("actions/check", { id: second.id });
+    assert.equal(result.retryable, true, "a check that ran and found nothing");
+  } finally {
+    await r.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("review fixes: parallel calls share one token refresh; a decrypt failure keeps credentials", async () => {
+  const fixture = await startNotionFixture();
+  const dir = await mkdtemp(join(tmpdir(), "socius-race-"));
+  const r = await boot(dir, fixture);
+  try {
+    const { main } = await proposed(r, fixture);
+    const receipt = (await r.state()).installations.find(
+      (i) => i.id === "socius/notion",
+    )!;
+    const read = (taskId: string) =>
+      r.broker.request({
+        actor: { botId: main.id, taskId },
+        release: {
+          id: receipt.id,
+          version: receipt.version,
+          digest: receipt.digest,
+        },
+        action: "notion.search",
+        arguments: { query: "planning" },
+      });
+    // Expired access token + rotating refresh tokens + parallel tool calls.
+    fixture.expireAccess();
+    const results = await Promise.all([read("t1"), read("t2"), read("t3")]);
+    assert.ok(results.every((x) => x.status === "completed"));
+    assert.equal(
+      fixture.refreshes,
+      1,
+      "one refresh, reused by queued sessions",
+    );
+    assert.equal(
+      (await r.state()).connections.find((c) => c.state !== "disconnected")!
+        .state,
+      "ready",
+    );
+    // A transient decrypt failure fails that call but must not overwrite the tokens.
+    failNextDecrypt = true;
+    await assert.rejects(read("t4"), /could not unlock/);
+    assert.equal((await read("t5")).status, "completed");
+  } finally {
+    failNextDecrypt = false;
+    await r.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("review fixes: installed exact dependencies block conflicting installs; long templates install", async () => {
+  const fixture = await startNotionFixture();
+  const dir = await mkdtemp(join(tmpdir(), "socius-deps-"));
+  const r = await boot(dir, fixture);
+  const md = (version: string) =>
+    Buffer.from(
+      `---\nname: digest\ndescription: Weekly digest.\nmetadata:\n  version: ${version}\n---\n\nSummarise the week.\n`,
+    ).toString("base64");
+  const template = (
+    name: string,
+    version: string,
+    instructions = "Plan the week.",
+  ) => ({
+    schemaVersion: 1,
+    id: `local/${name}`,
+    version: "1.0.0",
+    kind: "bot",
+    name,
+    description: "Test template",
+    publisher: "local",
+    license: "MIT",
+    capabilities: [],
+    dependencies: [{ id: "local/digest", version }],
+    role: "Planner",
+    instructions,
+    modelRequirement: "tools",
+  });
+  try {
+    for (const version of ["1.0.0", "1.1.0"])
+      await r.ok("skills/import", {
+        files: [{ path: "digest/SKILL.md", content: md(version) }],
+      });
+    await r.ok("templates/import", { manifest: template("newer", "1.1.0") });
+    await r.ok("templates/import", {
+      manifest: template("older", "1.0.0", "x".repeat(12000)),
+    });
+    await install(r, "local/newer", "1.0.0");
+    const conflict = await r.request("install", {
+      id: "local/older",
+      version: "1.0.0",
+      digest: (
+        await r.ok<InstallPreview>("install/preview", {
+          id: "local/older",
+          version: "1.0.0",
+        })
+      ).digest,
+      consent: [],
+    });
+    assert.equal(conflict.status, 409);
+    assert.match(
+      (await conflict.json()).error,
+      /local\/newer requires local\/digest@1.1.0/,
+    );
+    assert.equal(
+      (await r.state()).installations.find((i) => i.id === "local/digest")!
+        .version,
+      "1.1.0",
+    );
+    // Without the conflicting dependent, a 12,000-character template installs.
+    await r.ok("installations/uninstall", { id: "local/newer" });
+    await install(r, "local/older", "1.0.0");
+    assert.ok((await r.state()).bots.some((b) => b.name === "older"));
+  } finally {
+    await r.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("review fixes: the persisted registry cache keeps only recent pages", async () => {
+  const fixture = await startNotionFixture();
+  const dir = await mkdtemp(join(tmpdir(), "socius-cache-"));
+  const registryFetch = (async () =>
+    new Response(JSON.stringify({ servers: [] }))) as unknown as typeof fetch;
+  const r = await boot(dir, fixture, {}, registryFetch);
+  try {
+    for (let i = 0; i < 25; i++) await r.ok(`registry?search=term${i}`);
+    await r.close();
+    const db = new DatabaseSync(join(dir, "socius.sqlite"));
+    const rows = db
+      .prepare("SELECT data FROM records WHERE kind='registry-cache'")
+      .all();
+    db.close();
+    assert.equal(rows.length, 1);
+    assert.equal(JSON.parse(String(rows[0]!.data)).entries.length, 10);
+  } finally {
     await fixture.close();
     await rm(dir, { recursive: true, force: true });
   }

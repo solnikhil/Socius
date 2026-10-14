@@ -42,6 +42,12 @@ interface SecretState {
   discoveryState?: OAuthDiscoveryState;
 }
 const FLOW_TTL = 10 * 60 * 1000;
+/** Opening the session failed, so no request reached the service. */
+export class OpenError extends Error {
+  constructor(readonly failure: ConnectorError) {
+    super(failure.message);
+  }
+}
 const fail = (status: number, message: string): never => {
   throw new PackageError(status, message);
 };
@@ -136,6 +142,7 @@ export class ConnectionService {
     string,
     { connectionId: string; expiresAt: number }
   >();
+  private readonly locks = new Map<string, Promise<void>>();
   constructor(
     private readonly store: Store,
     private readonly options: ConnectionOptions,
@@ -186,7 +193,11 @@ export class ConnectionService {
     try {
       return JSON.parse(await box.decrypt(sealed)) as SecretState;
     } catch {
-      return {};
+      // Never fall back to empty state: a later save would overwrite the real tokens.
+      throw new ConnectorError(
+        "rejected",
+        "Socius could not unlock the stored credentials. Try again; disconnect and reconnect if this keeps happening.",
+      );
     }
   }
   private persister(connectionId: string) {
@@ -203,6 +214,8 @@ export class ConnectionService {
 
   async connect(connectorId: string) {
     const connector = this.connector(connectorId);
+    for (const [id, flow] of this.flows)
+      if (flow.expiresAt < Date.now()) this.flows.delete(id);
     if (!this.options.secretBox)
       fail(
         409,
@@ -223,8 +236,11 @@ export class ConnectionService {
         },
         {},
       );
-    const state = await this.load(connection.id);
-    delete state.tokens; // A new sign-in replaces earlier tokens.
+    // A new sign-in replaces earlier tokens; unreadable state is discarded, not reused.
+    const state = await this.load(connection.id).catch(
+      () => ({}) as SecretState,
+    );
+    delete state.tokens;
     const flow = randomBytes(24).toString("base64url");
     let authorizationUrl: URL | undefined;
     const provider = new StoredOAuthProvider(
@@ -303,13 +319,13 @@ export class ConnectionService {
       };
     }
     const connector = this.connector(connection.connectorId);
-    const provider = new StoredOAuthProvider(
-      await this.load(connection.id),
-      this.persister(connection.id),
-      this.redirect(),
-      flowId,
-    );
     try {
+      const provider = new StoredOAuthProvider(
+        await this.load(connection.id),
+        this.persister(connection.id),
+        this.redirect(),
+        flowId,
+      );
       const result = await auth(provider, {
         serverUrl: this.serverUrl(connector),
         authorizationCode: code.slice(0, 2000),
@@ -337,17 +353,44 @@ export class ConnectionService {
     };
   }
 
-  /** Opens an authenticated client for a reviewed action. Never starts a sign-in. */
-  async client(connectionId: string): Promise<McpToolClient> {
+  /**
+   * Runs `fn` with an authenticated client, then closes it. Sessions on one connection
+   * run one at a time, so token refreshes and credential writes never race (the model can
+   * issue parallel tool calls). Never starts a sign-in. Failures while opening the session
+   * are raised as `OpenError`: no request reached the service.
+   */
+  async use<T>(
+    connectionId: string,
+    fn: (client: McpToolClient) => Promise<T>,
+  ): Promise<T> {
+    const previous = this.locks.get(connectionId) ?? Promise.resolve();
+    let release!: () => void;
+    const tail = previous.then(() => new Promise<void>((r) => (release = r)));
+    this.locks.set(connectionId, tail);
+    await previous;
+    try {
+      const client = await this.open(connectionId);
+      try {
+        return await fn(client);
+      } finally {
+        await client.close().catch(() => undefined);
+      }
+    } finally {
+      release();
+      if (this.locks.get(connectionId) === tail)
+        this.locks.delete(connectionId);
+    }
+  }
+  private async open(connectionId: string): Promise<McpToolClient> {
     const connection =
       this.get(connectionId) ?? fail(404, "Connection not found");
     const connector = this.connector(connection.connectorId);
-    const provider = new StoredOAuthProvider(
-      await this.load(connection.id),
-      this.persister(connection.id),
-      this.redirect(),
-    );
     try {
+      const provider = new StoredOAuthProvider(
+        await this.load(connection.id),
+        this.persister(connection.id),
+        this.redirect(),
+      );
       return await connectMcp({
         url: this.serverUrl(connector),
         authProvider: provider,
@@ -359,7 +402,7 @@ export class ConnectionService {
     } catch (error) {
       const failure = classifyError(error);
       if (failure.kind === "auth") this.markAuthRequired(connection.id);
-      throw failure;
+      throw new OpenError(failure);
     }
   }
   markAuthRequired(connectionId: string) {
@@ -378,12 +421,10 @@ export class ConnectionService {
       this.get(connectionId) ?? fail(404, "Connection not found");
     if (connection.state === "disconnected")
       fail(409, "This connection was revoked");
-    let client: McpToolClient | undefined;
     try {
-      client = await this.client(connectionId);
       const problem = checkToolSchemas(
         this.connector(connection.connectorId),
-        await client.listTools(),
+        await this.use(connectionId, (client) => client.listTools()),
       );
       return problem
         ? this.update(connection, {
@@ -396,14 +437,20 @@ export class ConnectionService {
               "Connected. Grant document access to each bot that should use it.",
           });
     } catch (error) {
-      const failure = classifyError(error);
-      if (failure.kind === "auth") return this.get(connectionId)!;
+      const failure = classifyError(
+        error instanceof OpenError ? error.failure : error,
+      );
+      if (failure.kind === "auth") {
+        this.markAuthRequired(connectionId);
+        return this.get(connectionId)!;
+      }
       return this.update(connection, {
         state: "failed",
-        detail: "Could not reach the service. Check your connection and retry.",
+        detail:
+          error instanceof OpenError && failure.kind === "rejected"
+            ? failure.message
+            : "Could not reach the service. Check your connection and retry.",
       });
-    } finally {
-      await client?.close().catch(() => undefined);
     }
   }
 
