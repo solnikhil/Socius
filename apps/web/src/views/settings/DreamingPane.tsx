@@ -35,17 +35,9 @@ export function DreamingPane({
     const timer = setInterval(() => {
       void api<DreamingStatus>("dreaming")
         .then((s) => {
-          if (mounted) {
-            setStatus(s);
-            setPollError("");
-          }
+          if (mounted) { setStatus(s); setPollError(""); }
         })
-        .catch(() => {
-          if (mounted)
-            setPollError(
-              "Dreaming status could not refresh. Reopen Settings to reconnect.",
-            );
-        });
+        .catch(() => { if (mounted) setPollError("Dreaming status could not refresh. Reopen Settings to reconnect."); });
     }, 2000);
     return () => {
       mounted = false;
@@ -183,11 +175,7 @@ export function DreamingPane({
             or take external actions.
           </p>
           <ErrorNote error={error || pollError} />
-          {status.settings.revision !== revision && (
-            <p role="alert">
-              Settings changed elsewhere. Reopen Settings before saving.
-            </p>
-          )}
+          {status.settings.revision !== revision && <p role="alert">Settings changed elsewhere. Reopen Settings before saving.</p>}
           <p role="status">{notice}</p>
           <button className="primary" disabled={busy}>
             Save dreaming settings
