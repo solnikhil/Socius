@@ -8,9 +8,9 @@ Implemented in this first work unit: private npm workspaces, strict skill/connec
 
 Next contract additions: immutable release digests, runtime compatibility, installation receipts, scoped grants and API events. Keep catalog metadata separate from upstream formats. Native Agent Skills imports map into Socius release metadata; MCP Registry names use their original reverse-DNS identity and need an explicit mapping rather than our internal publisher/name validator.
 
-## 2. Settle the agent framework with an executable acceptance harness
+## 2. Agent runtime decision — AI SDK selected
 
-Compare Mastra and Eve behind one `AgentRuntime` adapter contract. Use a deterministic fake tool/model where supported for repeatable recovery tests, then test actual Ollama and a chosen direct cloud model. Record framework version and full setup.
+The user selected AI SDK. The runtime now uses `ToolLoopAgent` directly behind a replaceable model adapter; the framework comparison below is retained as background for future durable-workflow work, not a prerequisite. Compare additional frameworks behind one `AgentRuntime` contract only when their capabilities are needed. Use a deterministic fake tool/model where supported for repeatable recovery tests, then test actual Ollama and a chosen direct cloud model. Record framework version and full setup.
 
 Required scenario: create a private main bot → run a read-only tool → propose a write → persist pending approval → kill/restart the process → rediscover the pending request → reject changed action parameters → approve the original action → execute once → return an artifact → cancel a delegated task. Test failures and uncertain writes, not just a clean response.
 

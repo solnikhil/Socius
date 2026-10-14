@@ -3,17 +3,75 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
-  "engines": {"node": ">=24 <25"},
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test packages/*/test/*.test.ts",
     "check": "npm run typecheck && npm test",
-    "catalog:check": "tsx scripts/check-catalog.ts"
+    "catalog:check": "tsx scripts/check-catalog.ts",
+    "build": "tsx scripts/build.ts",
+    "dev": "npm run build && electron .",
+    "desktop": "npm run build && electron .",
+    "web": "npm run build && tsx apps/runtime/main.ts",
+    "package": "npm run build && electron-builder --dir",
+    "test:e2e": "playwright test",
+    "format": "prettier --write apps packages scripts/*.ts e2e playwright.config.ts",
+    "format:check": "prettier --check apps packages scripts/*.ts e2e playwright.config.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "prettier": "^3.9.10",
     "tsx": "4.23.15",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.79",
+    "@ai-sdk/openai": "^4.0.93",
+    "@ai-sdk/openai-compatible": "^3.0.68",
+    "ai": "^7.0.140",
+    "lucide-react": "^1.56.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.7"
+  },
+  "main": "dist/main.cjs",
+  "build": {
+    "appId": "in.socius.desktop",
+    "productName": "Socius",
+    "directories": {
+      "output": "release",
+      "app": "dist"
+    },
+    "files": [
+      "**/*"
+    ],
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.productivity",
+      "identity": null
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "electronDist": "node_modules/electron/dist"
+  },
+  "overrides": {
+    "@electron/get": "^5.1.0"
   }
 }

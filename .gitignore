@@ -8,3 +8,6 @@ coverage/
 .socius/
 .eve/
 *.tsbuildinfo
+release/
+test-results/
+playwright-report/

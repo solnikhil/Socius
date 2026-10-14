@@ -8,7 +8,23 @@
     "exactOptionalPropertyTypes": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "noUnusedLocals": true
   },
-  "include": ["packages/**/*.ts", "scripts/**/*.ts"]
+  "include": [
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "e2e/**/*.ts",
+    "playwright.config.ts"
+  ]
 }

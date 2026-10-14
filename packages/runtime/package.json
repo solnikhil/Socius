@@ -1,0 +1,11 @@
+{
+  "name": "@socius/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/server.ts",
+  "dependencies": {
+    "@socius/contracts": "0.1.0",
+    "@socius/marketplace": "0.1.0"
+  }
+}

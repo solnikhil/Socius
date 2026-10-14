@@ -1,0 +1,78 @@
+import { useState, type FormEvent } from "react";
+import { Plus } from "lucide-react";
+import type { BotInstance } from "@socius/contracts";
+import { api } from "../api.js";
+import { Modal, ErrorNote } from "../components/ui.js";
+
+export function CreateBot({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (bot: BotInstance) => void;
+}) {
+  const [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const data = new FormData(e.currentTarget);
+    try {
+      const bot = await api<BotInstance>("bots", {
+        name: data.get("name"),
+        role: data.get("role"),
+        instructions: data.get("instructions"),
+      });
+      onCreated(bot);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title="Meet your next bot" onClose={onClose}>
+      <p className="muted">
+        Give it one clear job. It starts with its own memory and no permissions.
+      </p>
+      <form onSubmit={submit} className="form">
+        <label>
+          Name
+          <input
+            name="name"
+            placeholder="e.g. College assistant"
+            required
+            maxLength={100}
+            autoFocus
+          />
+        </label>
+        <label>
+          Role
+          <input
+            name="role"
+            placeholder="What is its area of responsibility?"
+            required
+            maxLength={200}
+          />
+        </label>
+        <label>
+          Instructions
+          <textarea
+            name="instructions"
+            placeholder="Describe how it should work, what it should return, and when it should ask you."
+            required
+            maxLength={8000}
+            rows={5}
+          />
+        </label>
+        <ErrorNote error={error} />
+        <button className="primary" disabled={busy}>
+          {busy ? "Creating…" : "Create bot"}
+          <Plus size={16} />
+        </button>
+      </form>
+    </Modal>
+  );
+}

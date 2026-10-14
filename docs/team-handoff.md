@@ -1,43 +1,62 @@
-# Team handoff
+# Teammate handoff
 
-Start from `main`, run the README checks, and create a feature branch. Owners below are responsibility slots; assign actual teammates before starting. Contracts are shared infrastructure: changes require coordination with their consumers. Do not revert another owner's work.
+The runnable desktop base is on `main`. Use Node.js 24, `npm ci`, then `npm run desktop`. Configure a tool-capable model in Settings. Each teammate starts a `codex/<topic>` branch and opens a PR; ownership below is a workstream, not a named assignee.
 
-## 1. Runtime and main bot
+## Implemented base
 
-Own future `apps/runtime`, task persistence, policy integration and model adapters. Consume `@socius/contracts`; compare Mastra and Eve using the shared recovery/approval acceptance scenario, then adapt `socius/main` without baking framework types into catalog contracts.
+Electron shell and separate utility-process runtime; responsive React views; persistent main/custom/template bots; streamed AI SDK chat; user and model-proposed bot creation; reviewed curated installations; text attachments and Markdown response export; scoped Markdown/FTS memory; exact-content approvals; encrypted desktop model keys; activity log; tests and local packaging.
 
-Acceptance: one real tool-capable model completes a read-only task and returns an artifact; restart restores task history; an external action parks for approval and resumes only for the approved parameters; cancellation reaches child work. Demonstrate one Ollama and one direct cloud adapter before accepting the runtime framework. Fresh main-bot instances start with no permissions.
+The user selected AI SDK for this release. Mastra/Eve are no longer prerequisites for beginning work. Persisted approvals survive restart; interrupted model runs require explicit retry. Full workflow checkpointing remains a future decision with its own acceptance tests.
 
-Depends on shared contracts. First PR should resolve the framework decision with reproducible evidence and document storage ownership. Second PR implements the main-bot flow.
+## Workstream 1: connectors and action broker
 
-## 2. Marketplace UI and bot workspace
+Own new `packages/connectors` plus reviewed integration boundaries in `packages/runtime`. Coordinate changes to `server.ts` with the runtime owner.
 
-Own future `apps/web`, catalog browse/detail views, bot list, chat and install previews. Reuse a responsive React UI for desktop and phone.
+First PR: one read-only Notion or calendar connector using MCP and a reviewed setup definition. Second PR: scoped OAuth/credential handling and a draft/write approval flow. No automatic launch of arbitrary commands discovered in registry metadata.
 
-Acceptance: exactly two top-level marketplace tabs; skill/connector filters within the first; bot details show role, dependencies and requested permissions; installation creates a distinct private bot only after consent. Display pending authentication/unsupported-model states honestly. Handle empty/loading/error states and keyboard accessibility. No credentials or privileged device APIs in frontend state.
+Acceptance: real read request succeeds; access revocation blocks later calls; secrets never appear in UI/activity; a proposed write shows exact parameters, survives restart, and executes only after matching approval. Ambiguous external outcomes are reconciled before retry. Add fixture-based integration tests and document one controlled live check.
 
-Depends on catalog contracts; browsing can begin against fixture data. Actual install/chat integration depends on authenticated runtime endpoints. Electron packaging is a later independent PR.
+## Workstream 2: skills SDK and marketplace registry
 
-## 3. Registry and installation service
+Own `packages/marketplace`, new skill import/export package and future curated-registry adapter. Coordinate manifest changes in `packages/contracts` before implementations depend on them.
 
-Own future `packages/installer` and `apps/registry`, release metadata, storage adapters, integrity verification, install transactions and rollback. Use `Catalog.planInstall` as domain input, not as proof of trust.
+First PR: Agent Skills `SKILL.md` directory import/export with metadata validation and progressive instruction/resource loading. Treat allowed-tools as requests; scripts remain disabled without an enforced sandbox. Preserve upstream MCP Registry identity separately from Socius IDs.
 
-Acceptance: dependency graph shown before install; malformed/missing/cyclic/conflicting packages rejected; digest mismatch fails; permission expansion requests new consent; failed installs leave no active partial installation. Reject archive path escapes and unknown executable entrypoints. Installation consent does not grant all requested capabilities automatically. No user state or secrets in publication exports.
+Second PR: immutable release metadata, publisher trust/signatures, version compatibility, atomic external package staging and rollback. Public publishing must export an explicit allowlist and require review of free text; never serialize a live bot.
 
-Depends on contracts; coordinate policy/installation receipts with runtime owner. Start with a curated local registry adapter; public publishing/auth is a separate deliverable.
+Acceptance: valid instruction packages import; malformed manifests and path/symlink escapes fail; digest mismatch fails; updates that request more permissions require consent; uninstall removes the active capability; exported bots contain no private state or credentials.
 
-## 4. Skills, connectors and memory
+## Workstream 3: runtime, delegation and routines
 
-Own future `packages/connectors`, `packages/memory`, reviewed Agent Skills `SKILL.md` packages and connector setup. Choose the first useful connector with scoped API access. Implement Markdown memory files with SQLite FTS5 indexing; keep semantic retrieval behind a provider interface. Supermemory is superseded by the updated Notion stack.
+Own `packages/runtime/src/model.ts`, task lifecycle and future scheduling/delegation services. Keep UI DTOs in `packages/contracts` independent of SDK internals.
 
-Acceptance: one installed skill uses a real connector with reviewed scopes; login occurs outside chat; connector errors are inspectable and secrets redacted; memory has source, edit, export and delete paths. Revoking a capability blocks subsequent actions, including delegated and scheduled ones. A skill cannot increase its own authority.
+First PR: main bot delegates a bounded task to one enabled specialist with an explicit parent/child relationship, scoped context and budgets. Bot creation already works; delegation must be a separate operation.
 
-Depends on runtime tool/policy contracts. Deliver skill content and connector configuration first; executable integration follows the broker interface.
+Second PR: durable routines with disabled-by-default schedules, missed-run policy and cancellation. Evaluate checkpointing versus explicit interrupted-run recovery with controlled crash tests before changing current behavior.
 
-## Integration order and completion
+Acceptance: delegated work cannot gain permissions from its parent; cancellation propagates; restarted jobs cannot repeat external writes blindly; approval revocation works across scheduled/delegated calls; one routine survives restart and records outcomes. Test model/tool capability discovery rather than assume every model supports tools.
 
-Contracts/catalog → runtime read-only main bot + catalog browse → reviewed installation → connector task + approval → specialist delegation → routines/remote control → desktop packaging/public registry.
+## Workstream 4: interface, browser and release
 
-First complete scenario: open Socius, inspect/install a summary skill, select a permitted document, ask the main bot to summarise it, inspect the artifact and activity record. Add a specialist template and verify its memory/permissions are separate. An external send requires an approval tied to the actual draft.
+Own `apps/web/src/views` and `apps/desktop`; share UI primitives in `apps/web/src/components`. Coordinate browser tool registration with the action-broker owner.
 
-Every PR describes behavior, acceptance evidence and unresolved limitations. Run focused tests plus foundation checks. Completed integration work is committed and pushed to `main` as authorized; never force-push or silently bypass branch protection. API/schema changes land before dependent implementations. No estimated dates or owners are assigned here.
+First PR: refine bot management, document parsing/attachment UX and response rendering; add supported model discovery and connection diagnostics. Extend the existing browser tests.
+
+Second PR: reviewed browser observation/actions and human takeover using Playwright and a pinned Stagehand driver. Do not allow autonomous action batches to bypass policy. Stagehand v3 is CDP-based, not built on Playwright.
+
+Release PRs: platform-specific installers, signing/notarization, verified update channels and phone pairing/Tailscale. The current app directory is unsigned. macOS runtime behavior is tested locally; Windows/Linux release verification remains required. Keep telemetry opt-in.
+
+Acceptance: one document-to-summary flow works with actual parsing; login handoff keeps secrets outside chat; consequential browser steps require exact review; packaged app starts on each supported OS; phone sessions require application pairing as well as tailnet access.
+
+## Shared checks and integration
+
+```sh
+npm run check
+npm run catalog:check
+npm run build
+npm run test:e2e
+```
+
+Browser tests use a deterministic model fixture only in `e2e/server.ts`; production never selects it. The runtime adapter test exercises real AI SDK streaming/tool handling through a controlled compatible endpoint. Actual provider access must be tested separately.
+
+Every PR states the outcome, acceptance evidence and remaining limitations. Keep contract edits coordinated, never revert another owner's work, and do not force-push. Completed integration work is committed and pushed to `main` under the user's authorization. Human teammate branches remain separate until deliberately integrated.
