@@ -40,6 +40,28 @@ export function useSmoothText(target: string): string {
   return shown;
 }
 
+/**
+ * Closes a bold or inline-code span the model has opened but not finished,
+ * so a half-streamed reply never shows raw `**` or a stray backtick. Fenced
+ * code blocks are left alone; the renderer already handles an open fence.
+ */
+export function closeOpenMarks(text: string): string {
+  if ((text.match(/```/g)?.length ?? 0) % 2) return text;
+  const open = (s: string) => {
+    const prose = s.replace(/```[\s\S]*?```/g, "");
+    const code = (prose.replace(/``+/g, "").match(/`/g)?.length ?? 0) % 2 === 1;
+    // Bold markers inside an open code span are literal; count only before it.
+    const before = code ? prose.slice(0, prose.lastIndexOf("`")) : prose;
+    return { code, bold: (before.match(/\*\*/g)?.length ?? 0) % 2 === 1 };
+  };
+  let t = text,
+    o = open(t);
+  // A marker that has only just opened would render as an empty span; hide it.
+  if (o.code && /[^`]`$/.test(t)) o = open((t = t.slice(0, -1)));
+  if (o.bold && t.endsWith("**")) o = open((t = t.slice(0, -2)));
+  return t + (o.code ? "`" : "") + (o.bold ? "**" : "");
+}
+
 /** How close to the end counts as "at the bottom", in pixels. */
 const NEAR = 32;
 

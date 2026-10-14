@@ -42,7 +42,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ApprovalCard } from "../components/ApprovalCard.js";
-import { useSmoothText, useStickToBottom } from "../components/streaming.js";
+import {
+  closeOpenMarks,
+  useSmoothText,
+  useStickToBottom,
+} from "../components/streaming.js";
 import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
 import { ExportBot } from "./ExportBot.js";
@@ -637,10 +641,11 @@ export function Chat({
                 aria-busy="true"
               >
                 {streamed ? (
-                  <Markdown text={streamed} />
+                  <Markdown text={closeOpenMarks(streamed)} />
                 ) : (
-                  <span className="thinking" aria-label="Working on it">
-                    Thinking
+                  <span className="thinking">
+                    {(stream && author(stream.botId)?.name) ?? bot.name} is
+                    working
                   </span>
                 )}
               </div>
