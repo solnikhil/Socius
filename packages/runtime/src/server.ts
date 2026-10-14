@@ -31,7 +31,9 @@ import type {
   Message,
   RegistryPage,
   Task,
+  Reaction,
 } from "@socius/contracts/app";
+import { REACTIONS } from "@socius/contracts/app";
 import {
   provider as describeProvider,
   type ModelRef,
@@ -398,6 +400,24 @@ export async function startRuntime(options: RuntimeOptions) {
       .filter(Boolean)
       .join("\n\n");
   }
+  /**
+   * The user's latest reactions to this bot's replies, in direct and group
+   * chats, so the bot can adjust. Excerpts are quoted data, not instructions.
+   */
+  function reactionFeedback(botId: string): string | undefined {
+    const reacted = store
+      .all<Message>("message")
+      .filter((m) => m.botId === botId && m.role === "assistant" && m.reaction)
+      .slice(-8);
+    if (!reacted.length) return undefined;
+    return [
+      "Feedback: the user reacted to some of your recent replies. Do more of what they liked and less of what they did not, without mentioning this unless asked.",
+      ...reacted.map(
+        (m) =>
+          `- They ${REACTIONS[m.reaction!]} (${m.reaction}): "${clip(m.content.replace(/\s+/g, " "), 160)}"`,
+      ),
+    ].join("\n");
+  }
   /** Everything a model call needs except its messages, checked against the bot's own grants. */
   async function modelContext(
     b: BotInstance,
@@ -406,11 +426,13 @@ export async function startRuntime(options: RuntimeOptions) {
   ): Promise<Omit<ModelRequest, "messages">> {
     const selected = await providers.forChat(b.id);
     active.get(taskId)?.connections.add(selected.ref.connectionId);
+    const feedback = reactionFeedback(b.id);
     return {
       model: selected.model,
       modelRef: selected.ref,
       tools: selected.entry.tools !== false,
       bot: b,
+      ...(feedback ? { feedback } : {}),
       ...packageTools(b, { taskId }),
       signal,
       searchMemory: (q) => {
@@ -1513,6 +1535,28 @@ export async function startRuntime(options: RuntimeOptions) {
             store.event("category.created", `Created the category ${f.name}.`);
           });
           json(res, 201, f);
+          return;
+        }
+        if (req.method === "POST" && path === "/api/messages/react") {
+          const input = z
+            .strictObject({
+              id: uuid,
+              reaction: z
+                .enum(Object.keys(REACTIONS) as [Reaction, ...Reaction[]])
+                .nullable(),
+            })
+            .parse(await body(req));
+          const m =
+            store.get<Message>("message", input.id) ??
+            fail(404, "Message not found");
+          if (m.role !== "assistant")
+            fail(400, "Only bot replies can be reacted to");
+          if (running((t) => t.id === m.taskId))
+            fail(409, "Wait for the reply to finish before reacting");
+          if (input.reaction) m.reaction = input.reaction;
+          else delete m.reaction;
+          store.put("message", m.id, m);
+          json(res, 200, m);
           return;
         }
         if (req.method === "POST" && path === "/api/categories/update") {

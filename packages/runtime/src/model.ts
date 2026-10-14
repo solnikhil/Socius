@@ -30,6 +30,8 @@ export interface ModelRequest {
   proposeMemory: (content: string) => { approvalId: string };
   /** Only direct chats with the main bot can propose specialists. */
   proposeBot?: (draft: BotDraft) => { approvalId: string };
+  /** The user's recent reactions to this bot's replies, as guidance. */
+  feedback?: string;
   /** Group context replaces the default chat framing. */
   briefing?: string;
   /** Coordinator only: asks one group member and returns its reply. */
@@ -51,6 +53,9 @@ export interface ConnectorTool {
 /** Framing for direct chats. Group calls supply their own briefing instead. */
 export const DEFAULT_FRAMING =
   "You are running in Socius. Only the tools supplied in this call exist. The main bot can propose new specialists for approval; delegation happens in group chats. No web browsing, external messaging or file-system access is available. Do not claim to perform unavailable actions.";
+/** House voice for every bot: a messaging app, not a document. Roles still lead. */
+export const CHAT_STYLE =
+  "Style: this is a messaging app, so write like a thoughtful person texting. Keep replies short and conversational, use plain everyday words, and skip headings, preambles and sign-offs. Break longer answers into short paragraphs; use lists or tables only when the content really needs them. Your role and the user's request decide the substance; this only shapes the tone.";
 export type ModelRunner = (
   request: ModelRequest,
   onText: (text: string) => void,
@@ -163,6 +168,8 @@ export const runModel: ModelRunner = async (request, onText) => {
     instructions: [
       bot.instructions,
       request.briefing ?? DEFAULT_FRAMING,
+      CHAT_STYLE,
+      ...(request.feedback ? [request.feedback] : []),
       ...(request.tools
         ? []
         : [

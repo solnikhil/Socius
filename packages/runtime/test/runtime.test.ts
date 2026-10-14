@@ -1006,3 +1006,58 @@ test("Socius orchestrates from a live roster and upgrades to its latest instruct
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("reactions on bot replies persist and reach that bot as feedback", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "socius-reactions-"));
+  const seen: (string | undefined)[] = [];
+  const runner: ModelRunner = async (request, onText) => {
+    seen.push(request.feedback);
+    onText("Here is a short plan.");
+    return "Here is a short plan.";
+  };
+  const r = await paired(dir, runner);
+  try {
+    await connectModel(r);
+    const writer = await (
+      await r.request("bots", {
+        name: "Writer",
+        role: "Drafts",
+        instructions: "Write.",
+      })
+    ).json();
+    await (
+      await r.request("chat", { botId: writer.id, content: "Plan it." })
+    ).text();
+    const [question, reply] = (await (
+      await r.request(`messages?botId=${writer.id}`, undefined, "GET")
+    ).json()) as Message[];
+    assert.equal(
+      (await r.request("messages/react", { id: question!.id, reaction: "👍" }))
+        .status,
+      400,
+    );
+    assert.equal(
+      (await r.request("messages/react", { id: reply!.id, reaction: "🍕" }))
+        .status,
+      400,
+    );
+    const reacted = (await (
+      await r.request("messages/react", { id: reply!.id, reaction: "❤️" })
+    ).json()) as Message;
+    assert.equal(reacted.reaction, "❤️");
+    await (
+      await r.request("chat", { botId: writer.id, content: "Again." })
+    ).text();
+    assert.equal(seen[0], undefined);
+    assert.match(seen[1]!, /They loved it \(❤️\): "Here is a short plan\."/);
+    // Clearing the reaction removes the feedback.
+    await r.request("messages/react", { id: reply!.id, reaction: null });
+    const cleared = (await (
+      await r.request(`messages?botId=${writer.id}`, undefined, "GET")
+    ).json()) as Message[];
+    assert.equal(cleared[1]!.reaction, undefined);
+  } finally {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

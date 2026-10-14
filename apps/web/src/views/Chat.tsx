@@ -17,12 +17,19 @@ import {
   Pencil,
   Plus,
   Settings,
+  SmilePlus,
   Square,
   Trash2,
   X,
 } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
-import type { GroupChat, Message, Snapshot } from "@socius/contracts/app";
+import {
+  REACTIONS,
+  type GroupChat,
+  type Message,
+  type Reaction,
+  type Snapshot,
+} from "@socius/contracts/app";
 import { api } from "../api.js";
 import {
   Avatar,
@@ -89,6 +96,8 @@ export function Chat({
       null,
     ),
     [confirmDelete, setConfirmDelete] = useState(false),
+    // The reply whose reaction picker is open.
+    [reacting, setReacting] = useState(""),
     [busy, setBusy] = useState(false),
     [taskId, setTaskId] = useState(""),
     [error, setError] = useState(""),
@@ -282,6 +291,43 @@ export function Chat({
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  // The picker closes on any click outside it, or Escape.
+  useEffect(() => {
+    if (!reacting) return;
+    const close = (e: Event) => {
+      if (
+        e instanceof KeyboardEvent
+          ? e.key === "Escape"
+          : !(e.target as Element).closest?.(".reactions")
+      )
+        setReacting("");
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [reacting]);
+  async function react(m: Message, reaction: Reaction) {
+    setReacting("");
+    const next = m.reaction === reaction ? null : reaction;
+    const swap = (r: Reaction | null) =>
+      setMessages((list) =>
+        list.map((x) => {
+          if (x.id !== m.id) return x;
+          const { reaction: _old, ...rest } = x;
+          return r ? { ...rest, reaction: r } : rest;
+        }),
+      );
+    swap(next);
+    try {
+      await api<Message>("messages/react", { id: m.id, reaction: next });
+    } catch (e) {
+      swap(m.reaction ?? null);
+      fail((e as Error).message);
+    }
+  }
   async function copy(m: Message) {
     try {
       await navigator.clipboard.writeText(m.content);
@@ -349,121 +395,120 @@ export function Chat({
               if (!next) setConfirmDelete(false);
             }}
           >
-          <PopoverTrigger asChild>
-          <button
-            className="bot-pill"
-            aria-label={`${title} details`}
-          >
-            {group ? (
-              <GroupAvatar names={faces} size={24} />
-            ) : (
-              <Avatar name={bot.name} main={main} size={24} />
-            )}
-            {title}
-          </button>
-          </PopoverTrigger>
-          {group && (
-            <PopoverContent
-              side="bottom"
-              align="center"
-              className="floating-panel bot-details"
-            >
-              <div className="bot-details-head">
-                <GroupAvatar names={faces} size={40} />
-                <div>
-                  <strong>{group.name}</strong>
-                  <small>
-                    {members.length + 1} bots · {bot.name} coordinates
-                  </small>
-                </div>
-              </div>
-              <div className="group-members">
-                {[bot, ...members].map((b) => (
-                  <div key={b.id} className="group-member">
-                    <Avatar name={b.name} main={b.id === bot.id} size={26} />
-                    <span className="bot-text">
-                      <strong>{b.name}</strong>
-                      <small>{b.id === bot.id ? "Coordinator" : b.role}</small>
-                    </span>
+            <PopoverTrigger asChild>
+              <button className="bot-pill" aria-label={`${title} details`}>
+                {group ? (
+                  <GroupAvatar names={faces} size={24} />
+                ) : (
+                  <Avatar name={bot.name} main={main} size={24} />
+                )}
+                {title}
+              </button>
+            </PopoverTrigger>
+            {group && (
+              <PopoverContent
+                side="bottom"
+                align="center"
+                className="floating-panel bot-details"
+              >
+                <div className="bot-details-head">
+                  <GroupAvatar names={faces} size={40} />
+                  <div>
+                    <strong>{group.name}</strong>
+                    <small>
+                      {members.length + 1} bots · {bot.name} coordinates
+                    </small>
                   </div>
-                ))}
-              </div>
-              <button
-                onClick={() => {
-                  closeDetails();
-                  onEditGroup?.();
-                }}
-              >
-                <Pencil size={15} />
-                <span>Edit members</span>
-              </button>
-              <button
-                className={confirmDelete ? "danger" : ""}
-                disabled={!!running}
-                onClick={() =>
-                  confirmDelete ? onDeleteGroup?.() : setConfirmDelete(true)
-                }
-              >
-                <Trash2 size={15} />
-                <span>
-                  {confirmDelete ? "Delete for good?" : "Delete group chat"}
-                </span>
-              </button>
-              <p>
-                Members see the recent group conversation when {bot.name} asks
-                them, and each uses its own permissions.
-              </p>
-            </PopoverContent>
-          )}
-          {!group && (
-            <PopoverContent
-              side="bottom"
-              align="center"
-              className="floating-panel bot-details"
-            >
-              <div className="bot-details-head">
-                <Avatar name={bot.name} main={main} size={40} />
-                <div>
-                  <strong>{bot.name}</strong>
-                  <small>{bot.role}</small>
                 </div>
-              </div>
-              <button
-                onClick={() => {
-                  setDetails(false);
-                  onSettings("models");
-                }}
+                <div className="group-members">
+                  {[bot, ...members].map((b) => (
+                    <div key={b.id} className="group-member">
+                      <Avatar name={b.name} main={b.id === bot.id} size={26} />
+                      <span className="bot-text">
+                        <strong>{b.name}</strong>
+                        <small>
+                          {b.id === bot.id ? "Coordinator" : b.role}
+                        </small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => {
+                    closeDetails();
+                    onEditGroup?.();
+                  }}
+                >
+                  <Pencil size={15} />
+                  <span>Edit members</span>
+                </button>
+                <button
+                  className={confirmDelete ? "danger" : ""}
+                  disabled={!!running}
+                  onClick={() =>
+                    confirmDelete ? onDeleteGroup?.() : setConfirmDelete(true)
+                  }
+                >
+                  <Trash2 size={15} />
+                  <span>
+                    {confirmDelete ? "Delete for good?" : "Delete group chat"}
+                  </span>
+                </button>
+                <p>
+                  Members see the recent group conversation when {bot.name} asks
+                  them, and each uses its own permissions.
+                </p>
+              </PopoverContent>
+            )}
+            {!group && (
+              <PopoverContent
+                side="bottom"
+                align="center"
+                className="floating-panel bot-details"
               >
-                <Settings size={15} />
-                <span>Model</span>
-                <em>{model?.entry.label ?? "Not set"}</em>
-              </button>
-              <button
-                onClick={() => {
-                  setDetails(false);
-                  setConsent(true);
-                }}
-              >
-                <BookOpen size={15} />
-                <span>Memory</span>
-                <em>{memory ? "On" : "Off"}</em>
-              </button>
-              <button
-                onClick={() => {
-                  setDetails(false);
-                  setExporting(true);
-                }}
-              >
-                <Download size={15} />
-                <span>Export as template</span>
-              </button>
-              <p>
-                {owner
-                  ? destinationNote(owner.descriptor, owner.connection.label)
-                  : "No model is selected yet."}
-              </p>
-            </PopoverContent>
-          )}
+                <div className="bot-details-head">
+                  <Avatar name={bot.name} main={main} size={40} />
+                  <div>
+                    <strong>{bot.name}</strong>
+                    <small>{bot.role}</small>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setDetails(false);
+                    onSettings("models");
+                  }}
+                >
+                  <Settings size={15} />
+                  <span>Model</span>
+                  <em>{model?.entry.label ?? "Not set"}</em>
+                </button>
+                <button
+                  onClick={() => {
+                    setDetails(false);
+                    setConsent(true);
+                  }}
+                >
+                  <BookOpen size={15} />
+                  <span>Memory</span>
+                  <em>{memory ? "On" : "Off"}</em>
+                </button>
+                <button
+                  onClick={() => {
+                    setDetails(false);
+                    setExporting(true);
+                  }}
+                >
+                  <Download size={15} />
+                  <span>Export as template</span>
+                </button>
+                <p>
+                  {owner
+                    ? destinationNote(owner.descriptor, owner.connection.label)
+                    : "No model is selected yet."}
+                </p>
+              </PopoverContent>
+            )}
           </Popover>
         </div>
       </header>
@@ -527,14 +572,64 @@ export function Chat({
               return (
                 <article
                   key={m.id}
-                  className={`message ${m.role} ${last ? "last" : ""}`}
+                  className={`message ${m.role} ${last ? "last" : ""} ${m.reaction ? "reacted" : ""}`}
                 >
                   {group && first && m.role === "assistant" && label(m.botId)}
-                  <div className="bubble">
-                    {m.role === "assistant" ? (
-                      <Markdown text={m.content} />
-                    ) : (
-                      <div className="plain">{m.content}</div>
+                  <div className="bubble-row">
+                    <div className="bubble">
+                      {m.role === "assistant" ? (
+                        <Markdown text={m.content} />
+                      ) : (
+                        <div className="plain">{m.content}</div>
+                      )}
+                      {m.reaction && (
+                        <button
+                          key={m.reaction}
+                          className="reaction-badge"
+                          aria-label={`You reacted ${m.reaction}. Change reaction`}
+                          onClick={() => setReacting(m.id)}
+                        >
+                          {m.reaction}
+                        </button>
+                      )}
+                    </div>
+                    {m.role === "assistant" && (
+                      <div className="reactions">
+                        <button
+                          className="icon ghost tiny react-trigger"
+                          aria-label="React"
+                          aria-expanded={reacting === m.id}
+                          title="React"
+                          onClick={() =>
+                            setReacting((r) => (r === m.id ? "" : m.id))
+                          }
+                        >
+                          <SmilePlus size={15} />
+                        </button>
+                        {reacting === m.id && (
+                          <div
+                            className="reaction-picker"
+                            role="menu"
+                            aria-label="Reactions"
+                          >
+                            {(Object.keys(REACTIONS) as Reaction[]).map(
+                              (r, n) => (
+                                <button
+                                  key={r}
+                                  role="menuitemradio"
+                                  aria-checked={m.reaction === r}
+                                  aria-label={`React ${r}: ${REACTIONS[r]}`}
+                                  className={m.reaction === r ? "chosen" : ""}
+                                  style={{ animationDelay: `${n * 22}ms` }}
+                                  onClick={() => void react(m, r)}
+                                >
+                                  {r}
+                                </button>
+                              ),
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="message-actions">

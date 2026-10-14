@@ -233,6 +233,26 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(page.getByText("Planner here. 1. Research")).toBeVisible();
   await expect(page.getByText("Thanks, Planner.")).toBeVisible();
   await expect(page.locator(".speaker")).toHaveText(["Planner", "Socius"]);
+  // Reacting to a bot's reply sticks, and can be changed from the badge.
+  const plannerReply = page
+    .locator(".message")
+    .filter({ hasText: "Planner here. 1. Research" });
+  await plannerReply.hover();
+  await plannerReply.getByRole("button", { name: "React" }).click();
+  await page.getByRole("menuitemradio", { name: /React ❤️/ }).click();
+  await expect(page.getByRole("menu", { name: "Reactions" })).toHaveCount(0);
+  await expect(
+    plannerReply.getByRole("button", { name: /You reacted ❤️/ }),
+  ).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole("button", { name: /Launch crew Socius, Planner/ })
+    .click();
+  await plannerReply.getByRole("button", { name: /You reacted ❤️/ }).click();
+  await page.getByRole("menuitemradio", { name: /React 👍/ }).click();
+  await expect(
+    plannerReply.getByRole("button", { name: /You reacted 👍/ }),
+  ).toBeVisible();
   await page.screenshot({
     path: "test-results/socius-group-chat-light.png",
     animations: "disabled",

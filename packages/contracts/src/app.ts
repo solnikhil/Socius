@@ -26,7 +26,19 @@ export interface Message {
   taskId: string;
   /** Set on group chat messages. Direct chats never include them. */
   groupId?: string;
+  /** The user's reaction to a bot's reply. The bot reads it as feedback. */
+  reaction?: Reaction;
 }
+/** Reactions the user can leave on a bot's reply, with what each tells the bot. */
+export const REACTIONS = {
+  "👍": "liked it",
+  "❤️": "loved it",
+  "😂": "found it funny",
+  "😮": "was surprised by it",
+  "🤔": "was unsure or unconvinced",
+  "👎": "did not like it",
+} as const;
+export type Reaction = keyof typeof REACTIONS;
 /** A shared thread where the main bot coordinates the member bots. */
 export interface GroupChat {
   id: string;
