@@ -13,6 +13,16 @@ Use Node.js 24, `npm ci`, then `npm run desktop`. The user owns UI/refinement. T
 
 Issues [#2 specification](issues/teams-boards.md) and [#3 specification](issues/skills-connectors-marketplace.md) contain the full winning workflows, PR sequence and closure criteria. Agents can read the public repository/issues without Notion access. Do not guess GitHub assignees or dates.
 
+## Dreaming workstream — ready for assignment
+
+[Issue #8](https://github.com/solnikhil/Socius/issues/8) covers the complete feature and acceptance contract. **Owner: unassigned; the user will assign it.** The [handwritten spec](specs/dreaming.md) is integrated on main. Dreaming itself is not delivered on main.
+
+Partial implementation is preserved on `codex/dreaming-foundation` in [draft PR #9](https://github.com/solnikhil/Socius/pull/9). Its [inventory and review priorities](https://github.com/solnikhil/Socius/blob/codex/dreaming-foundation/docs/issues/dreaming-handoff.md) identify the exact files and remaining work. Continue from that branch after reviewing it against the issue; do not merge the draft as a finished feature.
+
+Draft regression evidence: typecheck, all 114 existing tests, catalog check, build and both existing workspace browser flows passed. Dedicated dreaming/scheduler/crash tests and live quality evaluation remain outstanding. The Electron launch test failed before these changes with `Process failed to launch` / `kill EPERM`, so current packaged/desktop verification remains open.
+
+The assignee owns the background service, policy/recovery, tests and focused settings integration, coordinating shared DTO/runtime hooks with other workstreams and visual decisions with the user. Complete correction/deletion protection, bounded scheduling, retention, useful source inspection and dedicated-model consent before acceptance. Keep group/shared memory, semantic search, cloud wakeups and general routine scheduling separate. Notion has the issue, spec and checklist; keep feature boxes unchecked until verified integration.
+
 ## Completed and integrated
 
 - Runnable Electron desktop shell and separate local runtime.
