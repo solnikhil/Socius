@@ -14,7 +14,7 @@ import {
 import type { Invoke, TeamEngine } from "@socius/teams/engine";
 import type { Store } from "./store.js";
 import type { TeamStore } from "./team-store.js";
-import type { ModelRunner } from "./model.js";
+import type { ModelRequest, ModelRunner } from "./model.js";
 import { body, fail, json } from "./http.js";
 
 const uuid = z.string().uuid();
@@ -27,7 +27,11 @@ const uuid = z.string().uuid();
 export function createInvoke(deps: {
   store: Store;
   runner: ModelRunner;
-  apiKey: () => Promise<string | undefined>;
+  resolveModel: (
+    botId: string,
+  ) => Promise<
+    Pick<ModelRequest, "model" | "modelRef" | "tools"> & { release: () => void }
+  >;
   skills: () => string[];
   proposeMemory: (
     botId: string,
@@ -44,40 +48,46 @@ export function createInvoke(deps: {
       if (!current().grantedCapabilities.includes(capability))
         fail(403, "Memory access is not granted to this bot");
     };
-    return deps.runner(
-      {
-        settings: deps.store.settings(),
-        apiKey: await deps.apiKey(),
-        bot: current(),
-        messages: [{ role: "user", content: inv.prompt }],
-        skills: deps.skills(),
-        team: {
-          phase: inv.phase,
-          boardId: inv.board.id,
-          runId: inv.run.id,
-          taskId: inv.task?.id ?? null,
+    const selected = await deps.resolveModel(inv.bot.id);
+    try {
+      return await deps.runner(
+        {
+          model: selected.model,
+          modelRef: selected.modelRef,
+          tools: selected.tools,
+          bot: current(),
+          messages: [{ role: "user", content: inv.prompt }],
+          skills: deps.skills(),
+          team: {
+            phase: inv.phase,
+            boardId: inv.board.id,
+            runId: inv.run.id,
+            taskId: inv.task?.id ?? null,
+          },
+          briefing: inv.briefing,
+          limits: inv.limits,
+          onUsage: inv.onUsage,
+          signal: inv.signal,
+          ...(inv.proposePlan ? { proposePlan: inv.proposePlan } : {}),
+          searchMemory: (query) => {
+            allowed("memory.read");
+            return deps.store.searchMemory(inv.bot.id, query);
+          },
+          proposeMemory: (content) => {
+            allowed("memory.write");
+            return deps.proposeMemory(
+              inv.bot.id,
+              inv.task?.id ?? inv.run.id,
+              inv.run.id,
+              content,
+            );
+          },
         },
-        briefing: inv.briefing,
-        limits: inv.limits,
-        onUsage: inv.onUsage,
-        signal: inv.signal,
-        ...(inv.proposePlan ? { proposePlan: inv.proposePlan } : {}),
-        searchMemory: (query) => {
-          allowed("memory.read");
-          return deps.store.searchMemory(inv.bot.id, query);
-        },
-        proposeMemory: (content) => {
-          allowed("memory.write");
-          return deps.proposeMemory(
-            inv.bot.id,
-            inv.task?.id ?? inv.run.id,
-            inv.run.id,
-            content,
-          );
-        },
-      },
-      () => {},
-    );
+        () => {},
+      );
+    } finally {
+      selected.release();
+    }
   };
 }
 
@@ -88,6 +98,7 @@ export async function handleBoards(ctx: {
   store: Store;
   teams: TeamStore;
   engine: TeamEngine;
+  checkModel: (botId: string) => Promise<unknown>;
 }): Promise<boolean> {
   const { req, res, url, store, teams, engine } = ctx;
   const path = url.pathname,
@@ -236,7 +247,7 @@ export async function handleBoards(ctx: {
     const input = RunRequestSchema.extend({ boardId: uuid }).parse(
       await body(req),
     );
-    if (!store.settings().model) fail(409, "Choose a model in Settings first");
+    await ctx.checkModel(board(input.boardId).coordinatorId);
     json(res, 202, engine.start(board(input.boardId).id, input.content));
     return true;
   }
@@ -248,13 +259,15 @@ export async function handleBoards(ctx: {
   }
   if (method === "POST" && path === "/api/boards/runs/approve") {
     const input = z.strictObject({ id: uuid }).parse(await body(req));
-    if (!store.settings().model) fail(409, "Choose a model in Settings first");
+    const run = teams.run(input.id) ?? fail(404, "Run not found");
+    await ctx.checkModel(board(run.boardId).coordinatorId);
     json(res, 202, engine.approve(input.id));
     return true;
   }
   if (method === "POST" && path === "/api/boards/runs/retry") {
     const input = z.strictObject({ id: uuid }).parse(await body(req));
-    if (!store.settings().model) fail(409, "Choose a model in Settings first");
+    const run = teams.run(input.id) ?? fail(404, "Run not found");
+    await ctx.checkModel(board(run.boardId).coordinatorId);
     json(res, 202, engine.retry(input.id));
     return true;
   }

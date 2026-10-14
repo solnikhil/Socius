@@ -98,10 +98,10 @@ test("a four-member research board plans, delegates and returns one reviewed bri
     await expect(
       page.getByRole("heading", { name: "What shall we work on?" }),
     ).toBeVisible();
-    await api(page, "settings", {
-      provider: "ollama",
-      model: "fixture-model",
-      baseURL: "http://127.0.0.1:11434/v1",
+    const connection = await api(page, "providers", { provider: "ollama" });
+    await api(page, "models", {
+      connectionId: connection.id,
+      modelId: "fixture-model",
     });
     for (const [name, role] of [
       ["Researcher", "Finds evidence in sources"],

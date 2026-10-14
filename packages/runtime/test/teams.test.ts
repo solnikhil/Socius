@@ -100,11 +100,10 @@ async function setup(script: Script, dir?: string) {
     });
     return { status: response.status, body: (await response.json()) as T };
   }
-  await call("settings", {
-    provider: "ollama",
-    model: "test-model",
-    baseURL: "http://127.0.0.1:11434/v1",
-  });
+  const connection = (
+    await call<{ id: string }>("providers", { provider: "ollama" })
+  ).body;
+  await call("models", { connectionId: connection.id, modelId: "test-model" });
   const main = (await call<Snapshot>("state")).body.bots[0]!;
   const bot = async (name: string, role = name) =>
     (

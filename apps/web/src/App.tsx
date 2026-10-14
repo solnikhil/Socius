@@ -30,8 +30,9 @@ import { Chat } from "./views/Chat.js";
 import { NewChat } from "./views/NewChat.js";
 import { ConnectApps } from "./views/ConnectApps.js";
 import { MemoryView } from "./views/MemoryView.js";
+import { SettingsDialog } from "./views/settings/SettingsDialog.js";
+import type { OpenSettings, SettingsTab } from "./models.js";
 import { ActivityView } from "./views/ActivityView.js";
-import { SettingsView } from "./views/SettingsView.js";
 import { CreateBot } from "./views/CreateBot.js";
 import { CreateGroup } from "./views/CreateGroup.js";
 import { BoardView, type BoardTab } from "./views/BoardView.js";
@@ -51,7 +52,7 @@ function readFolded(): Set<string> {
   }
 }
 
-type Page = "chat" | "new" | "memory" | "activity" | "settings" | "board";
+type Page = "chat" | "new" | "memory" | "activity" | "board";
 const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
@@ -87,6 +88,10 @@ export function App() {
     [apps, setApps] = useState(false),
     [collapsed, setCollapsed] = useState(false),
     [menu, setMenu] = useState(false),
+    [settings, setSettings] = useState<{
+      tab: SettingsTab;
+      connectionId?: string | undefined;
+    } | null>(null),
     [error, setError] = useState("");
   const [theme, setTheme] = useTheme();
   async function refresh() {
@@ -121,6 +126,20 @@ export function App() {
   }, []);
   useEffect(() => {
     document.documentElement.classList.toggle("mac-desktop", isMacDesktop);
+  }, []);
+  const openSettings: OpenSettings = useCallback(
+    (tab, connectionId) => setSettings({ tab, connectionId }),
+    [],
+  );
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setSettings((s) => s ?? { tab: "general" });
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
   }, []);
   useEffect(() => {
     try {
@@ -477,7 +496,7 @@ export function App() {
                 <button
                   role="menuitem"
                   onClick={() => {
-                    setPage("settings");
+                    setSettings({ tab: "general" });
                     setMenu(false);
                   }}
                 >
@@ -545,7 +564,7 @@ export function App() {
             group={group}
             state={state}
             onRefresh={refresh}
-            onSettings={() => setPage("settings")}
+            onSettings={() => openSettings("general")}
             onEditGroup={() => setGrouping("edit")}
             onDeleteGroup={() =>
               void api("groups", { id: group.id }, "DELETE")
@@ -564,7 +583,7 @@ export function App() {
             main={current.id === main.id}
             state={state}
             onRefresh={refresh}
-            onSettings={() => setPage("settings")}
+            onSettings={openSettings}
           />
         )}
         {page === "new" && (
@@ -593,11 +612,11 @@ export function App() {
             state={state}
             onRefresh={refresh}
             onClose={() => setPage("chat")}
-            onSettings={() => setPage("settings")}
+            onSettings={() => openSettings("models")}
             onCreateBot={(board) => setCreating({ board })}
           />
         )}
-        {(page === "memory" || page === "activity" || page === "settings") && (
+        {(page === "memory" || page === "activity") && (
           <div className="page-frame">
             <header className="page-bar drag">
               <span>{page[0]!.toUpperCase() + page.slice(1)}</span>
@@ -617,19 +636,25 @@ export function App() {
                 onSelect={setSelected}
               />
             )}
-            {page === "settings" && (
-              <SettingsView
-                state={state}
-                onRefresh={refresh}
-                theme={theme}
-                onTheme={setTheme}
-                onOpenActivity={() => setPage("activity")}
-              />
-            )}
             {page === "activity" && <ActivityView events={state.activity} />}
           </div>
         )}
       </main>
+      {settings && (
+        <SettingsDialog
+          state={state}
+          onRefresh={refresh}
+          onClose={() => setSettings(null)}
+          onOpenActivity={() => {
+            setSettings(null);
+            setPage("activity");
+          }}
+          initialTab={settings.tab}
+          initialConnection={settings.connectionId}
+          theme={theme}
+          onTheme={setTheme}
+        />
+      )}
       {apps && (
         <ConnectApps
           state={state}

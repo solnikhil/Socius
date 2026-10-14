@@ -1,3 +1,4 @@
+import { resolvedModel } from "../models.js";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowUp,
@@ -190,7 +191,7 @@ export function BoardView({
             run={run}
             active={active}
             archived={archived}
-            hasModel={!!state.settings.model}
+            hasModel={!!resolvedModel(state, detail.board.coordinatorId)}
             onSettings={onSettings}
             act={act}
           />

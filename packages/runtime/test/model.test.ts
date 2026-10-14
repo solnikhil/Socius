@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { instantiateBot, mainBot } from "@socius/marketplace";
 import { runModel } from "../src/model.js";
+import { languageModel } from "../src/providers/factory.js";
 
 test("real AI SDK adapter streams text and routes a model tool call into a reviewed bot proposal", async () => {
   let calls = 0,
@@ -58,12 +59,13 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
     let streamed = "";
     const text = await runModel(
       {
-        settings: {
-          provider: "compatible",
-          model: "fixture-model",
-          baseURL: `http://127.0.0.1:${address.port}/v1`,
-          hasApiKey: false,
-        },
+        model: languageModel(
+          "openai-compatible",
+          { baseURL: `http://127.0.0.1:${address.port}/v1` },
+          "fixture-model",
+        ),
+        modelRef: { connectionId: "fixture", modelId: "fixture-model" },
+        tools: true,
         bot: instantiateBot(mainBot),
         messages: [{ role: "user", content: "Create a planning bot." }],
         skills: [],
@@ -162,12 +164,13 @@ test("board planning calls expose only the plan tool, honour budgets and report 
     let tokens = 0;
     const text = await runModel(
       {
-        settings: {
-          provider: "compatible",
-          model: "fixture-model",
-          baseURL: `http://127.0.0.1:${address.port}/v1`,
-          hasApiKey: false,
-        },
+        model: languageModel(
+          "openai-compatible",
+          { baseURL: `http://127.0.0.1:${address.port}/v1` },
+          "fixture-model",
+        ),
+        modelRef: { connectionId: "fixture", modelId: "fixture-model" },
+        tools: true,
         bot: instantiateBot(mainBot),
         messages: [{ role: "user", content: "Write a brief." }],
         skills: [],
@@ -209,14 +212,14 @@ test("direct provider adapters use their expected auth boundary and handle HTTP 
       expectedPath: "/v1/messages",
     },
     {
-      provider: "compatible" as const,
+      provider: "openai-compatible" as const,
       baseURL: "http://127.0.0.1:1234/v1",
       authHeader: "authorization",
       authValue: "Bearer synthetic-provider-key",
       expectedPath: "/v1/chat/completions",
     },
     {
-      provider: "compatible" as const,
+      provider: "openai-compatible" as const,
       baseURL: "https://openrouter.ai/api/v1",
       authHeader: "authorization",
       authValue: "Bearer synthetic-provider-key",
@@ -244,13 +247,14 @@ test("direct provider adapters use their expected auth boundary and handle HTTP 
     await assert.rejects(
       runModel(
         {
-          settings: {
-            provider: entry.provider,
-            model: "synthetic-model",
-            baseURL: entry.baseURL,
-            hasApiKey: true,
-          },
-          apiKey: "synthetic-provider-key",
+          model: languageModel(
+            entry.provider,
+            { apiKey: "synthetic-provider-key", baseURL: entry.baseURL },
+            "synthetic-model",
+            fetcher,
+          ),
+          modelRef: { connectionId: "test", modelId: "synthetic-model" },
+          tools: true,
           bot: instantiateBot(mainBot),
           messages: [{ role: "user", content: "Small synthetic request." }],
           skills: [],

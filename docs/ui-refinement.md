@@ -8,8 +8,10 @@ Owner: **You**. These tasks are separate from teammates' backend implementation.
 - [ ] Polish the chat composer, streamed replies, code/Markdown presentation, copy/export and attachment states.
 - [ ] Refine New Chat and custom-bot creation/editing; clarify the main bot versus specialists.
 - [ ] Refine Connect Apps search, skill/connector/bot categories, detail views and install/setup states.
-- [ ] Review Luna's uncommitted OpenRouter hint in SettingsView.tsx; keep or adjust it as your UI change.
-- [ ] Polish model settings, connect/setup errors, waiting states and inline approvals.
+- [x] Settings is a floating dialog (General, Models, Providers, Privacy & data); `SettingsView.tsx` was replaced by `views/settings`. OpenRouter is now a first-class provider, superseding Luna's hint.
+- [x] Multi-provider connections, model discovery/testing, default and per-bot model picker, classified setup errors with a Settings action (branch `model-enhancements`).
+- [ ] Visual review of the Settings dialog and model picker in light/dark; live checks against real provider accounts.
+- [ ] Polish waiting states and inline approvals.
 - [ ] Check keyboard navigation, contrast, focus, responsive behavior and empty/loading/error states.
 
 Use existing endpoints for live behavior. Backend-specific screens can use clearly labelled development fixtures while their APIs are being built; no simulated successes in production.

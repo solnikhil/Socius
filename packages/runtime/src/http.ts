@@ -1,15 +1,23 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { z } from "zod";
+import type { ProviderErrorCode } from "@socius/contracts/providers";
 
 export class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Stable category for provider failures, for the interface to act on. */
+    readonly code?: ProviderErrorCode,
   ) {
     super(message);
   }
 }
-export const fail = (status: number, message: string): never => {
-  throw new HttpError(status, message);
+export const fail = (
+  status: number,
+  message: string,
+  code?: ProviderErrorCode,
+): never => {
+  throw new HttpError(status, message, code);
 };
 export async function body(req: IncomingMessage): Promise<unknown> {
   if (!req.headers["content-type"]?.startsWith("application/json"))
@@ -33,4 +41,18 @@ export function json(res: ServerResponse, status: number, value: unknown) {
     "Cache-Control": "no-store",
   });
   res.end(JSON.stringify(value));
+}
+export function errorResponse(res: ServerResponse, error: unknown) {
+  if (res.headersSent) {
+    res.end();
+    return;
+  }
+  if (error instanceof HttpError)
+    json(res, error.status, {
+      error: error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
+  else if (error instanceof z.ZodError)
+    json(res, 400, { error: "Invalid request fields" });
+  else json(res, 500, { error: "Operation failed" });
 }
