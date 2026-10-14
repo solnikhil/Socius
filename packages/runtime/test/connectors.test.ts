@@ -1,3 +1,4 @@
+import type { BotInstance } from "@socius/contracts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -32,8 +33,17 @@ const box: SecretBox = {
 };
 const PARENT = "11111111-1111-1111-1111-111111111111";
 // Deterministic model: reads with the granted tools, then proposes one page.
+/** Specialist runs seen, to prove a declined ask never reaches the specialist. */
+const delegatedRuns: string[] = [];
 const runner: ModelRunner = async (request, onText) => {
   const text = String(request.messages.at(-1)?.content);
+  if (request.briefing?.includes("asking you directly on the user's behalf"))
+    delegatedRuns.push(request.bot.name);
+  if (text.startsWith("delegate to researcher") && request.askBot) {
+    const out = await request.askBot("Researcher", "Find the planning notes");
+    onText(out);
+    return out;
+  }
   const tool = (name: string) =>
     request.connectorTools?.find((t) => t.name === name);
   const notes: string[] = [
@@ -1381,3 +1391,63 @@ test("phone action approval shares the exact broker, concurrent denial cannot re
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Socius cannot borrow a specialist's connected apps without the user's approval", async () => {
+  const fixture = await startNotionFixture();
+  const dir = await mkdtemp(join(tmpdir(), "socius-deputy-"));
+  const r = await boot(dir, fixture);
+  try {
+    await install(r, "socius/notion", "0.2.0");
+    await connect(r);
+    await setModel(r);
+    const researcher = await r.ok<BotInstance>("bots", {
+      name: "Researcher",
+      role: "Research",
+      instructions: "Research.",
+    });
+    await grant(r, researcher.id, "documents.read");
+    const main = (await r.state()).bots.find(
+      (b) => b.template.id === "socius/main",
+    )!;
+    delegatedRuns.length = 0;
+
+    // Declining: the specialist never runs, and Socius learns why.
+    let chatting = startChat(r, main.id, "delegate to researcher");
+    let ask = await pendingApproval(r, "ask");
+    assert.match(ask.content, /Let Researcher use Notion to answer Socius/);
+    assert.deepEqual(delegatedRuns, []);
+    await r.ok("approvals", {
+      id: ask.id,
+      digest: ask.digest,
+      approve: false,
+      feedback: "Not my Notion",
+    });
+    let events = await chatting;
+    assert.match(events, /did not let Researcher use its apps/);
+    assert.match(events, /Not my Notion/);
+    assert.deepEqual(delegatedRuns, []);
+
+    // Approving: the exact request then runs with the specialist's own access.
+    chatting = startChat(r, main.id, "delegate to researcher");
+    ask = await pendingApproval(r, "ask");
+    await r.ok("approvals", { id: ask.id, digest: ask.digest, approve: true });
+    events = await chatting;
+    assert.match(events, /"type":"done"/);
+    assert.deepEqual(delegatedRuns, ["Researcher"]);
+  } finally {
+    await r.close();
+    await fixture.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+async function pendingApproval(r: Runtime, kind: string) {
+  for (let i = 0; i < 200; i++) {
+    const a = (await r.state()).approvals.find(
+      (x) => x.kind === kind && x.state === "pending",
+    );
+    if (a) return a;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`No pending ${kind} approval`);
+}

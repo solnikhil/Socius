@@ -155,15 +155,41 @@ const runtime = await startRuntime({
       onText(text);
       return text;
     }
-    if (content.toLowerCase().includes("create"))
-      request.proposeBot?.({
-        name: "Planner",
-        role: "Planning specialist",
-        instructions: "Make grounded plans from supplied context.",
-      });
-    const text = content.toLowerCase().includes("create")
-      ? "I proposed a Planner bot. Review it below."
-      : "Here is the summary of your supplied document: the team is building Socius.";
+    // Socius orchestrates: "ask <bot>" consults a specialist directly.
+    const asking = /^ask (\w+)/i.exec(content);
+    if (asking && request.askBot) {
+      onText("On it, checking with them.");
+      await request.askBot(asking[1]!, "Outline the three launch steps.");
+      const text = `On it, checking with them.\n\nFrom ${asking[1]}: start with research, then draft, then schedule.`;
+      onText(text);
+      return text;
+    }
+    // "make a group with <bot>" proposes a group chat and waits for review.
+    const grouping = /^make a group with (\w+)/i.exec(content);
+    if (grouping && request.orchestrate) {
+      const outcome = (await request.orchestrate.createGroup({
+        name: "Launch team",
+        members: [grouping[1]!],
+      })) as { status?: string };
+      const text =
+        outcome.status === "done"
+          ? "Done, Launch team is set up."
+          : "Okay, I left it.";
+      onText(text);
+      return text;
+    }
+    const outcome = content.toLowerCase().includes("create")
+      ? ((await request.proposeBot?.({
+          name: "Planner",
+          role: "Planning specialist",
+          instructions: "Make grounded plans from supplied context.",
+        })) as { status?: string } | undefined)
+      : undefined;
+    const text = !content.toLowerCase().includes("create")
+      ? "Here is the summary of your supplied document: the team is building Socius."
+      : outcome?.status === "done"
+        ? "Planner is ready."
+        : "Okay, no new bot.";
     onText(text);
     return text;
   },
