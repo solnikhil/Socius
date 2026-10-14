@@ -1,3 +1,4 @@
+import { googleCalendar } from "./google-calendar.js";
 import { gmail } from "./gmail.js";
 import { github } from "./github.js";
 import { linear } from "./linear.js";
@@ -244,6 +245,7 @@ export const reviewedConnectors: ReviewedConnector[] = [
   linear,
   github,
   gmail,
+  googleCalendar,
 ];
 export const reviewedConnector = (id: string) =>
   reviewedConnectors.find((c) => c.id === id);

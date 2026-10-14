@@ -1,0 +1,11 @@
+# Google Calendar connector
+
+Draft implementation, stacked after Gmail. Lists events in a bounded time window and proposes a new timed event after exact approval. Editing/deleting, recurring/all-day events, attendees, invitations, meeting links and reminder overrides are outside this release.
+
+Use the Google Workspace MCP Developer Preview, enable Calendar and Calendar MCP APIs, and register a Web OAuth client marked as an AI agent. Add redirect `http://127.0.0.1:37377/oauth/callback`; set `SOCIUS_CALENDAR_CLIENT_ID` / `SOCIUS_CALENDAR_CLIENT_SECRET` on the runtime host. Never distribute a shared secret in desktop bundles. Consent requests calendar.events with offline access; this scope permits both reading and changes, while Socius's separate calendar.read/calendar.write bot grants restrict actual tool use. Gmail and Drive permissions cannot authorize Calendar.
+
+The fixed endpoint is `https://calendarmcp.googleapis.com/mcp/v1`; only list_events and create_event are reviewed. Inputs require explicit UTC/offset timestamps and are normalized to UTC before approval. The write sends timeZone=UTC, notificationLevel=NONE and no attendees. Users see the exact calendar ID (default primary), title, content and UTC instants before approving. Shared calendars may expose events to existing readers; no private-visibility guarantee is implied. Reads span at most a year with at most 50 results; writes span at most seven days. Unknown outcomes need manual inspection before another proposal; no automatic replay.
+
+Tests verify schema/manifest parity, DST fall-back instants, missing offsets, invalid ranges and rejection of invitations/recurrence. Inherited tests cover registered-client OAuth/refresh and broker authorization. Before merge: verify eligible preview account, live tool schemas, timezone rendering in Calendar, denial and approved create on a disposable calendar, shared-calendar policy, restart/refresh, provider revocation and Electron secure storage. No live acceptance is claimed.
+
+Sources: [Google MCP setup](https://developers.google.com/workspace/guides/configure-mcp-servers), [create event](https://developers.google.com/workspace/calendar/api/v3/reference/mcp/tools_list/create_event), [list events](https://developers.google.com/workspace/calendar/api/v3/reference/mcp/tools_list/list_events).
