@@ -48,7 +48,7 @@ function readFolded(): Set<string> {
   }
 }
 
-type Page = "chat" | "new" | "memory" | "activity";
+type Page = "chat" | "new" | "activity";
 const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
@@ -75,6 +75,7 @@ export function App() {
       tab: SettingsTab;
       connectionId?: string | undefined;
     } | null>(null),
+    [memoryBot, setMemoryBot] = useState<string | null>(null),
     [error, setError] = useState("");
   const [theme, setTheme] = useTheme();
   async function refresh() {
@@ -197,7 +198,7 @@ export function App() {
         setBotMenu({ id: b.id, x: e.clientX, y: e.clientY });
       }}
     >
-      <Avatar name={b.name} size={nested ? 30 : 42} />
+      <Avatar name={b.name} size={nested ? 30 : 34} />
       <span className="bot-text">
         <strong>{b.name}</strong>
         <small>{running(b) ? "Working…" : role}</small>
@@ -307,7 +308,7 @@ export function App() {
                     className={`bot-row ${page === "chat" && group?.id === g.id ? "active" : ""}`}
                     onClick={() => openGroup(g)}
                   >
-                    <GroupAvatar names={faces(g)} size={42} />
+                    <GroupAvatar names={faces(g)} size={34} />
                     <span className="bot-text">
                       <strong>{g.name}</strong>
                       <small>
@@ -358,12 +359,6 @@ export function App() {
             >
               Activity
             </button>
-            <button
-              className={`group-link ${page === "memory" ? "active" : ""}`}
-              onClick={() => setPage("memory")}
-            >
-              Memory
-            </button>
           </section>
         </div>
         <div className="sidebar-bottom">
@@ -391,7 +386,7 @@ export function App() {
                 <button
                   role="menuitem"
                   onClick={() => {
-                    setPage("memory");
+                    setMemoryBot(current.id);
                     setMenu(false);
                   }}
                 >
@@ -489,10 +484,10 @@ export function App() {
             }}
           />
         )}
-        {(page === "memory" || page === "activity") && (
+        {page === "activity" && (
           <div className="page-frame">
             <header className="page-bar drag">
-              <span>{page[0]!.toUpperCase() + page.slice(1)}</span>
+              <span>Activity</span>
               <button
                 className="icon ghost"
                 aria-label="Close"
@@ -501,18 +496,18 @@ export function App() {
                 <X size={17} />
               </button>
             </header>
-            {page === "memory" && (
-              <MemoryView
-                key={current.id}
-                bot={current}
-                bots={state.bots}
-                onSelect={setSelected}
-              />
-            )}
-            {page === "activity" && <ActivityView events={state.activity} />}
+            <ActivityView events={state.activity} />
           </div>
         )}
       </main>
+      {memoryBot && (
+        <MemoryView
+          botId={memoryBot}
+          bots={state.bots}
+          onSelect={setMemoryBot}
+          onClose={() => setMemoryBot(null)}
+        />
+      )}
       {settings && (
         <SettingsDialog
           state={state}
@@ -556,8 +551,7 @@ export function App() {
             setBotMenu(null);
           }}
           onMemory={() => {
-            setSelected(menuBot.id);
-            setPage("memory");
+            setMemoryBot(menuBot.id);
             setBotMenu(null);
           }}
           onRefresh={refresh}

@@ -1,147 +1,134 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { BookOpen, MoreHorizontal, Plus, Search, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { BookOpen, Plus, Search, Trash2, X } from "lucide-react";
 import type { BotInstance } from "@socius/contracts";
 import type { Memory } from "@socius/contracts/app";
 import { api } from "../api.js";
-import { Modal, ErrorNote } from "../components/ui.js";
+import {
+  Avatar,
+  closeOnBackdrop,
+  ErrorNote,
+  MAIN_BOT_TEMPLATE,
+} from "../components/ui.js";
 
+/** Memory floats over the workspace, the same way Settings does. */
 export function MemoryView({
-  bot,
+  botId,
   bots,
   onSelect,
+  onClose,
 }: {
-  bot: BotInstance;
+  botId: string;
   bots: BotInstance[];
   onSelect: (id: string) => void;
+  onClose: () => void;
 }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const bot = bots.find((b) => b.id === botId) ?? bots[0];
   const [records, setRecords] = useState<Memory[]>([]),
     [query, setQuery] = useState(""),
     [editing, setEditing] = useState<Memory | "new" | null>(null),
     [content, setContent] = useState(""),
     [error, setError] = useState("");
-  async function load() {
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  async function load(id: string, q: string) {
     try {
       setRecords(
-        await api<Memory[]>(
-          `memory?botId=${bot.id}&q=${encodeURIComponent(query)}`,
-        ),
+        await api<Memory[]>(`memory?botId=${id}&q=${encodeURIComponent(q)}`),
       );
+      setError("");
     } catch (e) {
       setError((e as Error).message);
     }
   }
   useEffect(() => {
-    void load();
-  }, [bot.id, query]);
+    if (!bot) return;
+    void load(bot.id, query);
+  }, [bot?.id, query]);
+  function openEditor(next: Memory | "new", value = "") {
+    setEditing(next);
+    setContent(value);
+    setError("");
+  }
+  function closeEditor() {
+    setEditing(null);
+    setError("");
+  }
   async function save(e: FormEvent) {
     e.preventDefault();
+    if (!bot) return;
     try {
       await api("memory", {
         botId: bot.id,
         content,
         ...(editing !== "new" && editing ? { id: editing.id } : {}),
       });
-      setEditing(null);
-      await load();
-    } catch (e) {
-      setError((e as Error).message);
+      closeEditor();
+      await load(bot.id, query);
+    } catch (err) {
+      setError((err as Error).message);
     }
   }
+  if (!bot) return null;
   return (
-    <section className="page">
-      <div className="section-head">
-        <div>
-          <span className="eyebrow">A LITTLE CONTEXT GOES A LONG WAY</span>
-          <h1>Memory you can make sense of.</h1>
-          <p className="subtitle">
-            Private to each bot. Read it, correct it, or forget it.
-          </p>
+    <dialog
+      ref={ref}
+      className="settings-dialog memory-dialog"
+      aria-labelledby="memory-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        if (editing) closeEditor();
+        else onClose();
+      }}
+      onClick={(e) => closeOnBackdrop(e, onClose)}
+    >
+      <nav className="settings-nav" aria-label="Memory bots">
+        <h2 id="memory-title">Memory</h2>
+        <div role="tablist" aria-orientation="vertical">
+          {bots.map((b) => (
+            <button
+              key={b.id}
+              role="tab"
+              id={`memory-tab-${b.id}`}
+              aria-selected={bot.id === b.id}
+              aria-controls="memory-panel"
+              className={bot.id === b.id ? "selected" : ""}
+              onClick={() => {
+                closeEditor();
+                setQuery("");
+                onSelect(b.id);
+              }}
+            >
+              <Avatar
+                name={b.name}
+                main={b.template.id === MAIN_BOT_TEMPLATE}
+                size={18}
+              />
+              <span>{b.name}</span>
+            </button>
+          ))}
         </div>
+      </nav>
+      <section
+        className="settings-pane"
+        id="memory-panel"
+        role="tabpanel"
+        aria-labelledby={`memory-tab-${bot.id}`}
+      >
         <button
-          className="primary"
-          onClick={() => {
-            setEditing("new");
-            setContent("");
-          }}
+          className="icon ghost dialog-close"
+          aria-label="Close memory"
+          onClick={onClose}
         >
-          <Plus size={16} />
-          Add memory
+          <X size={18} />
         </button>
-      </div>
-      <div className="market-toolbar">
-        <label className="scope">
-          Bot
-          <select
-            aria-label="Memory bot"
-            value={bot.id}
-            onChange={(e) => onSelect(e.target.value)}
-          >
-            {bots.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="search">
-          <Search size={17} />
-          <input
-            aria-label="Search memory"
-            placeholder="Search memories…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
-      </div>
-      <ErrorNote error={error} />
-      <div className="memory-list">
-        {records.map((m) => (
-          <article key={m.id} className="memory-card">
-            <BookOpen size={18} />
-            <div>
-              <p>{m.content}</p>
-              <small>
-                {m.source} · {new Date(m.updatedAt).toLocaleDateString()}
-              </small>
-            </div>
-            <button
-              className="text-button"
-              onClick={() => {
-                setEditing(m);
-                setContent(m.content);
-              }}
-            >
-              Edit
-            </button>
-            <button
-              className="icon"
-              aria-label="Delete memory"
-              onClick={() => {
-                setEditing(m);
-                setContent(m.content);
-              }}
-            >
-              <MoreHorizontal size={18} />
-            </button>
-          </article>
-        ))}
-      </div>
-      {records.length === 0 && (
-        <div className="empty">
-          <BookOpen size={32} />
-          <h2>{query ? "No matching memories" : "A fresh start"}</h2>
-          <p>
-            Add a preference or useful context for {bot.name}.<br />
-            The bot can also propose memories for your approval.
-          </p>
-        </div>
-      )}
-      {editing && (
-        <Modal
-          title={editing === "new" ? "Add memory" : "Edit memory"}
-          onClose={() => setEditing(null)}
-        >
-          <form className="form" onSubmit={save}>
+        {editing ? (
+          <form className="form memory-editor" onSubmit={save}>
+            <header className="pane-head">
+              <h3>{editing === "new" ? "Add memory" : "Edit memory"}</h3>
+              <p>Private to {bot.name}. Saved only for this bot.</p>
+            </header>
             <label>
               What should {bot.name} remember?
               <textarea
@@ -166,21 +153,77 @@ export function MemoryView({
                       "DELETE",
                     )
                       .then(() => {
-                        setEditing(null);
-                        void load();
+                        closeEditor();
+                        void load(bot.id, query);
                       })
-                      .catch((e) => setError(e.message))
+                      .catch((err) => setError((err as Error).message))
                   }
                 >
                   <Trash2 size={15} />
                   Delete memory
                 </button>
               )}
+              <button type="button" onClick={closeEditor}>
+                Cancel
+              </button>
               <button className="primary">Save memory</button>
             </div>
           </form>
-        </Modal>
-      )}
-    </section>
+        ) : (
+          <>
+            <header className="pane-head">
+              <h3>{bot.name}</h3>
+              <p>Private to this bot. Read it, correct it, or forget it.</p>
+            </header>
+            <div className="market-toolbar">
+              <label className="search">
+                <Search size={17} />
+                <input
+                  aria-label="Search memory"
+                  placeholder="Search memories…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+              <button className="primary" onClick={() => openEditor("new")}>
+                <Plus size={16} />
+                Add memory
+              </button>
+            </div>
+            <ErrorNote error={error} />
+            <div className="memory-list">
+              {records.map((m) => (
+                <article key={m.id} className="memory-card">
+                  <BookOpen size={18} />
+                  <div>
+                    <p>{m.content}</p>
+                    <small>
+                      {m.source} · {new Date(m.updatedAt).toLocaleDateString()}
+                    </small>
+                  </div>
+                  <button
+                    className="text-button"
+                    onClick={() => openEditor(m, m.content)}
+                  >
+                    Edit
+                  </button>
+                </article>
+              ))}
+            </div>
+            {records.length === 0 && (
+              <div className="empty">
+                <BookOpen size={32} />
+                <h2>{query ? "No matching memories" : "A fresh start"}</h2>
+                <p>
+                  Add a preference or useful context for {bot.name}.
+                  <br />
+                  The bot can also propose memories for your approval.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+    </dialog>
   );
 }

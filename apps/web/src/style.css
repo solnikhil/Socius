@@ -453,20 +453,20 @@ button.icon.ghost.sidebar-reveal:hover {
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-3);
-  margin: 22px 12px 8px;
+  margin: 14px 12px 4px;
 }
 .bot-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 42px 1fr auto;
-  gap: 12px;
+  grid-template-columns: 34px 1fr auto;
+  gap: 10px;
   align-items: center;
   text-align: left;
-  padding: 8px 10px;
+  padding: 4px 8px;
   border: none;
-  border-radius: 12px;
+  border-radius: 10px;
   background: transparent;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 .bot-row:hover {
   background: var(--surface);
@@ -478,17 +478,19 @@ button.icon.ghost.sidebar-reveal:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 .bot-text strong {
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 500;
+  line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .bot-text small {
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.25;
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
@@ -1805,7 +1807,7 @@ button.member-row:hover {
 }
 .memory-card {
   display: grid;
-  grid-template-columns: 20px 1fr auto auto;
+  grid-template-columns: 20px 1fr auto;
   gap: 12px;
   align-items: start;
   padding: 14px 14px 14px 16px;
@@ -2022,6 +2024,25 @@ button.member-row:hover {
   float: right;
   top: 0;
   margin: -12px -18px 0 0;
+}
+.memory-dialog .settings-nav {
+  min-height: 0;
+}
+.memory-dialog .settings-nav [role="tablist"] {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.memory-dialog .settings-nav [role="tab"] {
+  min-width: 0;
+}
+.memory-dialog .settings-nav [role="tab"] span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.memory-editor {
+  max-width: 640px;
 }
 .pane-head {
   margin-bottom: 22px;

@@ -140,34 +140,49 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.emulateMedia({ colorScheme: "light" });
   await page.getByRole("button", { name: "Socius", exact: true }).click();
-  await page.getByRole("button", { name: "Memory", exact: true }).click();
-  await page.getByRole("button", { name: "Add memory" }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("textbox")
+  const sidebar = page.getByRole("complementary", { name: "Bots" });
+  await expect(
+    sidebar.getByRole("button", { name: "Memory", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Account and settings" }).click();
+  await page.getByRole("menuitem", { name: "Memory" }).click();
+  const memory = page.getByRole("dialog", { name: "Memory" });
+  await expect(memory).toBeVisible();
+  await expect(sidebar).toBeAttached();
+  await memory.getByRole("button", { name: "Add memory" }).click();
+  await memory
+    .getByRole("textbox", { name: "What should Socius remember?" })
     .fill("I prefer concise summaries.");
-  await page.getByRole("button", { name: "Save memory", exact: true }).click();
+  await memory
+    .getByRole("button", { name: "Save memory", exact: true })
+    .click();
   await expect(
-    page.getByText("I prefer concise summaries.", { exact: true }),
+    memory.getByText("I prefer concise summaries.", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("textbox")
+  await memory.getByRole("button", { name: "Edit", exact: true }).click();
+  await memory
+    .getByRole("textbox", { name: "What should Socius remember?" })
     .fill("I prefer detailed summaries.");
-  await page.getByRole("button", { name: "Save memory", exact: true }).click();
+  await memory
+    .getByRole("button", { name: "Save memory", exact: true })
+    .click();
   await expect(
-    page.getByText("I prefer detailed summaries.", { exact: true }),
+    memory.getByText("I prefer detailed summaries.", { exact: true }),
   ).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Memory", exact: true }).click();
+  await page.getByRole("button", { name: "Account and settings" }).click();
+  await page.getByRole("menuitem", { name: "Memory" }).click();
   await expect(
-    page.getByText("I prefer detailed summaries.", { exact: true }),
+    page
+      .getByRole("dialog", { name: "Memory" })
+      .getByText("I prefer detailed summaries.", { exact: true }),
   ).toBeVisible();
   await page.screenshot({
     path: "test-results/socius-memory.png",
     fullPage: true,
   });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Memory" })).not.toBeVisible();
   await page
     .getByRole("button", { name: "Create", exact: true })
     .first()
