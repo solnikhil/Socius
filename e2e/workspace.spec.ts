@@ -9,6 +9,15 @@ test("configure a model, create bots manually and through Socius, install skills
   await expect(
     page.getByRole("heading", { name: "What shall we work on?" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Hide sidebar" }).click();
+  await expect(page.locator(".sidebar")).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "New bot", exact: true }),
+  ).toBeHidden();
+  await page.getByRole("button", { name: "Show sidebar" }).click();
+  await expect(
+    page.getByRole("button", { name: "New bot", exact: true }),
+  ).toBeVisible();
   await page.screenshot({
     path: "test-results/socius-chat.png",
     fullPage: true,
@@ -122,5 +131,17 @@ test("configure a model, create bots manually and through Socius, install skills
     path: "test-results/socius-memory.png",
     fullPage: true,
   });
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Activity", level: 1 }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("A memory record was saved.").first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Account and settings" }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Activity", level: 2 }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });
