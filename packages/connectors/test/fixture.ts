@@ -39,8 +39,14 @@ const read = async (req: IncomingMessage) => {
 const dashed = (hex: string) =>
   `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 
-export async function startNotionFixture(): Promise<NotionFixture> {
+export async function startNotionFixture(
+  options: {
+    tools?: Record<string, z.ZodRawShape>;
+    registeredClient?: { id: string; secret: string };
+  } = {},
+): Promise<NotionFixture> {
   const clients = new Map<string, string[]>();
+  if (options.registeredClient) clients.set(options.registeredClient.id, []);
   const codes = new Map<string, { challenge: string; clientId: string }>();
   const tokens = new Set<string>();
   const refresh = new Set<string>();
@@ -75,6 +81,21 @@ export async function startNotionFixture(): Promise<NotionFixture> {
   };
   const mcp = () => {
     const server = new McpServer({ name: "notion-fixture", version: "1.0.1" });
+    if (options.tools) {
+      for (const [name, inputSchema] of Object.entries(options.tools))
+        server.registerTool(name, { inputSchema }, async (args) => {
+          state.calls.push({ tool: name, args });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ id: "fixture-result", ...args }),
+              },
+            ],
+          };
+        });
+      return server;
+    }
     const record = (tool: string, args: Record<string, unknown>) =>
       state.calls.push({ tool, args });
     server.registerTool(
@@ -199,12 +220,16 @@ export async function startNotionFixture(): Promise<NotionFixture> {
         issuer: state.url,
         authorization_endpoint: `${state.url}/authorize`,
         token_endpoint: `${state.url}/token`,
-        registration_endpoint: `${state.url}/register`,
+        ...(!options.registeredClient
+          ? { registration_endpoint: `${state.url}/register` }
+          : {}),
         revocation_endpoint: `${state.url}/revoke`,
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code", "refresh_token"],
         code_challenge_methods_supported: ["S256"],
-        token_endpoint_auth_methods_supported: ["none"],
+        token_endpoint_auth_methods_supported: [
+          options.registeredClient ? "client_secret_post" : "none",
+        ],
       });
     if (url.pathname === "/register" && req.method === "POST") {
       const body = JSON.parse(await read(req));
@@ -217,7 +242,11 @@ export async function startNotionFixture(): Promise<NotionFixture> {
       const clientId = url.searchParams.get("client_id") ?? "";
       const redirect = url.searchParams.get("redirect_uri") ?? "";
       if (
-        !clients.get(clientId)?.includes(redirect) ||
+        !(
+          clients.get(clientId)?.includes(redirect) ||
+          (clientId === options.registeredClient?.id &&
+            /^http:\/\/127\.0\.0\.1:\d+\/oauth\/callback$/.test(redirect))
+        ) ||
         url.searchParams.get("code_challenge_method") !== "S256"
       )
         return send(400, { error: "invalid_request" });
@@ -234,6 +263,12 @@ export async function startNotionFixture(): Promise<NotionFixture> {
     }
     if (url.pathname === "/token" && req.method === "POST") {
       const form = new URLSearchParams(await read(req));
+      if (
+        options.registeredClient &&
+        (form.get("client_id") !== options.registeredClient.id ||
+          form.get("client_secret") !== options.registeredClient.secret)
+      )
+        return send(401, { error: "invalid_client" });
       if (form.get("grant_type") === "authorization_code") {
         const grant = codes.get(form.get("code") ?? "");
         codes.delete(form.get("code") ?? "");

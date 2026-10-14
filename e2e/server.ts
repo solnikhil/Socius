@@ -3,9 +3,22 @@ import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startRuntime } from "../packages/runtime/src/server.js";
+import { z } from "zod";
 import { startNotionFixture } from "../packages/connectors/test/fixture.js";
 const dir = await mkdtemp(join(tmpdir(), "socius-e2e-"));
 const notion = await startNotionFixture();
+// Linear's reviewed tool names over the same real OAuth/PKCE + MCP fixture.
+const linear = await startNotionFixture({
+  tools: {
+    list_issues: { query: z.string(), limit: z.number() },
+    get_issue: { id: z.string() },
+    save_issue: {
+      team: z.string(),
+      title: z.string(),
+      description: z.string(),
+    },
+  },
+});
 const PARENT = "11111111-1111-1111-1111-111111111111";
 const registryPage = {
   servers: [
@@ -45,13 +58,42 @@ const runtime = await startRuntime({
     encrypt: async (v) => `sealed:${Buffer.from(v).toString("base64")}`,
     decrypt: async (v) => Buffer.from(v.slice(7), "base64").toString(),
   },
-  connectorEndpoints: { "socius/notion": `${notion.url}/mcp` },
+  connectorEndpoints: {
+    "socius/notion": `${notion.url}/mcp`,
+    "socius/linear": `${linear.url}/mcp`,
+  },
   registry: {
     fetch: (async () =>
       new Response(JSON.stringify(registryPage))) as unknown as typeof fetch,
   },
+  // Dreaming: "Remember: X" becomes the note X. "Slow dream" waits until it is stopped.
+  dreamRunner: async ({ sources, signal }) => {
+    if (sources.some((s) => /slow dream/i.test(s.content)))
+      await new Promise((_, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        }),
+      );
+    return {
+      changes: sources.flatMap((s) => {
+        const note = /^Remember: (.+)$/i.exec(s.content)?.[1];
+        return note
+          ? [{ memoryId: null, content: note, sourceMessageIds: [s.id] }]
+          : [];
+      }),
+    };
+  },
   runner: async (request, onText) => {
     const content = String(request.messages.at(-1)?.content);
+    // Recall: report exactly which private notes the runtime supplied.
+    if (content.toLowerCase().includes("what do you recall")) {
+      const recalled = request.recalledMemory?.map((m) => m.content) ?? [];
+      const text = recalled.length
+        ? `I recall: ${recalled.join(" | ")}`
+        : "I have nothing recalled for that.";
+      onText(text);
+      return text;
+    }
     // Group chats: the coordinator asks its first member, then sums up.
     if (request.askMember) {
       // "flaky" fails the first attempt so the UI can offer a retry.
@@ -71,6 +113,18 @@ const runtime = await startRuntime({
       onText(text);
       return text;
     }
+    // Reports what this bot was offered and whether a guessed load succeeds.
+    if (content.toLowerCase().includes("which skills")) {
+      let load = "loaded";
+      try {
+        request.loadSkill("local/document-brief");
+      } catch {
+        load = "blocked";
+      }
+      const text = `Skills: ${request.skills.map((s) => s.id).join(", ") || "none"}. Document brief ${load}.`;
+      onText(text);
+      return text;
+    }
     if (content.toLowerCase().includes("brief")) {
       const tool = (name: string) =>
         request.connectorTools?.find((t) => t.name === name);
@@ -81,15 +135,23 @@ const runtime = await startRuntime({
         ? JSON.stringify(await search.execute({ query: "planning" }))
         : "";
       const propose = tool("notion_propose_page");
-      if (propose)
-        await propose.execute({
-          parentPage: PARENT,
-          title: "Q3 brief",
-          content: "## Findings\n- Ship connectors [Q3 planning]",
-        });
-      const text = found.includes("Q3 planning")
-        ? "From Q3 planning: ship connectors. I proposed a “Q3 brief” page for your approval."
-        : "I could not read your workspace.";
+      // The proposal waits for the user's review; reply with what happened.
+      const outcome = (
+        propose
+          ? await propose.execute({
+              parentPage: PARENT,
+              title: "Q3 brief",
+              content: "## Findings\n- Ship connectors [Q3 planning]",
+            })
+          : {}
+      ) as { status?: string; userFeedback?: string };
+      const text = !found.includes("Q3 planning")
+        ? "I could not read your workspace."
+        : outcome.status === "done"
+          ? "From Q3 planning: ship connectors. Done, the “Q3 brief” page is in Notion."
+          : outcome.status === "declined-with-feedback"
+            ? `From Q3 planning: ship connectors. Got it, you said: ${outcome.userFeedback}`
+            : "From Q3 planning: ship connectors. The “Q3 brief” page is waiting for your approval.";
       onText(text);
       return text;
     }
@@ -115,6 +177,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
       void runtime
         .close()
         .then(() => notion.close())
+        .then(() => linear.close())
         .then(() => rm(dir, { recursive: true, force: true }))
         .then(() => process.exit(0)),
   );

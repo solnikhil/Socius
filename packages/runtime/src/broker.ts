@@ -32,6 +32,11 @@ export interface BrokerOptions {
   approvalTtlMs?: number;
   now?: () => number;
 }
+/**
+ * Extra actor check supplied by the runtime, for example a cancelled routine
+ * run. Returns why the actor may no longer act, or null. It can only block.
+ */
+export type ActorGuard = (actor: ActionRequestType["actor"]) => string | null;
 export type BrokerResult =
   | { status: "completed"; summary: string; data: string | null }
   | { status: "awaiting-approval"; actionId: string; summary: string };
@@ -62,6 +67,7 @@ type ReconcileResult = "found" | "absent" | "unknown";
 
 export class ActionBroker {
   private readonly reads = new Map<string, number>();
+  private guard: ActorGuard | null = null;
   constructor(
     private readonly store: Store,
     private readonly packages: PackageService,
@@ -70,6 +76,21 @@ export class ActionBroker {
   ) {}
   private now() {
     return this.options.now?.() ?? Date.now();
+  }
+  /** Installs the runtime's actor guard. Rechecked at request, approval and retry. */
+  setActorGuard(guard: ActorGuard) {
+    this.guard = guard;
+  }
+  /** Blocks every pending proposal from actors matching `match`, e.g. a cancelled run. */
+  blockPending(
+    match: (actor: ActionRecord["actor"]) => boolean,
+    reason: string,
+  ) {
+    for (const record of this.store.all<ActionRecord>("action"))
+      if (record.state === "pending" && match(record.actor)) {
+        this.save(record, { state: "blocked", error: reason });
+        this.store.event("action.blocked", `Blocked: ${record.summary}`);
+      }
   }
   /** Releases per-task bookkeeping once a task ends. */
   forgetTask(taskId: string) {
@@ -90,6 +111,8 @@ export class ActionBroker {
     const bot =
       this.store.get<BotInstance>("bot", request.actor.botId) ??
       fail(404, "Bot not found");
+    const blocked = this.guard?.(request.actor);
+    if (blocked) fail(409, blocked);
     const { connector, action } = this.find(request.action);
     if (request.release.id !== connector.id)
       fail(403, "The action does not belong to that release");
@@ -117,8 +140,19 @@ export class ActionBroker {
       !receipt.consentedCapabilities.includes(action.capability)
     )
       fail(403, `The installation was not consented for ${action.capability}`);
-    if (!bot.grantedCapabilities.includes(action.capability))
+    if (
+      connector.id === "socius/notion" &&
+      !bot.grantedCapabilities.includes(action.capability)
+    )
       fail(403, `${bot.name} has not been granted ${action.capability}`);
+    if (
+      connector.id !== "socius/notion" &&
+      !this.store.get(
+        "connector-grant",
+        `${bot.id}:${connector.id}:${action.capability}`,
+      )
+    )
+      fail(403, `${bot.name} has no access to this connector`);
     const connection = this.connections.forConnector(connector.id);
     if (!connection) fail(409, `${release!.manifest.name} is not connected`);
     if (connection!.state !== "ready")
@@ -234,7 +268,40 @@ export class ActionBroker {
       updatedAt: new Date(this.now()).toISOString(),
     });
     this.store.put("action", record.id, record);
+    for (const listener of this.listeners) listener(record);
     return record;
+  }
+  private readonly listeners = new Set<(record: ActionRecord) => void>();
+  /**
+   * Resolves once the user has decided and any approved change has finished,
+   * or with null when the signal aborts or `maxMs` passes first. The proposal
+   * itself stays reviewable either way.
+   */
+  waitForDecision(
+    id: string,
+    signal: AbortSignal,
+    maxMs: number,
+  ): Promise<ActionRecord | null> {
+    const settled = (r: ActionRecord | undefined) =>
+      !!r && r.state !== "pending" && r.state !== "executing";
+    const current = this.store.get<ActionRecord>("action", id);
+    if (settled(current)) return Promise.resolve(current!);
+    return new Promise((resolve) => {
+      const done = (record: ActionRecord | null) => {
+        clearTimeout(timer);
+        this.listeners.delete(listener);
+        signal.removeEventListener("abort", abort);
+        resolve(record);
+      };
+      const listener = (r: ActionRecord) => {
+        if (r.id === id && settled(r)) done(r);
+      };
+      const abort = () => done(null);
+      const timer = setTimeout(() => done(null), maxMs);
+      this.listeners.add(listener);
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    });
   }
   private load(id: string) {
     return (
@@ -275,7 +342,12 @@ export class ActionBroker {
     }
   }
 
-  async resolve(input: { id: string; digest: string; approve: boolean }) {
+  async resolve(input: {
+    id: string;
+    digest: string;
+    approve: boolean;
+    feedback?: string | undefined;
+  }) {
     const record = this.load(input.id);
     if (record.state !== "pending")
       fail(409, "This proposal was already resolved");
@@ -284,7 +356,10 @@ export class ActionBroker {
     if (!input.approve) {
       if (record.digest !== this.recordDigest(record))
         fail(409, "Proposal content changed");
-      this.save(record, { state: "denied" });
+      this.save(record, {
+        state: "denied",
+        ...(input.feedback ? { feedback: input.feedback } : {}),
+      });
       this.store.event("action.denied", `Declined: ${record.summary}`);
       return record;
     }

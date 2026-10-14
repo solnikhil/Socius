@@ -1,8 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Plus } from "lucide-react";
-import type { BotInstance, BotManifest } from "@socius/contracts";
+import type {
+  BotAppearance,
+  BotInstance,
+  BotManifest,
+} from "@socius/contracts";
 import { api } from "../api.js";
 import { Modal, ErrorNote } from "../components/chrome.js";
+import { AvatarPicker, appearanceOf } from "../components/avatar.js";
 
 export function CreateBot({
   templates,
@@ -18,7 +23,10 @@ export function CreateBot({
     [busy, setBusy] = useState(false),
     [picked, setPicked] = useState(""),
     [category, setCategory] = useState("Featured"),
-    [form, setForm] = useState({ name: "", role: "", instructions: "" });
+    [form, setForm] = useState({ name: "", role: "", instructions: "" }),
+    // Until the user picks, the preview follows the name like older bots did.
+    [chosen, setChosen] = useState<BotAppearance>();
+  const look = appearanceOf(form.name.trim() || "New bot", chosen);
   // Featured first, then the rest alphabetically, whatever order the catalog uses.
   const categories = [
     ...new Set(templates.map((t) => t.category ?? "Other")),
@@ -35,7 +43,10 @@ export function CreateBot({
     setBusy(true);
     setError("");
     try {
-      const bot = await api<BotInstance>("bots", form);
+      const bot = await api<BotInstance>("bots", {
+        ...form,
+        appearance: look,
+      });
       onCreated(bot);
       onClose();
     } catch (e) {
@@ -98,6 +109,14 @@ export function CreateBot({
             autoFocus
           />
         </label>
+        <div className="form-field" role="group" aria-label="Look">
+          <span>Look</span>
+          <AvatarPicker
+            name={form.name.trim() || "New bot"}
+            value={look}
+            onChange={setChosen}
+          />
+        </div>
         <label>
           Role
           <input

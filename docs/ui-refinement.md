@@ -7,11 +7,12 @@ Owner: **You**. These tasks are separate from teammates' backend implementation.
 - [ ] Refine layout, spacing, typography, light/dark colors, avatars and navigation consistency.
 - [ ] Polish the chat composer, streamed replies, code/Markdown presentation, copy/export and attachment states.
 - [ ] Refine New Chat and custom-bot creation/editing; clarify the main bot versus specialists.
-- [ ] Refine Connect Apps detail views and install/setup states. The catalog is a card grid. Skills are hidden until a later release. Connectors list Indian services as planned rows, and the MCP Registry has India search shortcuts. Only a reviewed connector can be installed.
+- [ ] Refine Connect Apps detail views and install/setup states. The catalog is a card grid. Skills are hidden until a later release. Connect Apps shows only installable connectors, each with its service logo; planned listings are not shown. The MCP Registry has India search shortcuts. Only a reviewed connector can be installed.
 - [x] Settings is a floating dialog (General, Models, Providers, Privacy & data); `SettingsView.tsx` was replaced by `views/settings`. OpenRouter is now a first-class provider, superseding Luna's hint.
 - [x] Dialogs, menus, chat details, and shell tooltips use shadcn/ui (Radix plus `tw-animate-css`). Colors stay on the Socius tokens. Form controls and page layout stay in `style.css`. A bot's model is chosen in its name menu. The composer has no model chip.
 - [x] Multi-provider connections, model discovery/testing, default and per-bot model picker, classified setup errors with a Settings action (branch `model-enhancements`).
 - [ ] Visual review of the Settings dialog and model picker in light/dark; live checks against real provider accounts.
+- [x] Living bot avatars: each specialist stores an optional look (shape and eyes, `BotInstance.appearance`), picked with a live preview in Create bot, the bot menu's "Edit name and look" and bot proposal approvals. Bots without one keep their name-derived look; Socius keeps its fixed face. Avatars breathe, blink, glance or circle their eyes when idle, follow the pointer and lean toward it like a magnet, and bob while working. One shared pointer listener drives them (`components/avatarMotion.ts`); reduced motion keeps them still. Looks never go into exported templates. Screenshot: [`docs/assets/living-avatars-create.png`](assets/living-avatars-create.png).
 - [ ] Polish waiting states and inline approvals.
 - [ ] Check keyboard navigation, contrast, focus, responsive behavior and empty/loading/error states.
 

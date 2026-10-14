@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Check, ShieldCheck } from "lucide-react";
+import type { BotAppearance } from "@socius/contracts";
 import type { Approval, BotDraft } from "@socius/contracts/app";
 import { api } from "../api.js";
 import { ErrorNote } from "./chrome.js";
+import { AvatarPicker, appearanceOf } from "./avatar.js";
 
 export function ApprovalCard({
   approval: a,
@@ -12,11 +14,20 @@ export function ApprovalCard({
   onRefresh: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [look, setLook] = useState<BotAppearance>();
+  const draft = a.kind === "bot" ? (a.payload as BotDraft) : undefined;
   async function resolve(approve: boolean) {
     setBusy(true);
     try {
-      await api("approvals", { id: a.id, digest: a.digest, approve });
+      await api("approvals", {
+        id: a.id,
+        digest: a.digest,
+        approve,
+        ...(approve && draft
+          ? { appearance: appearanceOf(draft.name, look) }
+          : {}),
+      });
       await onRefresh();
     } catch (e) {
       setError((e as Error).message);
@@ -34,11 +45,19 @@ export function ApprovalCard({
         <span>Needs your approval</span>
       </div>
       <p>{a.content}</p>
-      {a.kind === "bot" && (
-        <details>
-          <summary>View proposed instructions</summary>
-          <pre>{(a.payload as BotDraft).instructions}</pre>
-        </details>
+      {draft && (
+        <>
+          <AvatarPicker
+            name={draft.name}
+            value={appearanceOf(draft.name, look)}
+            onChange={setLook}
+            compact
+          />
+          <details>
+            <summary>View proposed instructions</summary>
+            <pre>{draft.instructions}</pre>
+          </details>
+        </>
       )}
       <ErrorNote error={error} />
       <div className="modal-actions">

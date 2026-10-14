@@ -8,7 +8,7 @@ import {
 } from "@socius/contracts/providers";
 
 export type SettingsTab =
-  "general" | "models" | "providers" | "privacy" | "remote";
+  "general" | "models" | "providers" | "dreaming" | "privacy" | "remote";
 /** Opens Settings at a tab, optionally focused on one connection. */
 export type OpenSettings = (tab: SettingsTab, connectionId?: string) => void;
 

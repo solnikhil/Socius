@@ -195,7 +195,11 @@ export function App() {
   const specialists = state.bots.filter((b) => b.id !== main.id);
   const running = (b: BotInstance) =>
     state.tasks.some(
-      (t) => t.botId === b.id && !t.groupId && t.state === "running",
+      (t) =>
+        t.botId === b.id &&
+        !t.groupId &&
+        !t.routineRunId &&
+        t.state === "running",
     );
   const waiting = (b: BotInstance) => pending.some((a) => a.botId === b.id);
   const layoutOf = (id: string) => state.layouts.find((l) => l.botId === id);
@@ -249,7 +253,12 @@ export function App() {
           className={`bot-row ${nested ? "nested" : ""} ${page === "chat" && !group && b.id === current.id ? "active" : ""}`}
           onClick={() => open(b)}
         >
-          <Avatar name={b.name} size={nested ? 30 : 34} />
+          <Avatar
+            name={b.name}
+            size={nested ? 30 : 34}
+            appearance={b.appearance}
+            busy={running(b)}
+          />
           <span className="bot-text">
             <strong>{b.name}</strong>
             <small>{running(b) ? "Working…" : role}</small>
@@ -414,7 +423,13 @@ export function App() {
                   className={`featured-bot ${page === "chat" && !group && current.id === main.id ? "active" : ""}`}
                   onClick={() => open(main)}
                 >
-                  <Avatar name={main.name} main size={66} badge />
+                  <Avatar
+                    name={main.name}
+                    main
+                    size={66}
+                    badge
+                    busy={running(main)}
+                  />
                   <span>{main.name}</span>
                   {(running(main) ||
                     waiting(main) ||
@@ -446,7 +461,11 @@ export function App() {
                   className={`bot-row ${page === "chat" && group?.id === g.id ? "active" : ""}`}
                   onClick={() => openGroup(g)}
                 >
-                  <GroupAvatar names={faces(g)} size={34} />
+                  <GroupAvatar
+                    names={faces(g)}
+                    size={34}
+                    busy={groupRunning(g)}
+                  />
                   <span className="bot-text">
                     <strong>{g.name}</strong>
                     <small>

@@ -1,8 +1,3 @@
-import {
-  connectorCategories,
-  plannedConnectors,
-  type PlannedConnector,
-} from "@socius/marketplace/connector-directory";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -75,13 +70,6 @@ export function ConnectApps({
     (p) =>
       p.kind !== "skill" &&
       `${p.name} ${p.description} ${p.publisher}`.toLowerCase().includes(q),
-  );
-  const plannedMatches = plannedConnectors.filter(
-    (item) =>
-      !latest.has(item.id) &&
-      `${item.name} ${item.description} ${item.category}`
-        .toLowerCase()
-        .includes(q),
   );
   const added = catalog.filter(installed);
   const selected = detail
@@ -164,21 +152,6 @@ export function ConnectApps({
       </article>
     );
   };
-  const plannedRow = (item: PlannedConnector) => (
-    <article className="app-row" key={item.id}>
-      <AppIcon item={item} />
-      <div>
-        <h4>{item.name}</h4>
-        <p>
-          {item.description} Integration planned; account connection is not
-          available yet.
-        </p>
-      </div>
-      <button className="pill" disabled aria-label={`${item.name}: planned`}>
-        Planned
-      </button>
-    </article>
-  );
   const section = (title: string, items: Manifest[], more?: Filter) => {
     const shown = filter === "all" && more ? items.slice(0, 4) : items;
     return (
@@ -215,141 +188,108 @@ export function ConnectApps({
           if (detail) e.preventDefault();
         }}
       >
-      <header className="connect-head">
-        <div>
-          <DialogTitle id="connect-apps-title">Connect Apps</DialogTitle>
-          <p>Connectors and bot templates for this workspace.</p>
-        </div>
-        <div className="connect-head-actions">
-          <button
-            className="connected-count"
-            onClick={() => setFilter(filter === "added" ? "all" : "added")}
-          >
-            <span className="app-stack">
-              {added.slice(0, 4).map((p) => (
-                <AppIcon key={p.id} item={p} size={18} />
+        <header className="connect-head">
+          <div>
+            <DialogTitle id="connect-apps-title">Connect Apps</DialogTitle>
+            <p>Connectors and bot templates for this workspace.</p>
+          </div>
+          <div className="connect-head-actions">
+            <button
+              className="connected-count"
+              onClick={() => setFilter(filter === "added" ? "all" : "added")}
+            >
+              <span className="app-stack">
+                {added.slice(0, 4).map((p) => (
+                  <AppIcon key={p.id} item={p} size={18} />
+                ))}
+              </span>
+              {added.length} connected
+              <ChevronRight size={14} />
+            </button>
+            <button
+              className="icon ghost"
+              aria-label="Close dialog"
+              onClick={motion.requestClose}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <div className="connect-toolbar">
+          <label className="search">
+            <Search size={16} />
+            <input
+              aria-label="Search apps"
+              placeholder={
+                filter === "registry"
+                  ? "Search the MCP Registry"
+                  : "Search connectors and templates"
+              }
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <div className="connect-toolbar-row">
+            <div className="chips" role="tablist" aria-label="Categories">
+              {filters.map((f) => (
+                <button
+                  key={f.value}
+                  role="tab"
+                  aria-selected={filter === f.value}
+                  className={filter === f.value ? "selected" : ""}
+                  onClick={() => setFilter(f.value)}
+                >
+                  {f.label}
+                </button>
               ))}
-            </span>
-            {added.length} connected
-            <ChevronRight size={14} />
-          </button>
-          <button
-            className="icon ghost"
-            aria-label="Close dialog"
-            onClick={motion.requestClose}
-          >
-            <X size={18} />
-          </button>
-        </div>
-      </header>
-      <div className="connect-toolbar">
-        <label className="search">
-          <Search size={16} />
-          <input
-            aria-label="Search apps"
-            placeholder={
-              filter === "registry"
-                ? "Search the MCP Registry"
-                : "Search connectors and templates"
-            }
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
-        <div className="connect-toolbar-row">
-          <div className="chips" role="tablist" aria-label="Categories">
-            {filters.map((f) => (
+            </div>
+            <div className="connect-imports">
               <button
-                key={f.value}
-                role="tab"
-                aria-selected={filter === f.value}
-                className={filter === f.value ? "selected" : ""}
-                onClick={() => setFilter(f.value)}
+                className="pill"
+                onClick={() => template.current?.click()}
               >
-                {f.label}
+                <FileUp size={15} />
+                Import template
               </button>
-            ))}
+              <button className="pill" onClick={() => setFilter("bot")}>
+                <Avatar name="Socius" main size={18} />
+                Bot templates
+                <ArrowUpRight size={14} />
+              </button>
+            </div>
           </div>
-          <div className="connect-imports">
-            <button className="pill" onClick={() => template.current?.click()}>
-              <FileUp size={15} />
-              Import template
-            </button>
-            <button className="pill" onClick={() => setFilter("bot")}>
-              <Avatar name="Socius" main size={18} />
-              Bot templates
-              <ArrowUpRight size={14} />
-            </button>
-          </div>
-        </div>
-        <input
-          ref={template}
-          type="file"
-          hidden
-          accept=".json,application/json"
-          aria-label="Bot template file"
-          onChange={(e) => void importTemplate(e.target.files)}
-        />
-      </div>
-      <ErrorNote error={detail ? "" : error} />
-      <div className="connect-body">
-        {filter === "registry" ? (
-          <RegistryBrowser
-            query={q}
-            state={state}
-            onSearch={setQuery}
-            onOpen={(id) => {
-              const m = latest.get(id);
-              if (m) setDetail({ id: m.id, version: m.version });
-            }}
+          <input
+            ref={template}
+            type="file"
+            hidden
+            accept=".json,application/json"
+            aria-label="Bot template file"
+            onChange={(e) => void importTemplate(e.target.files)}
           />
-        ) : (
-          <>
-            {filter === "added" && section("Connected", visible)}
-            {(filter === "all" || filter === "connector") &&
-              (connectors.length > 0 || plannedMatches.length > 0) &&
-              (filter === "connector" ? (
-                <>
-                  {section("Ready to connect", connectors)}
-                  {connectorCategories.map((category) => {
-                    const items = plannedMatches.filter(
-                      (item) => item.category === category.id,
-                    );
-                    if (!items.length) return null;
-                    return (
-                      <section className="app-section" key={category.id}>
-                        <div className="app-section-head">
-                          <h3>{category.title}</h3>
-                        </div>
-                        <div className="app-grid">{items.map(plannedRow)}</div>
-                      </section>
-                    );
-                  })}
-                </>
-              ) : (
-                <section className="app-section">
-                  <div className="app-section-head">
-                    <h3>Connectors</h3>
-                    {(connectors.length > 0 || plannedMatches.length > 4) && (
-                      <button
-                        className="text-button"
-                        onClick={() => setFilter("connector")}
-                      >
-                        View all
-                      </button>
-                    )}
-                  </div>
-                  <div className="app-grid">
-                    {connectors.map(row)}
-                    {plannedMatches.slice(0, 4).map(plannedRow)}
-                  </div>
-                </section>
-              ))}
-            {filter === "all" && section("Bot templates", bots, "bot")}
-            {filter === "bot" && section("Bot templates", bots)}
-            {(filter === "added"
-              ? visible.length === 0
-              : visible.length === 0 && plannedMatches.length === 0) && (
+        </div>
+        <ErrorNote error={detail ? "" : error} />
+        <div className="connect-body">
+          {filter === "registry" ? (
+            <RegistryBrowser
+              query={q}
+              state={state}
+              onSearch={setQuery}
+              onOpen={(id) => {
+                const m = latest.get(id);
+                if (m) setDetail({ id: m.id, version: m.version });
+              }}
+            />
+          ) : (
+            <>
+              {filter === "added" && section("Connected", visible)}
+              {filter === "all" &&
+                section("Connectors", connectors, "connector")}
+              {filter === "connector" && section("Connectors", connectors)}
+              {filter === "all" && section("Bot templates", bots, "bot")}
+              {filter === "bot" && section("Bot templates", bots)}
+              {(filter === "added"
+                ? visible.length === 0
+                : visible.length === 0) && (
                 <div className="empty">
                   <Search size={22} />
                   <p>
@@ -359,26 +299,26 @@ export function ConnectApps({
                   </p>
                 </div>
               )}
-          </>
-        )}
-        <div className="registry-note">
-          <ShieldCheck size={15} />
-          Packages never run code on install and grant no permissions by
-          themselves.
+            </>
+          )}
+          <div className="registry-note">
+            <ShieldCheck size={15} />
+            Packages never run code on install and grant no permissions by
+            themselves.
+          </div>
         </div>
-      </div>
-      {selected && (
-        <PackageDetail
-          key={`${selected.id}@${selected.version}`}
-          item={selected}
-          state={state}
-          onRefresh={onRefresh}
-          onClose={() => {
-            setDetail(null);
-            setError("");
-          }}
-        />
-      )}
+        {selected && (
+          <PackageDetail
+            key={`${selected.id}@${selected.version}`}
+            item={selected}
+            state={state}
+            onRefresh={onRefresh}
+            onClose={() => {
+              setDetail(null);
+              setError("");
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
