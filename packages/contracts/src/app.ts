@@ -190,6 +190,8 @@ export interface ActionRecord {
   error: string | null;
   /** True only when the last failure proved the remote effect did not happen. */
   retryable: boolean;
+  /** What the user typed instead of approving; returned to the bot as guidance. */
+  feedback?: string;
   expiresAt: string;
   createdAt: string;
   updatedAt: string;

@@ -81,15 +81,23 @@ const runtime = await startRuntime({
         ? JSON.stringify(await search.execute({ query: "planning" }))
         : "";
       const propose = tool("notion_propose_page");
-      if (propose)
-        await propose.execute({
-          parentPage: PARENT,
-          title: "Q3 brief",
-          content: "## Findings\n- Ship connectors [Q3 planning]",
-        });
-      const text = found.includes("Q3 planning")
-        ? "From Q3 planning: ship connectors. I proposed a “Q3 brief” page for your approval."
-        : "I could not read your workspace.";
+      // The proposal waits for the user's review; reply with what happened.
+      const outcome = (
+        propose
+          ? await propose.execute({
+              parentPage: PARENT,
+              title: "Q3 brief",
+              content: "## Findings\n- Ship connectors [Q3 planning]",
+            })
+          : {}
+      ) as { status?: string; userFeedback?: string };
+      const text = !found.includes("Q3 planning")
+        ? "I could not read your workspace."
+        : outcome.status === "done"
+          ? "From Q3 planning: ship connectors. Done, the “Q3 brief” page is in Notion."
+          : outcome.status === "declined-with-feedback"
+            ? `From Q3 planning: ship connectors. Got it, you said: ${outcome.userFeedback}`
+            : "From Q3 planning: ship connectors. The “Q3 brief” page is waiting for your approval.";
       onText(text);
       return text;
     }
