@@ -15,6 +15,7 @@ import {
   Copy,
   Download,
   FileText,
+  Globe,
   Mic,
   Pencil,
   Plus,
@@ -52,6 +53,12 @@ import {
 } from "../components/streaming.js";
 import { ReactionPicker } from "../components/Reactions.js";
 import { ActionCard, needsAttention } from "../components/ActionCard.js";
+import {
+  BrowserActionCard,
+  BrowserPanel,
+  visibleSessions,
+} from "../components/BrowserPanel.js";
+import type { BrowserSession } from "@socius/contracts/browser";
 import { ExportBot } from "./ExportBot.js";
 import { BotSkills } from "./BotSkills.js";
 import { BotModelMenu } from "../components/ModelPicker.js";
@@ -117,6 +124,7 @@ export function Chat({
       text: string;
     } | null>(null),
     [consent, setConsent] = useState(false),
+    [browserConsent, setBrowserConsent] = useState(false),
     [details, setDetails] = useState(false),
     [exporting, setExporting] = useState(false),
     [skillsOpen, setSkillsOpen] = useState(false),
@@ -163,6 +171,7 @@ export function Chat({
       (group ? t.groupId === group.id : t.botId === bot.id && !t.groupId),
   );
   const memory = bot.grantedCapabilities.includes("memory.read");
+  const browsing = bot.grantedCapabilities.includes("browser.control");
   // A group reply that failed or was cut off by a restart can be run again.
   const lastAsk = group
     ? messages.filter((m) => m.role === "user").at(-1)
@@ -424,13 +433,59 @@ export function Chat({
         (needsAttention(a) || a.state === "succeeded"),
     )
     .slice(-5);
-  // A running reply that is paused on the user's review.
-  const waiting = actions.find(
-    (a) =>
-      a.state === "pending" &&
-      a.actor.taskId === (taskId || running?.id) &&
-      Date.parse(a.expiresAt) > Date.now(),
+  // Browser sessions of the bots in this chat, and their interactions to review.
+  const sessions = visibleSessions(
+    state,
+    group ? [bot.id, ...group.memberIds] : [bot.id],
   );
+  const browserActions = state.browserActions
+    .filter(
+      (a) =>
+        (group
+          ? groupOf.get(a.taskId) === group.id
+          : a.botId === bot.id && !groupOf.get(a.taskId)) &&
+        (a.state === "pending" || a.state === "unknown"),
+    )
+    .slice(-3);
+  // A running reply that is paused on the user's review.
+  const waiting =
+    actions.find(
+      (a) =>
+        a.state === "pending" &&
+        a.actor.taskId === (taskId || running?.id) &&
+        Date.parse(a.expiresAt) > Date.now(),
+    ) ??
+    browserActions.find(
+      (a) => a.state === "pending" && a.taskId === (taskId || running?.id),
+    );
+  /** After Resume, the bot continues the original request in this chat. */
+  async function continueBrowsing(session: BrowserSession) {
+    const name = author(session.botId)?.name;
+    const content = `I've handed the browser back${group && session.botId !== bot.id && name ? ` to @${name}` : ""}. Please continue.`;
+    pin(true);
+    await converse(group ? "groups/chat" : "chat", {
+      ...(group ? { groupId: group.id } : { botId: bot.id }),
+      content,
+    });
+  }
+  async function grantBrowser(allow: boolean) {
+    try {
+      await api("browser/grant", { botId: bot.id, granted: allow });
+      setBrowserConsent(false);
+      await onRefresh();
+    } catch (e) {
+      fail((e as Error).message);
+    }
+  }
+  async function clearBrowser() {
+    try {
+      await api("browser/reset", { botId: bot.id });
+      setBrowserConsent(false);
+      await onRefresh();
+    } catch (e) {
+      fail((e as Error).message);
+    }
+  }
   // In a group, each run of replies from one bot is labelled with its name.
   const speaker = (m: Pick<Message, "role" | "botId">) =>
     m.role === "user" ? "user" : m.botId;
@@ -585,6 +640,16 @@ export function Chat({
                   <BookOpen size={15} />
                   <span>Memory</span>
                   <em>{memory ? "On" : "Off"}</em>
+                </button>
+                <button
+                  onClick={() => {
+                    setDetails(false);
+                    setBrowserConsent(true);
+                  }}
+                >
+                  <Globe size={15} />
+                  <span>Web browser</span>
+                  <em>{browsing ? "On" : "Off"}</em>
                 </button>
                 <button
                   onClick={() => {
@@ -778,6 +843,14 @@ export function Chat({
               onRefresh={onRefresh}
             />
           ))}
+          {browserActions.map((a) => (
+            <BrowserActionCard
+              key={a.id}
+              action={a}
+              botName={author(a.botId)?.name ?? "A bot"}
+              onRefresh={onRefresh}
+            />
+          ))}
         </div>
       </div>
       <div className="composer-wrap">
@@ -791,6 +864,15 @@ export function Chat({
             {busy ? "New reply below" : "Jump to latest"}
           </button>
         )}
+        {sessions.map((session) => (
+          <BrowserPanel
+            key={session.id}
+            session={session}
+            botName={author(session.botId)?.name ?? bot.name}
+            onRefresh={onRefresh}
+            onResume={continueBrowsing}
+          />
+        ))}
         <ErrorNote
           // After a reload the failure comes from the task, not this session.
           error={error || (unfinished?.error ?? "")}
@@ -961,6 +1043,32 @@ export function Chat({
           onRefresh={onRefresh}
           onClose={() => setSkillsOpen(false)}
         />
+      )}
+      {browserConsent && (
+        <Modal title="Web browser" onClose={() => setBrowserConsent(false)}>
+          <p className="muted">
+            Let {bot.name} use its own visible browser window to research public
+            websites. It has a separate profile from your own browser. Clicking,
+            typing and submitting always wait for your review, and you can take
+            control at any time. Text from the pages it reads is sent to this
+            bot's model provider. Local and private-network addresses are
+            blocked.
+          </p>
+          {!state.browser.available && state.browser.detail && (
+            <p className="muted">{state.browser.detail}</p>
+          )}
+          <div className="modal-actions">
+            <button onClick={() => void clearBrowser()}>
+              Clear browser data
+            </button>
+            <button onClick={() => void grantBrowser(false)}>
+              Revoke access
+            </button>
+            <button className="primary" onClick={() => void grantBrowser(true)}>
+              Allow browsing
+            </button>
+          </div>
+        </Modal>
       )}
       {consent && (
         <Modal title="Memory permissions" onClose={() => setConsent(false)}>

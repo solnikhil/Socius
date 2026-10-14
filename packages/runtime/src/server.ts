@@ -81,6 +81,17 @@ import {
 } from "./idempotency.js";
 import { DeviceService } from "./devices.js";
 import {
+  BrowserService,
+  locateChromium,
+  type BrowserOptions,
+} from "./browser/service.js";
+import {
+  BrowserActionDecision,
+  BrowserBotInput,
+  BrowserGrantInput,
+  BrowserSessionInput,
+} from "@socius/contracts/browser";
+import {
   requestOrigin,
   remoteSettings,
   RemoteSettingsSchema,
@@ -115,6 +126,8 @@ export interface RuntimeOptions {
   fetch?: typeof globalThis.fetch;
   /** Environment used for provider credential fallbacks. */
   env?: NodeJS.ProcessEnv;
+  /** Visible browser sessions; tests run them headless against fixtures. */
+  browser?: BrowserOptions;
 }
 const BotExportDraftSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
@@ -216,6 +229,14 @@ export async function startRuntime(options: RuntimeOptions) {
       hold?: () => () => void;
     }
   >();
+  await locateChromium();
+  // Each bot's dedicated browser. Takeover and stop cancel the bound task here.
+  const browser = new BrowserService(
+    store,
+    options.dataDir,
+    { cancelTask: (taskId) => active.get(taskId)?.controller.abort() },
+    options.browser,
+  );
   let dreamer: Dreamer | undefined;
   /** How long a bot waits for the user to review a change before moving on. */
   const APPROVAL_WAIT_MS = 15 * 60_000;
@@ -689,6 +710,20 @@ export async function startRuntime(options: RuntimeOptions) {
     b = bot(b.id);
     active.get(taskId)?.connections.add(selected.ref.connectionId);
     const feedback = reactionFeedback(b.id);
+    // Browsing needs a visible owner, so background routines never get it.
+    const running = active.get(taskId);
+    const browserTools = runId
+      ? []
+      : browser.tools({
+          bot: b,
+          taskId,
+          groupId: store.get<Task>("task", taskId)?.groupId ?? null,
+          objective: query,
+          signal,
+          send: running?.send,
+          hold: running?.hold,
+        });
+    const browserBriefing = browserTools.length ? browser.briefing(b) : null;
     return {
       model: selected.model,
       modelRef: selected.ref,
@@ -700,6 +735,8 @@ export async function startRuntime(options: RuntimeOptions) {
         : [],
       ...(feedback ? { feedback } : {}),
       ...packageTools(b, runId ? { taskId, runId } : { taskId }),
+      ...(browserTools.length ? { browserTools } : {}),
+      ...(browserBriefing ? { browserBriefing } : {}),
       signal,
       searchMemory: (q) => {
         if (!bot(b.id).grantedCapabilities.includes("memory.read"))
@@ -820,6 +857,7 @@ export async function startRuntime(options: RuntimeOptions) {
       clearTimeout(timeout);
       active.delete(task.id);
       taskSkills.delete(task.id);
+      browser.releaseTask(task.id);
       dreaming.foregroundFinished();
 
       broker.forgetTask(task.id);
@@ -853,7 +891,14 @@ export async function startRuntime(options: RuntimeOptions) {
     };
     user.taskId = task.id;
     const budget = g.maxAsks ?? MAX_MEMBER_ASKS;
-    await streamTask(res, task, user, g.name, 300000, async (signal, send) => {
+    const browsing = [lead.id, ...g.memberIds].some((id) =>
+      store
+        .get<BotInstance>("bot", id)
+        ?.grantedCapabilities.includes("browser.control"),
+    );
+    // Browsing takes many steps; time waiting on reviews never counts.
+    const limit = browsing ? 600000 : 300000;
+    await streamTask(res, task, user, g.name, limit, async (signal, send) => {
       const run = executeModel;
       const name = (id: string) =>
         id === lead.id
@@ -995,6 +1040,17 @@ export async function startRuntime(options: RuntimeOptions) {
         usedTool = true;
         return request.proposeMemory(content);
       },
+      ...(request.browserTools
+        ? {
+            browserTools: request.browserTools.map((t) => ({
+              ...t,
+              execute: (args: Record<string, unknown>) => {
+                usedTool = true;
+                return t.execute(args);
+              },
+            })),
+          }
+        : {}),
       ...(request.askMember
         ? {
             askMember: async (member: string, prompt: string) => {
@@ -1350,6 +1406,9 @@ export async function startRuntime(options: RuntimeOptions) {
             environment: providers.environment(),
             secretStorage: !!options.secretBox,
             dreaming: dreaming.status(),
+            browserSessions: browser.sessions(),
+            browserActions: browser.actions(),
+            browser: browser.status(),
           });
           return;
         }
@@ -1494,6 +1553,7 @@ export async function startRuntime(options: RuntimeOptions) {
           )
             fail(409, "Wait until the group chat using this bot finishes.");
           routines.deleteForBot(b.id);
+          await browser.forgetBot(b.id);
           store.deleteBot(b.id);
           dreaming.permissionsChanged();
 
@@ -2185,6 +2245,75 @@ export async function startRuntime(options: RuntimeOptions) {
           }
           fail(404, "Not found");
         }
+        if (path.startsWith("/api/browser/")) {
+          // The browser window is on this computer, so control stays local.
+          localOnly();
+          if (req.method === "POST" && path === "/api/browser/grant") {
+            const input = BrowserGrantInput.parse(await body(req));
+            const b = bot(input.botId);
+            const others = b.grantedCapabilities.filter(
+              (c) => c !== "browser.control",
+            );
+            b.grantedCapabilities = input.granted
+              ? [...others, "browser.control"]
+              : others;
+            store.put("bot", b.id, b);
+            if (input.granted) browser.sessionFor(b.id);
+            else browser.revoke(b.id);
+            store.event(
+              "permissions.updated",
+              `Browser access ${input.granted ? "granted to" : "revoked from"} ${b.name}.`,
+            );
+            json(res, 200, b);
+            return;
+          }
+          if (req.method === "POST" && path === "/api/browser/take-control") {
+            const input = BrowserSessionInput.parse(await body(req));
+            json(
+              res,
+              200,
+              await browser.takeControl(input.sessionId, device.id),
+            );
+            return;
+          }
+          if (req.method === "POST" && path === "/api/browser/resume") {
+            const input = BrowserSessionInput.parse(await body(req));
+            const session =
+              browser.sessions().find((x) => x.id === input.sessionId) ??
+              fail(404, "Browser session not found");
+            json(
+              res,
+              200,
+              browser.resume(input.sessionId, device.id, bot(session.botId)),
+            );
+            return;
+          }
+          if (req.method === "POST" && path === "/api/browser/stop") {
+            const input = BrowserSessionInput.parse(await body(req));
+            json(res, 200, await browser.stop(input.sessionId));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/browser/show") {
+            const input = BrowserSessionInput.parse(await body(req));
+            json(res, 200, await browser.show(input.sessionId));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/browser/reset") {
+            const input = BrowserBotInput.parse(await body(req));
+            bot(input.botId);
+            json(res, 200, await browser.reset(input.botId));
+            return;
+          }
+          if (
+            req.method === "POST" &&
+            path === "/api/browser/actions/resolve"
+          ) {
+            const input = BrowserActionDecision.parse(await body(req));
+            json(res, 200, await browser.decide(input, device.id));
+            return;
+          }
+          fail(404, "Not found");
+        }
         if (req.method === "POST" && path === "/api/tasks/cancel") {
           const input = z.strictObject({ id: uuid }).parse(await body(req));
           const routineRunId = store.get<Task>("task", input.id)?.routineRunId;
@@ -2235,7 +2364,8 @@ export async function startRuntime(options: RuntimeOptions) {
             task,
             user,
             b.name,
-            180000,
+            // Browsing takes many steps; time waiting on reviews never counts.
+            b.grantedCapabilities.includes("browser.control") ? 600000 : 180000,
             async (signal, send) => {
               const assistant: Message = {
                 id: randomUUID(),
@@ -2557,12 +2687,14 @@ export async function startRuntime(options: RuntimeOptions) {
     broker,
     routines,
     dreaming,
+    browser,
     close: async () => {
       // Stop background workers before closing their shared store.
       await routines.stop();
       await dreaming.close();
       for (const t of active.values()) t.controller.abort();
       while (active.size) await new Promise((r) => setTimeout(r, 10));
+      await browser.close();
       devices.close();
       await new Promise<void>((resolve, reject) =>
         server.close((e) => (e ? reject(e) : resolve())),

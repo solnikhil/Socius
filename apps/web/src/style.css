@@ -4268,3 +4268,59 @@ dialog.create-bot,
     animation: none;
   }
 }
+
+/* ---------- Browser control ---------- */
+.browser-panel {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bubble);
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.browser-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.browser-panel-row svg {
+  color: var(--text-2);
+}
+.browser-panel-row small {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.browser-panel-page,
+.browser-panel-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browser-panel-note {
+  white-space: normal;
+}
+.browser-panel .modal-actions {
+  margin-top: 8px;
+}
+.browser-action-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0 0 10px;
+  font-size: 13.5px;
+}
+.browser-action-details dt {
+  color: var(--text-3);
+}
+.browser-action-details dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.browser-action-details pre {
+  margin: 0;
+  white-space: pre-wrap;
+}

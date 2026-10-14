@@ -14,7 +14,9 @@ await build({
   target: "node24",
   format: "cjs",
   outExtension: { ".js": ".cjs" },
-  external: ["electron"],
+  // Playwright launches a separate browser process and ships its own assets,
+  // so it is loaded from node_modules at runtime rather than bundled.
+  external: ["electron", "playwright-core"],
   sourcemap: true,
 });
 await writeFile(

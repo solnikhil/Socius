@@ -38,6 +38,12 @@ Deliver disabled-by-default private routines with persisted schedules, explicit 
 
 Coordinate shared contracts/runtime/provider-budget/cancellation hooks with Dreaming #8 and the group/connector workstreams. Dreaming remains a separate issue and is not a dependency on an unmerged draft. The user owns UI/visual refinement. Cloud hosting, OS wake, new delivery channels, new connector adapters and board execution remain out of scope. Keep Notion A03/A04/A05 and scheduled-workflow I05 unchecked until verified integration.
 
+## Browser control — implemented, acceptance pending
+
+[Issue #26](https://github.com/solnikhil/Socius/issues/26) is implemented on `codex/browser-control`: a dedicated visible Chromium per bot, runtime-gated browsing tools, Take control / Resume / Stop with a monotonic control revision, exact-action approval for clicks and form submissions, and a filtering proxy that blocks local and private-network addresses. See [Browser control](architecture/browser-control.md). Real-Chromium deterministic tests cover research, takeover races, policy and failure cases.
+
+Pending: desktop acceptance with a person taking over to sign in, a consented live-model run, packaged-build support (`playwright-core` is not yet shipped by electron-builder) and the UI owner's review of the minimal browser panel, approval card and grant dialog in `Chat.tsx`/`BrowserPanel.tsx`. Keep Notion unchecked until these are recorded.
+
 ## Additional product roadmap — planned
 
 Use the [complete feature specification](specs/product-expansion.md) for the ten-item coverage matrix, scope boundaries, shared-contract decisions and per-feature acceptance tests. This is an assignment/review contract; the features remain unimplemented.
@@ -109,7 +115,7 @@ Next connector batch, in the user-selected order: **Linear → GitHub → Gmail 
 
 ## Explicitly deferred / not assigned in the current two issues
 
-Ollama testing is deferred at the user's request. LM Studio/llama.cpp checks can follow. Recurring routines/durable execution/proactivity are now specified in unassigned Issue #10; implementation remains pending. Browser automation/takeover, PDF/Office parsing, Tailscale/phone pairing, Telegram, public hosting/accounts/billing, signing/updates, agent email, semantic memory, voice, India Stack and optional cloud execution remain backlog items. Do not treat these as already assigned to the two teammates or required before your immediate UI refinement.
+Ollama testing is deferred at the user's request. LM Studio/llama.cpp checks can follow. Recurring routines/durable execution/proactivity are now specified in unassigned Issue #10; implementation remains pending. PDF/Office parsing, Tailscale/phone pairing, Telegram, public hosting/accounts/billing, signing/updates, agent email, semantic memory, voice, India Stack and optional cloud execution remain backlog items. Do not treat these as already assigned to the two teammates or required before your immediate UI refinement.
 
 ## Coordination rules
 

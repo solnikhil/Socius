@@ -18,6 +18,7 @@ import type {
   ProviderErrorCode,
   ProviderId,
 } from "./providers.js";
+import type { BrowserAction, BrowserSession } from "./browser.js";
 export interface Message {
   id: string;
   /** The bot whose conversation this is, or in a group the bot that wrote it. */
@@ -319,6 +320,12 @@ export interface Snapshot {
   environment: Partial<Record<ProviderId, string[]>>;
   /** Whether credentials entered in the interface can be stored encrypted. */
   secretStorage: boolean;
+  /** Private browser session metadata; never cookies or profile contents. */
+  browserSessions: BrowserSession[];
+  /** Recent browser interactions proposed by bots, newest last. */
+  browserActions: BrowserAction[];
+  /** Whether this runtime can launch a browser, and why not when it cannot. */
+  browser: { available: boolean; detail: string | null };
 }
 export interface InstallPreviewPackage {
   manifest: Manifest;
