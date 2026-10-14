@@ -1624,8 +1624,7 @@ html[data-theme="dark"] .connect-apps-dialog {
   box-shadow: none;
 }
 .app-icon .monogram {
-  font-family: Georgia, "Times New Roman", serif;
-  font-weight: 700;
+  font-weight: 650;
   line-height: 1;
 }
 .app-stack .app-icon {
