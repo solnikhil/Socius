@@ -19,10 +19,17 @@ export const fail = (
 ): never => {
   throw new HttpError(status, message, code);
 };
+const bodies = new WeakMap<IncomingMessage, unknown>();
+const validators = new WeakMap<IncomingMessage, () => void>();
+export function validateBody(req: IncomingMessage, check: () => void) {
+  validators.set(req, check);
+}
 export async function body(
   req: IncomingMessage,
   limit = 1024 * 1024,
 ): Promise<unknown> {
+  validators.get(req)?.();
+  if (bodies.has(req)) return bodies.get(req);
   if (!req.headers["content-type"]?.startsWith("application/json"))
     fail(415, "Expected JSON");
   const chunks: Buffer[] = [];
@@ -32,13 +39,28 @@ export async function body(
     if (size > limit) fail(413, "Request too large");
     chunks.push(chunk);
   }
+  let value: unknown;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString());
+    value = JSON.parse(Buffer.concat(chunks).toString());
   } catch {
     return fail(400, "Invalid JSON");
   }
+  validators.get(req)?.();
+  bodies.set(req, value);
+  return value;
+}
+const jsonObservers = new WeakMap<
+  ServerResponse,
+  (status: number, value: unknown) => void
+>();
+export function observeJson(
+  res: ServerResponse,
+  fn: (status: number, value: unknown) => void,
+) {
+  jsonObservers.set(res, fn);
 }
 export function json(res: ServerResponse, status: number, value: unknown) {
+  jsonObservers.get(res)?.(status, value);
   res.writeHead(status, {
     "Content-Type": "application/json",
     "Cache-Control": "no-store",

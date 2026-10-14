@@ -46,7 +46,7 @@ import {
   type ModelRequest,
   type ModelRunner,
 } from "./model.js";
-import { body, errorResponse, fail, json } from "./http.js";
+import { body, errorResponse, fail, json, validateBody } from "./http.js";
 import {
   CreateConnection,
   ModelId,
@@ -59,6 +59,12 @@ import { PackageError, PackageService } from "./packages.js";
 import { ConnectionService } from "./connections.js";
 import { ActionBroker, type BrokerOptions } from "./broker.js";
 
+import {
+  reserveRequest,
+  idempotentRoute,
+  acceptStream,
+  assertSession,
+} from "./idempotency.js";
 import { DeviceService } from "./devices.js";
 import {
   requestOrigin,
@@ -493,11 +499,13 @@ export async function startRuntime(options: RuntimeOptions) {
       send: (event: unknown) => void,
     ) => Promise<Message[]>,
   ) {
+    assertSession(res);
     store.transaction(() => {
       store.put("task", task.id, task);
       store.put("message", user.id, user);
       store.event("task.started", `Task started for ${label}.`);
     });
+    acceptStream(res, task.id);
     const controller = new AbortController();
     active.set(task.id, {
       controller,
@@ -508,6 +516,7 @@ export async function startRuntime(options: RuntimeOptions) {
       "Cache-Control": "no-store",
     });
     const send = (event: unknown) => {
+      if (res.writableLength > 1024 * 1024) res.destroy();
       if (!res.destroyed) res.write(JSON.stringify(event) + "\n");
     };
     send({ type: "started", taskId: task.id });
@@ -908,7 +917,55 @@ export async function startRuntime(options: RuntimeOptions) {
           !remoteSafe(req.method ?? "GET", url.pathname)
         )
           fail(403, "Do this on your laptop");
+        const check = () => {
+          devices.authenticate(cookie, context.kind, false);
+          requestOrigin(req, origin, remoteSettings(store));
+        };
+        validateBody(req, check);
         const path = url.pathname;
+        if (req.method === "POST" && idempotentRoute(path)) {
+          const key = req.headers["idempotency-key"];
+          if (context.kind === "remote" && !key)
+            fail(400, "An Idempotency-Key is required for this action");
+          if (key) {
+            if (typeof key !== "string") fail(400, "Invalid Idempotency-Key");
+            const input = await body(req);
+            check();
+            const replay = reserveRequest(
+              store,
+              device.id,
+              key as string,
+              path,
+              input,
+              res,
+              check,
+            );
+            if (replay) {
+              json(res, replay.status, replay.result);
+              return;
+            }
+          }
+        }
+        if (req.method === "GET" && /^\/api\/chats\/[^/]+$/.test(path)) {
+          const id = uuid.parse(path.split("/")[3]);
+          const g = store.get<GroupChat>("group", id);
+          if (!g) bot(id);
+          const messages = g ? store.groupMessages(id) : store.messages(id);
+          // A bounded authoritative snapshot also recovers edits to the last partial message.
+          // `since` is a hint, not an append-only cursor; never omit a still-changing reply.
+          json(res, 200, {
+            messages: messages.slice(-500),
+            tasks: store
+              .all<Task>("task")
+              .filter((t) =>
+                g ? t.groupId === id : t.botId === id && !t.groupId,
+              )
+              .slice(-100),
+            lastEventId: messages.at(-1)?.id ?? null,
+          });
+          return;
+        }
+
         if (req.method === "GET" && path === "/api/remote/status") {
           json(res, 200, {
             ...remoteSettings(store),
@@ -1426,6 +1483,7 @@ export async function startRuntime(options: RuntimeOptions) {
               approve: z.boolean(),
             })
             .parse(await body(req));
+          check();
           json(res, 200, await broker.resolve(input));
           return;
         }

@@ -28,7 +28,7 @@ import {
   type Reaction,
   type Snapshot,
 } from "@socius/contracts/app";
-import { api } from "../api.js";
+import { requestKey, requestKnown, api } from "../api.js";
 import {
   Avatar,
   ErrorNote,
@@ -105,6 +105,7 @@ export function Chat({
     [details, setDetails] = useState(false),
     [exporting, setExporting] = useState(false),
     [copied, setCopied] = useState("");
+  const streamAbort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null),
     thread = useRef<HTMLDivElement>(null),
     upload = useRef<HTMLInputElement>(null),
@@ -112,6 +113,19 @@ export function Chat({
   const closeDetails = useCallback(() => {
     setDetails(false);
     setConfirmDelete(false);
+  }, []);
+  useEffect(() => {
+    const recover = () => {
+      if (document.visibilityState === "visible") streamAbort.current?.abort();
+    };
+    const disconnect = () => streamAbort.current?.abort();
+    document.addEventListener("visibilitychange", recover);
+    window.addEventListener("offline", disconnect);
+    return () => {
+      document.removeEventListener("visibilitychange", recover);
+      window.removeEventListener("offline", disconnect);
+      streamAbort.current?.abort();
+    };
   }, []);
   const conversation = group?.id ?? bot.id;
   const title = group?.name ?? bot.name;
@@ -152,15 +166,21 @@ export function Chat({
     let mounted = true;
     async function load() {
       try {
-        const next = await api<Message[]>(messagesPath);
+        const snapshot = await api<{
+          messages: Message[];
+          lastEventId: string | null;
+        }>(
+          `chats/${conversation}?since=${encodeURIComponent(messages.at(-1)?.id ?? "")}`,
+        );
+        const next = snapshot.messages;
         if (mounted) setMessages(next);
       } catch (e) {
         if (mounted) fail((e as Error).message);
       }
     }
-    if (!busy) void load();
+    void load();
     const timer = setInterval(() => {
-      if (!busy) void load();
+      void load();
     }, 2500);
     return () => {
       mounted = false;
@@ -202,16 +222,27 @@ export function Chat({
   }
   /** Posts a turn and streams its events; false when the request was refused. */
   async function converse(path: string, payload: unknown) {
+    if (!navigator.onLine) {
+      fail("Offline. Reconnect before sending.");
+      return false;
+    }
     setBusy(true);
     fail("");
     setStream(null);
     let accepted = false;
     try {
+      const controller = new AbortController();
+      streamAbort.current = controller;
       const response = await fetch(`/api/${path}`, {
+        signal: controller.signal,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": requestKey(path, payload),
+        },
         body: JSON.stringify(payload),
       });
+      if (response.status !== 409) requestKnown(path, payload);
       if (!response.ok) {
         const result = await response.json();
         throw Object.assign(new Error(result.error), {
@@ -219,6 +250,13 @@ export function Chat({
         });
       }
       accepted = true;
+      if (response.headers.get("content-type")?.includes("application/json")) {
+        const saved = await response.json();
+        if (saved.taskId) setTaskId(saved.taskId);
+        setMessages(await api<Message[]>(messagesPath));
+        await onRefresh();
+        return true;
+      }
       setMessages(await api<Message[]>(messagesPath));
       const reader = response.body!.getReader(),
         decoder = new TextDecoder();

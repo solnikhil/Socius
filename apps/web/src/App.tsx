@@ -16,7 +16,9 @@ import {
 } from "lucide-react";
 import type { BotInstance, BotManifest } from "@socius/contracts";
 import type { Category, GroupChat, Snapshot } from "@socius/contracts/app";
-import { api } from "./api.js";
+import { PhonePairing, initialPairingToken } from "./phone-pairing.js";
+import { ConnectionBanner } from "./connection.js";
+import { ApiError, api } from "./api.js";
 import {
   Avatar,
   ErrorNote,
@@ -67,6 +69,7 @@ const isMacDesktop =
   /Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform);
 
 export function App() {
+  const [needsPairing, setNeedsPairing] = useState(!!initialPairingToken);
   const [state, setState] = useState<Snapshot | null>(null),
     [selected, setSelected] = useState(""),
     [groupId, setGroupId] = useState(""),
@@ -78,7 +81,9 @@ export function App() {
       category?: Category;
     } | null>(null),
     [apps, setApps] = useState(false),
-    [collapsed, setCollapsed] = useState(false),
+    [collapsed, setCollapsed] = useState(
+      () => matchMedia("(max-width: 600px)").matches,
+    ),
     [settings, setSettings] = useState<{
       tab: SettingsTab;
       connectionId?: string | undefined;
@@ -89,10 +94,19 @@ export function App() {
   async function refresh() {
     try {
       const next = await api<Snapshot>("state");
+      setNeedsPairing(false);
       setState(next);
       setSelected((s) => s || next.bots[0]?.id || "");
       setError("");
     } catch (e) {
+      if (
+        e instanceof ApiError &&
+        e.status === 401 &&
+        location.protocol === "https:"
+      ) {
+        setNeedsPairing(true);
+        setState(null);
+      }
       setError((e as Error).message);
     }
   }
@@ -148,9 +162,17 @@ export function App() {
       return next;
     });
   const current = state?.bots.find((b) => b.id === selected) ?? state?.bots[0];
+  if (needsPairing)
+    return (
+      <>
+        <ConnectionBanner />
+        <PhonePairing onPaired={() => void refresh()} />
+      </>
+    );
   if (!state || !current)
     return (
       <div className="boot">
+        <ConnectionBanner />
         <Avatar name="Socius" main size={64} />
         <h1>Socius</h1>
         <p>{error || "Starting your local workspace…"}</p>
@@ -361,6 +383,7 @@ export function App() {
 
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""}`}>
+      <ConnectionBanner />
       <aside className="sidebar" aria-label="Bots" inert={collapsed}>
         <div className="sidebar-top drag">{toolbar}</div>
         <div className="sidebar-scroll">
@@ -373,27 +396,27 @@ export function App() {
                 categories={state.categories}
                 onRefresh={refresh}
               >
-              <button
-                className={`featured-bot ${page === "chat" && !group && current.id === main.id ? "active" : ""}`}
-                onClick={() => open(main)}
-              >
-                <Avatar name={main.name} main size={66} badge />
-                <span>{main.name}</span>
-                {(running(main) ||
-                  waiting(main) ||
-                  !!layoutOf(main.id)?.unread) && (
-                  <span
-                    className={`review-dot ${running(main) ? "pulse" : ""}`}
-                    aria-label={
-                      running(main)
-                        ? "Working"
-                        : waiting(main)
-                          ? "Needs review"
-                          : "Unread"
-                    }
-                  />
-                )}
-              </button>
+                <button
+                  className={`featured-bot ${page === "chat" && !group && current.id === main.id ? "active" : ""}`}
+                  onClick={() => open(main)}
+                >
+                  <Avatar name={main.name} main size={66} badge />
+                  <span>{main.name}</span>
+                  {(running(main) ||
+                    waiting(main) ||
+                    !!layoutOf(main.id)?.unread) && (
+                    <span
+                      className={`review-dot ${running(main) ? "pulse" : ""}`}
+                      aria-label={
+                        running(main)
+                          ? "Working"
+                          : waiting(main)
+                            ? "Needs review"
+                            : "Unread"
+                      }
+                    />
+                  )}
+                </button>
               </BotMenu>
             </div>
           )}

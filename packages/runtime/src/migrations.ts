@@ -110,6 +110,13 @@ const migrations: { version: number; up: (db: DatabaseSync) => void }[] = [
         revoked_at TEXT, origin_kind TEXT NOT NULL CHECK(origin_kind IN ('local','remote'))
       );`),
   },
+  {
+    version: 6,
+    up: (db) =>
+      db.exec(`CREATE TABLE remote_requests(
+      device_id TEXT NOT NULL REFERENCES devices(id), key TEXT NOT NULL, hash TEXT NOT NULL,
+      status INTEGER, result TEXT, created_at TEXT NOT NULL, PRIMARY KEY(device_id,key));`),
+  },
 ];
 
 /** Moves the v1 single-provider settings row into a provider connection. */
