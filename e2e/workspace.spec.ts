@@ -120,8 +120,14 @@ test("configure a model, create bots manually and through Socius, install skills
     .getByRole("textbox", { name: "Message Socius" })
     .fill("Create a planning bot");
   await page.getByRole("button", { name: "Send message" }).click();
-  await expect(page.getByText("Review a new bot")).toBeVisible();
-  await page.getByRole("button", { name: "Create bot", exact: true }).click();
+  // The proposal pauses Socius's reply on a question card until the user answers.
+  const proposal = page.locator(".approval-card");
+  await expect(
+    proposal.getByText("Create a bot called “Planner”?"),
+  ).toBeVisible();
+  await expect(page.getByText("Socius is waiting for you")).toBeVisible();
+  await proposal.getByRole("button", { name: /Yes, go ahead/ }).click();
+  await expect(page.getByText("Planner is ready.")).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Planner Planning specialist/ }),
   ).toBeVisible();
@@ -1077,6 +1083,80 @@ test("Linear grants are scoped to Linear and cleared on disconnect", async ({
   expect(socius.grantedCapabilities).toEqual(
     expect.arrayContaining(["documents.read", "documents.write"]),
   );
+  expect(errors).toEqual([]);
+  await context.close();
+});
+test("Socius asks a bot directly and sets up a group chat after approval", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    storageState: "test-results/paired-state.json",
+  });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://127.0.0.1:3137/");
+  await page
+    .getByRole("button", { name: "Create", exact: true })
+    .first()
+    .click();
+  await page.getByRole("option", { name: /Create new bot/ }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Scout");
+  await page.getByLabel("Role", { exact: true }).fill("Launch research");
+  await page
+    .getByLabel("Instructions", { exact: true })
+    .fill("Research launches.");
+  await page.getByRole("button", { name: "Create bot", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "Socius", exact: true }).click();
+  const composer = page.getByRole("textbox", { name: "Message Socius" });
+
+  // Asking is immediate: Scout's reply appears in Socius's chat, attributed.
+  await composer.fill("ask Scout for the launch steps");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(
+    page.getByText(
+      "From Scout: start with research, then draft, then schedule.",
+    ),
+  ).toBeVisible();
+  const scout = page.locator("article.message").filter({
+    hasText: "Scout here. 1. Research the audience.",
+  });
+  await expect(scout).toBeVisible();
+  await expect(
+    scout.getByText("Socius asked: Outline the three launch steps."),
+  ).toBeVisible();
+  await expect(scout.getByRole("button", { name: "React" })).toHaveCount(0);
+  await expect(
+    page.locator(".speaker").filter({ hasText: "Scout" }),
+  ).toBeVisible();
+  // The exchange stays in Socius's chat; Scout's own chat is untouched.
+  await page.getByRole("button", { name: /Scout Launch research/ }).click();
+  await expect(
+    page.getByText("Scout here. 1. Research the audience."),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Socius", exact: true }).click();
+
+  // Changing the workspace waits for the user's answer on a question card.
+  await composer.fill("make a group with Scout");
+  await page.getByRole("button", { name: "Send message" }).click();
+  const card = page.locator(".approval-card");
+  await expect(
+    card.getByText("Create the group chat “Launch team”?"),
+  ).toBeVisible();
+  await expect(card.getByText("Scout", { exact: false })).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Bots" }).getByText("Launch team"),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: "test-results/socius-orchestrate.png",
+    animations: "disabled",
+  });
+  await card.getByRole("button", { name: /Yes, go ahead/ }).click();
+  await expect(page.getByText("Done, Launch team is set up.")).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Bots" }).getByText("Launch team"),
+  ).toBeVisible();
   expect(errors).toEqual([]);
   await context.close();
 });
