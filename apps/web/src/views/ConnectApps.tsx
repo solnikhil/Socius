@@ -1,3 +1,7 @@
+import {
+  plannedConnectors,
+  type PlannedConnector,
+} from "@socius/marketplace/connector-directory";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -84,6 +88,13 @@ export function ConnectApps({
   const q = query.trim().toLowerCase();
   const matches = catalog.filter((p) =>
     `${p.name} ${p.description} ${p.publisher}`.toLowerCase().includes(q),
+  );
+  const plannedMatches = plannedConnectors.filter(
+    (item) =>
+      !latest.has(item.id) &&
+      `${item.name} ${item.description} ${item.category}`
+        .toLowerCase()
+        .includes(q),
   );
   const added = catalog.filter(installed);
   const selected = detail
@@ -198,8 +209,28 @@ export function ConnectApps({
       </article>
     );
   };
-  const section = (title: string, items: Manifest[], more?: Filter) =>
-    items.length > 0 && (
+  const plannedRow = (item: PlannedConnector) => (
+    <article className="app-row" key={item.id}>
+      <AppIcon item={item} />
+      <div>
+        <h4>{item.name}</h4>
+        <p>
+          {item.description} Integration planned; account connection is not
+          available yet.
+        </p>
+      </div>
+      <button className="pill" disabled aria-label={`${item.name}: planned`}>
+        Planned
+      </button>
+    </article>
+  );
+  const section = (
+    title: string,
+    items: Manifest[],
+    more?: Filter,
+    planned: readonly PlannedConnector[] = [],
+  ) =>
+    (items.length > 0 || planned.length > 0) && (
       <section className="app-section" key={title}>
         <div className="app-section-head">
           <h3>{title}</h3>
@@ -209,7 +240,10 @@ export function ConnectApps({
             </button>
           )}
         </div>
-        <div className="app-grid">{items.map(row)}</div>
+        <div className="app-grid">
+          {items.map(row)}
+          {planned.map(plannedRow)}
+        </div>
       </section>
     );
   const recommended = matches.filter(
@@ -337,24 +371,34 @@ export function ConnectApps({
                     sectionTitle[kind],
                     matches.filter((p) => p.kind === kind),
                     kind,
+                    kind === "connector" ? plannedMatches : [],
                   ),
                 )}
               </>
             ) : filter === "added" ? (
               section("Connected", visible)
             ) : (
-              section(sectionTitle[filter], visible)
+              section(
+                sectionTitle[filter],
+                visible,
+                undefined,
+                filter === "connector" ? plannedMatches : [],
+              )
             )}
-            {visible.length === 0 && (
-              <div className="empty">
-                <Search size={22} />
-                <p>
-                  {filter === "added"
-                    ? "Nothing connected yet."
-                    : "No apps or skills match your search."}
-                </p>
-              </div>
-            )}
+            {visible.length === 0 &&
+              !(
+                (filter === "all" || filter === "connector") &&
+                plannedMatches.length > 0
+              ) && (
+                <div className="empty">
+                  <Search size={22} />
+                  <p>
+                    {filter === "added"
+                      ? "Nothing connected yet."
+                      : "No apps or skills match your search."}
+                  </p>
+                </div>
+              )}
           </>
         )}
         <div className="registry-note">

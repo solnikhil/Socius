@@ -155,3 +155,9 @@ New record kinds: `release`, `connection`, `action`, `registry-cache`. The curat
 - Browser mode cannot connect accounts, because it has no OS-backed encryption.
 - Release trust has no publisher signatures yet. `curated`/`reviewed` reflect Socius review; registry metadata is not cryptographically verified.
 - Only Notion is implemented. Calendar and other connectors follow the same `ReviewedConnector` contract.
+
+## Requested connector directory
+
+IRCTC, DigiLocker, MakeMyTrip, Air India, IndiGo, Zomato, Swiggy, Airtel and Jio appear as searchable **Planned** listings in Connect Apps → Connectors. `packages/marketplace/src/connector-directory.ts` holds these discovery entries separately from installable, verified releases. They have no authentication endpoints, executable adapters, tools or permission grants. A listing disappears automatically when a compatible release with its ID is available.
+
+Each integration still needs a supported access method, account authentication, reviewed action schemas, capability enforcement, approval rules and end-to-end account validation before becoming connectable. The existing Notion integration retains its normal installation and authentication flow.

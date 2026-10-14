@@ -7,7 +7,7 @@ export function AppIcon({
   item,
   size = 44,
 }: {
-  item: Manifest;
+  item: Pick<Manifest, "id" | "name" | "kind">;
   size?: number;
 }) {
   if (item.kind === "bot")

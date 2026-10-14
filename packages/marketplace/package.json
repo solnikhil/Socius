@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./curated": "./src/curated.ts",
-    "./registry": "./src/registry.ts"
+    "./registry": "./src/registry.ts",
+    "./connector-directory": "./src/connector-directory.ts"
   },
   "dependencies": {
     "@socius/contracts": "0.1.0",
