@@ -443,6 +443,11 @@ export class ProviderService {
     const ref =
       this.store.providers.resolve(botId) ??
       fail(409, "Choose a model in Settings → Models first");
+    return this.forModel(ref);
+  }
+
+  /** Exact selection for background work: never fall back to another model. */
+  async forModel(ref: ModelRef) {
     const entry = this.entry(ref);
     const c = this.get(entry.connectionId);
     const model = await this.build(c, entry.modelId);

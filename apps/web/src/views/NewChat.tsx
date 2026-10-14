@@ -59,7 +59,14 @@ export function NewChat({
       .map((b) => ({
         key: b.id,
         label: b.name,
-        icon: <Avatar name={b.name} main={b.id === mainId} size={22} />,
+        icon: (
+          <Avatar
+            name={b.name}
+            main={b.id === mainId}
+            size={22}
+            appearance={b.appearance}
+          />
+        ),
         run: () => onPick(b),
       })),
     ...groups

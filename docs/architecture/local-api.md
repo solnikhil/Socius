@@ -15,8 +15,14 @@ Electron supervises a Node utility process that binds `127.0.0.1` on an ephemera
 | POST   | `/api/install/preview`                           | Exact dependency plan with source, trust, installed versions, requested and newly requested capabilities, and plan digest                                          |
 | POST   | `/api/install`                                   | `{id,version,digest,consent}`: verify digest, consent and file integrity, then atomically record receipts; instantiate bot roots                                   |
 | POST   | `/api/installations/enable`                      | Enable or disable an installed package                                                                                                                             |
-| POST   | `/api/installations/uninstall`                   | Remove a receipt unless another package depends on it; revoke connector connections                                                                                |
+| POST   | `/api/installations/uninstall`                   | `{id,detach?}`: remove a receipt unless another package depends on it; revoke connector connections. An assigned skill needs `detach:true`                         |
 | POST   | `/api/installations/rollback`                    | Restore the previous release when it needs no new consent                                                                                                          |
+| GET    | `/api/skills/assignments?botId=`                 | One bot's skill assignments with live status (`ready`, `off`, `needs-review`, `unavailable`)                                                                       |
+| POST   | `/api/skills/assign`                             | `{botId,skillId,activation?,enabled?}`: pin the installed release to one bot. 201 created, 200 for an identical repeat, 409 for a conflicting repeat               |
+| POST   | `/api/skills/assignments/update`                 | `{botId,skillId,revision,enabled?,activation?}`; stale revision → 409. Always-load over the context budget → 409                                                   |
+| POST   | `/api/skills/assignments/review`                 | `{botId,skillId,revision,release:{version,digest}}`: accept the installed release after review                                                                     |
+| POST   | `/api/skills/unassign`                           | `{botId,skillId,revision?}`; repeating returns `{removed:false}`                                                                                                   |
+| POST   | `/api/skills/reviews/dismiss`                    | `{botId}`: finish the migration/template skill review                                                                                                              |
 | POST   | `/api/skills/import`                             | `{label,files:[{path,content(base64)}]}`: validate and stage an Agent Skills directory as a local-unverified release (8 MB limit)                                  |
 | POST   | `/api/templates/import`                          | Import an exported bot template JSON as a local-unverified release                                                                                                 |
 | POST   | `/api/export/skill/preview`, `/api/export/skill` | Review, then write a standard skill directory under `exports/`                                                                                                     |
@@ -26,10 +32,15 @@ Electron supervises a Node utility process that binds `127.0.0.1` on an ephemera
 | GET    | `/oauth/callback`                                | Provider redirect; authenticated by one-time state instead of the session cookie                                                                                   |
 | POST   | `/api/connectors/verify`                         | Re-check credentials and upstream tool schemas                                                                                                                     |
 | POST   | `/api/connectors/disconnect`                     | Revoke (best effort) and delete stored credentials                                                                                                                 |
-| POST   | `/api/actions/resolve`                           | Approve or decline an exact external write by digest                                                                                                               |
+| POST   | `/api/actions/resolve`                           | Approve or decline an exact external write by digest; optional `feedback` (decline only) goes back to the waiting bot                                              |
 | POST   | `/api/actions/check`                             | Re-check an unknown outcome without repeating the write                                                                                                            |
 | POST   | `/api/actions/retry`                             | Retry only after Socius confirmed the write did not happen                                                                                                         |
 | POST   | `/api/approvals`                                 | Apply/decline a pending proposal with exact digest and expiry                                                                                                      |
+| GET    | `/api/dreaming`                                  | Dreaming settings, model availability and the 30 most recent runs (journals omitted)                                                                               |
+| POST   | `/api/dreaming/settings`                         | `{expectedRevision,enabled,model,idleMinutes,intervalMinutes}`; 409 when the revision is stale                                                                     |
+| POST   | `/api/dreaming/run`                              | `{botId}`: Dream now. 202 with the run; 409 when off, busy or nothing new; 403 without memory grants                                                               |
+| POST   | `/api/dreaming/cancel`                           | `{id}`: stop the running dream                                                                                                                                     |
+| GET    | `/api/dreaming/sources?botId=&runId=\|memoryId=` | Cited direct user messages for one run or note, clipped to 4,000 characters; missing ones return `content: null`                                                   |
 | GET    | `/api/memory?botId=&q=`                          | Reconcile/read/search scoped Markdown memory                                                                                                                       |
 | POST   | `/api/memory`                                    | User editor creates/updates a record                                                                                                                               |
 | DELETE | `/api/memory`                                    | User editor deletes record and derived index entry                                                                                                                 |
@@ -43,6 +54,40 @@ Electron supervises a Node utility process that binds `127.0.0.1` on an ephemera
 | DELETE | `/api/models`                                    | Remove a model; selections using it are cleared                                                                                                                    |
 | POST   | `/api/models/test`                               | Real text call plus tool-call check; records tool support                                                                                                          |
 | POST   | `/api/models/select`                             | `{botId                                                                                                                                                            | null, model                 | null}`: set workspace default or a per-bot override |
+
+### Routines
+
+Paired-session and origin checks apply as above. Validation errors return `400` with field diagnostics. See [Routines](routines.md) for behavior.
+
+| Method | Endpoint                           | Behavior                                                                                                  |
+| ------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/routines?botId=`             | Routines with next occurrence, recent runs, delivered notifications and scheduler status                  |
+| GET    | `/api/routines/history?id=`        | One routine's runs, all notifications (including held) and watcher state                                  |
+| GET    | `/api/routines/run?id=`            | One run with its checkpoints and broker actions                                                           |
+| POST   | `/api/routines`                    | Create (`201`), always disabled: `{botId,name,work,schedule,timezone,missedRuns?,limits?,notifications?}` |
+| POST   | `/api/routines/preview`            | `{id}` or a full routine body: next occurrences, local times, DST and missed-run notes                    |
+| POST   | `/api/routines/update`             | `{id,...partial}`; revision increments; queued/running work is cancelled; never changes `enabled`         |
+| POST   | `/api/routines/enable`             | `{id,enabled}`; the only way to turn a routine on; grants nothing                                         |
+| POST   | `/api/routines/run`                | `{id}`: explicit manual run (`202`, queued); same grants, budget and approvals                            |
+| POST   | `/api/routines/cancel`             | `{runId}`: stops a queued, running or awaiting run; blocks its pending proposals                          |
+| POST   | `/api/routines/finish`             | `{id}`: stop for good (goals); queued runs cancelled                                                      |
+| POST   | `/api/routines/snooze`, `/mute`    | `{id,until\|null}` holds delivery; `{id,muted}` keeps history only                                        |
+| DELETE | `/api/routines`                    | `{id}`: cancel work and delete the routine and its history                                                |
+| POST   | `/api/routines/notifications/read` | `{id}`                                                                                                    |
+
+```json
+{
+  "botId": "…",
+  "name": "Morning brief",
+  "work": { "kind": "brief", "prompt": "Summarize today's plan and risks" },
+  "schedule": { "kind": "daily", "time": "07:30" },
+  "timezone": "Asia/Kolkata",
+  "missedRuns": { "policy": "run-once", "maxDelayMinutes": 120 },
+  "notifications": { "quietHours": { "start": "22:00", "end": "07:00" } }
+}
+```
+
+Watcher: `"work": {"kind":"watcher","source":{"action":"notion.fetch","arguments":{"page":"<id or URL>"}}}`. Goal: `"work": {"kind":"goal","prompt":"…","until":"2026-12-01","maxFollowUps":10}`. `POST /api/tasks/cancel` with a routine attempt's task ID cancels that run.
 
 Chat input: `{botId,content,attachment?:{name,text}}`. The bot's override, else the default model, is resolved before the task is recorded. Events: `started` with task ID, `text` with cumulative text, `done`, or `error` with a safe message and stable `code` (`unauthorized`, `model_not_found`, `unreachable`, `rate_limited`, `quota_exceeded`, `tools_unsupported`, `context_too_long`, …). Provider bodies are used for classification only and never returned, logged or persisted. If a model rejects tools before producing output, the task retries once without tools and the model is marked tool-less. Disconnecting does not cancel work; saved progress can be read again. One task per bot runs at a time, with six model steps and a three-minute timeout.
 
@@ -58,6 +103,7 @@ Chat input: `{botId,content,attachment?:{name,text}}`. The bot's override, else 
 - `packages/contracts/src/providers.ts`: provider descriptors (fields, env fallbacks, discovery, destination) and connection/model DTOs.
 - `packages/runtime/src/providers`: one AI SDK factory per provider, model discovery, model checks, error classification and the connection service.
 - `packages/runtime/src/model.ts`: streaming tool loop and capability-gated tools.
+- `packages/contracts/src/routines.ts`, `packages/runtime/src/routines`: routine DTOs, time-zone math, typed records/lease and the routine engine.
 - `packages/runtime/src/server.ts`: auth, validation, installation/approval orchestration and streaming.
 - `packages/runtime/src/store.ts`, `migrations.ts`, `provider-store.ts`: versioned SQLite schema, records, provider tables, Markdown memory and derived FTS index. Migration 3 imports v1 single-provider settings.
 
@@ -67,21 +113,21 @@ Register connector actions in reviewed runtime code (`packages/connectors`) and 
 
 Memory files contain a JSON metadata comment followed by Markdown. FTS is derived and rebuilt when read, recovering external edits and removing missing records. Atomic file replacement precedes indexing; interrupted writes reconcile on the next read. Approval IDs are deterministic memory IDs, so a repeated interrupted save writes the same record. Private memory never becomes template metadata automatically.
 
-On restart, pending approvals remain; active tasks become explicitly interrupted instead of being replayed. Historical board records are retained; board execution and routes have been removed. An external write that was executing becomes `unknown` and is reconciled, never replayed. Crash-proof model checkpoint/resumption remains a future runtime deliverable.
+On restart, pending approvals remain; active chat tasks become explicitly interrupted instead of being replayed. Historical board records are retained; board execution and routes have been removed. An external write that was executing becomes `unknown` and is reconciled, never replayed. Routine runs resume from completed checkpoints under a fenced ownership lease ([Routines](routines.md)); chat model calls are not checkpointed.
 
 ## Private phone milestone endpoints
 
-| Method | Endpoint | Behaviour |
-| --- | --- | --- |
-| GET | `/api/remote/status` | Authenticated enabled/origin/localOwner. Only local sessions receive target, port, CLI presence, Serve commands and changed-target status. Presence is not network readiness. |
-| POST | `/api/remote/settings` | Local owner only: `{enabled,origin}`; one exact HTTPS machine.tailnet.ts.net origin. Disabling or changing origin revokes all remote sessions. Saving acknowledges the current target. |
-| POST | `/api/devices/pair` | Local owner only, remote enabled: five-minute single-use `{token,code,expiresAt}`. Link/QR generated on the local UI. |
-| POST | `/api/remote/pair` | Configured enabled remote origin only; unauthenticated exchange `{challenge,label}` with bounded attempts. Sets Secure cookie and redirects to `/`. |
-| GET | `/api/devices` | `{currentDeviceId,devices}`; local owner sees latest 200 records, phone sees only itself; no token/hash. |
-| POST | `/api/devices/:id/revoke` | Local owner revokes one device and closes its responses. |
-| POST | `/api/devices/revoke-remote` | Local owner revokes every remote session and pending challenge, including records beyond the list page. |
-| POST | `/api/devices/signout` | Authenticated device revokes itself. |
-| GET | `/api/chats/:id?since=<lastEventId>` | Authenticated authoritative snapshot: messages (last 500), tasks (last 100), lastEventId. Supports bot or group IDs. Includes mutable partial replies; since is a hint, not an append-only replay cursor. |
+| Method | Endpoint                             | Behaviour                                                                                                                                                                                                 |
+| ------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/remote/status`                 | Authenticated enabled/origin/localOwner. Only local sessions receive target, port, CLI presence, Serve commands and changed-target status. Presence is not network readiness.                             |
+| POST   | `/api/remote/settings`               | Local owner only: `{enabled,origin}`; one exact HTTPS machine.tailnet.ts.net origin. Disabling or changing origin revokes all remote sessions. Saving acknowledges the current target.                    |
+| POST   | `/api/devices/pair`                  | Local owner only, remote enabled: five-minute single-use `{token,code,expiresAt}`. Link/QR generated on the local UI.                                                                                     |
+| POST   | `/api/remote/pair`                   | Configured enabled remote origin only; unauthenticated exchange `{challenge,label}` with bounded attempts. Sets Secure cookie and redirects to `/`.                                                       |
+| GET    | `/api/devices`                       | `{currentDeviceId,devices}`; local owner sees latest 200 records, phone sees only itself; no token/hash.                                                                                                  |
+| POST   | `/api/devices/:id/revoke`            | Local owner revokes one device and closes its responses.                                                                                                                                                  |
+| POST   | `/api/devices/revoke-remote`         | Local owner revokes every remote session and pending challenge, including records beyond the list page.                                                                                                   |
+| POST   | `/api/devices/signout`               | Authenticated device revokes itself.                                                                                                                                                                      |
+| GET    | `/api/chats/:id?since=<lastEventId>` | Authenticated authoritative snapshot: messages (last 500), tasks (last 100), lastEventId. Supports bot or group IDs. Includes mutable partial replies; since is a hint, not an append-only replay cursor. |
 
 Phone POSTs to chat, groups/chat, tasks/cancel, approvals and actions/resolve require `Idempotency-Key` (16–128 letters/digits/underscore/hyphen). Local callers can opt in too. Equal device/key/payload replays the receipt, changed payload returns 409, an uncertain reservation never blindly executes again. Chat replay returns JSON `{taskId,replayed:true}` instead of a new stream. Recover saved state using the chat endpoint. Generic group retry also supports keys locally but is deliberately not exposed to the phone in this milestone.
 

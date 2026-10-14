@@ -1,30 +1,21 @@
 /** Explicit, synthetic live acceptance run. Never selected by the normal test suite. */
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   _electron as electron,
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
-import { Store } from "../packages/runtime/src/store.js";
+import { copySelectedProvider, liveSourceProfile } from "./live-profile.js";
 import type { Snapshot, Memory } from "@socius/contracts/app";
 
 if (process.env.SOCIUS_LIVE_TEST !== "1" && !process.argv.includes("--live"))
   throw new Error(
     "Live testing is opt-in: set SOCIUS_LIVE_TEST=1. It sends synthetic prompts using your configured model.",
   );
-const source =
-  process.env.SOCIUS_LIVE_SOURCE_PROFILE ??
-  (process.platform === "darwin"
-    ? join(homedir(), "Library", "Application Support", "Socius")
-    : undefined);
-if (!source)
-  throw new Error(
-    "Set SOCIUS_LIVE_SOURCE_PROFILE to the desktop user-data directory.",
-  );
+const source = liveSourceProfile();
 const profile = await mkdtemp(join(tmpdir(), "socius-live-acceptance-"));
 const steps: {
   name: string;
@@ -145,52 +136,9 @@ async function step(name: string, work: () => Promise<void>) {
 }
 try {
   await step("Isolated encrypted provider configuration", async () => {
-    const original = new DatabaseSync(
-      join(source, "workspace", "socius.sqlite"),
-      { readOnly: true },
-    );
-    const isolated = new Store(join(profile, "workspace"));
-    try {
-      const selected = original
-        .prepare(
-          "SELECT connection_id,model_id FROM model_selection WHERE scope='default'",
-        )
-        .get();
-      assert.ok(selected, "Configure a default model in Settings first");
-      const connection = original
-        .prepare("SELECT * FROM provider_connections WHERE id=?")
-        .get(selected.connection_id!);
-      const model = original
-        .prepare(
-          "SELECT * FROM provider_models WHERE connection_id=? AND model_id=?",
-        )
-        .get(selected.connection_id!, selected.model_id!);
-      assert.ok(
-        connection && model,
-        "Default model must have a saved provider connection",
-      );
-      for (const [table, row] of [
-        ["provider_connections", connection],
-        ["provider_models", model],
-      ] as const) {
-        const columns = Object.keys(row);
-        isolated.db
-          .prepare(
-            `INSERT INTO ${table} (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`,
-          )
-          .run(...columns.map((column) => row[column]!));
-      }
-      isolated.db
-        .prepare("INSERT INTO model_selection VALUES('default',?,?)")
-        .run(selected.connection_id!, selected.model_id!);
-      report.provider = String(connection.provider);
-      report.model = String(selected.model_id);
-      // Only the selected provider's ciphertext/config is copied. No plaintext key,
-      // connectors, conversations, private memory or browser session is copied.
-    } finally {
-      original.close();
-      isolated.close();
-    }
+    const copied = copySelectedProvider(source, profile);
+    report.provider = copied.provider;
+    report.model = copied.model;
     await launch();
     assert.equal((await state()).connectorConnections.length, 0);
     if (process.argv.includes("--tools-only")) {

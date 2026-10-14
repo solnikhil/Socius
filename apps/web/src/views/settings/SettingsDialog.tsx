@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Boxes, Plug, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
+import {
+  Boxes,
+  Moon,
+  Plug,
+  ShieldCheck,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import type { Snapshot } from "@socius/contracts/app";
 import {
   useDialogMotion,
@@ -12,12 +19,14 @@ import { GeneralPane } from "./GeneralPane.js";
 import { ModelsPane } from "./ModelsPane.js";
 import { ProvidersPane } from "./ProvidersPane.js";
 import { PrivacyPane } from "./PrivacyPane.js";
+import { DreamingPane } from "./DreamingPane.js";
 
 const tabs: { id: SettingsTab; label: string; icon: typeof Plug }[] = [
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "models", label: "Models", icon: Boxes },
   { id: "providers", label: "Providers", icon: Plug },
   { id: "remote", label: "Remote access & devices", icon: ShieldCheck },
+  { id: "dreaming", label: "Dreaming", icon: Moon },
   { id: "privacy", label: "Privacy & data", icon: ShieldCheck },
 ];
 
@@ -137,6 +146,9 @@ export function SettingsDialog({
               onNavigate={go}
               backRef={back}
             />
+          )}
+          {tab === "dreaming" && (
+            <DreamingPane state={state} onRefresh={onRefresh} />
           )}
           {tab === "remote" && <RemotePane />}
           {tab === "privacy" && <PrivacyPane state={state} />}

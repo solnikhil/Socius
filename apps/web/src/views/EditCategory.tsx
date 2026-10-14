@@ -82,7 +82,7 @@ export function EditCategory({
                   className="member-row"
                   onClick={() => toggle(b.id)}
                 >
-                  <Avatar name={b.name} size={32} />
+                  <Avatar name={b.name} size={32} appearance={b.appearance} />
                   <span className="bot-text">
                     <strong>{b.name}</strong>
                     <small>

@@ -1,3 +1,9 @@
+import { googleDrive } from "./google-drive.js";
+import { slack } from "./slack.js";
+import { googleCalendar } from "./google-calendar.js";
+import { gmail } from "./gmail.js";
+import { github } from "./github.js";
+import { linear } from "./linear.js";
 import { z } from "zod";
 import type { Capability, ConnectorManifest } from "@socius/contracts";
 import { ConnectorError, type McpToolClient } from "./mcp.js";
@@ -39,6 +45,13 @@ export interface ConnectorAction<
 export interface ReviewedConnector {
   id: string;
   serverUrl: string;
+  accountLabel?: string;
+  oauth?: {
+    scopes: string[];
+    clientIdEnv?: string;
+    clientSecretEnv?: string;
+    authorizationParams?: Record<string, string>;
+  };
   /** Upstream tools and input properties the reviewed actions depend on. */
   requiredTools: Record<string, string[]>;
   actions: ConnectorAction[];
@@ -229,7 +242,15 @@ export const notion: ReviewedConnector = {
   },
   actions: [search, fetchPage, createPage] as unknown as ConnectorAction[],
 };
-export const reviewedConnectors: ReviewedConnector[] = [notion];
+export const reviewedConnectors: ReviewedConnector[] = [
+  notion,
+  linear,
+  github,
+  gmail,
+  googleCalendar,
+  slack,
+  googleDrive,
+];
 export const reviewedConnector = (id: string) =>
   reviewedConnectors.find((c) => c.id === id);
 
