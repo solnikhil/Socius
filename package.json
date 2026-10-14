@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test packages/*/test/*.test.ts",
+    "test": "node --import tsx --test packages/*/test/*.test.ts apps/web/test/*.test.tsx",
     "check": "npm run typecheck && npm test",
     "catalog:check": "tsx scripts/check-catalog.ts",
     "build": "tsx scripts/build.ts",
@@ -21,7 +21,8 @@
     "package": "npm run build && electron-builder --dir",
     "test:e2e": "playwright test",
     "format": "prettier --write apps packages scripts/*.ts e2e playwright.config.ts",
-    "format:check": "prettier --check apps packages scripts/*.ts e2e playwright.config.ts"
+    "format:check": "prettier --check apps packages scripts/*.ts e2e playwright.config.ts",
+    "test:live": "npm run build && tsx scripts/live-provider-check.ts --live"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",

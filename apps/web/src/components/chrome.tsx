@@ -11,11 +11,7 @@ import {
 } from "react";
 import { Star, X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 export const MAIN_BOT_TEMPLATE = "socius/main";
 
@@ -346,7 +342,10 @@ export function useTheme() {
 // Builds React elements only, so model output can never inject HTML.
 function inline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g;
+  // Underscore emphasis cannot open/close inside a word: identifiers and
+  // model IDs must keep their literal spelling (CommonMark intraword rule).
+  const pattern =
+    /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*|(?<![\p{L}\p{N}\p{M}])_[^_\s][^_]*_(?![\p{L}\p{N}\p{M}]))/gu;
   let last = 0,
     match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
