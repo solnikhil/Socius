@@ -106,12 +106,11 @@ export class RoutineRecords {
       .prepare("UPDATE routine_runs SET state=?, due_at=?, data=? WHERE id=?")
       .run(run.state, run.dueAt, JSON.stringify(run), run.id);
   }
-  /** Attempts started since `sinceIso`, scheduled and manual together. */
-  attemptsSince(routineId: string, sinceIso: string) {
-    return this.runs({ routineId, limit: 1000 }).reduce(
-      (n, r) => n + r.attempts.filter((a) => a.startedAt >= sinceIso).length,
-      0,
-    );
+  /** Runs whose first attempt started since `sinceIso`, scheduled and manual together. Retries and resumptions do not count again. */
+  runsStartedSince(routineId: string, sinceIso: string) {
+    return this.runs({ routineId, limit: 1000 }).filter(
+      (r) => r.startedAt !== null && r.startedAt >= sinceIso,
+    ).length;
   }
   // Checkpoints
   step(runId: string, key: string): RunStep | undefined {

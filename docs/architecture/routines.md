@@ -47,7 +47,7 @@ An occurrence started within the 5-minute grace period is on time. Otherwise it 
 
 - At most one queued or running run per routine: an occurrence that arrives while the previous run is active is recorded as skipped (overlap). A run waiting for approval does not block the next occurrence.
 - Global concurrency 2, reduced to 1 while any foreground chat or group reply runs. A bot's routine never starts while that bot has foreground work, and routine attempts never block chat with that bot. Runs start oldest first, one per bot at a time. At most 50 runs may be queued; further occurrences are skipped and recorded.
-- Per-routine limits: attempt timeout (default 180 s), attempts per run (default 2), runs per rolling 24 hours (default 24, scheduled and manual together), stored output characters (default 6,000). Per-provider token accounting does not exist yet (roadmap O01); these limits are the current budget hook.
+- Per-routine limits: attempt timeout (default 180 s), attempts per run (default 2; a graceful shutdown does not use one), runs per rolling 24 hours (default 24, scheduled and manual together), stored output characters (default 6,000). Per-provider token accounting does not exist yet (roadmap O01); these limits are the current budget hook.
 
 ### Operations and their effect on work
 
@@ -70,7 +70,7 @@ Each run records trigger, routine revision, scheduled/due/start/end times, attem
 
 ### States
 
-`queued → running → completed | awaiting-approval | failed | blocked | cancelled | interrupted`, plus `skipped` for occurrences that never started. `awaiting-approval → completed` once every proposal from the run is resolved (`succeeded`, `denied`, `expired`, `blocked` or `failed`); a proposal whose outcome is `unknown` keeps the run waiting with a reason until the user checks it. A logical run has attempts; an attempt has steps.
+`queued → running → completed | awaiting-approval | failed | blocked | cancelled | interrupted`, plus `skipped` for occurrences that never started. `awaiting-approval → completed` once every proposal from the run is resolved (`succeeded`, `denied`, `expired`, `blocked` or `failed`; a proposal left untouched past its approval window counts as expired); a proposal whose outcome is `unknown` keeps the run waiting with a reason until the user checks it. A logical run has attempts; an attempt has steps.
 
 ### Checkpoints
 

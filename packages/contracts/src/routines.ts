@@ -205,7 +205,11 @@ export interface Routine extends RoutineInput {
   enabled: boolean;
   /** Increments on every edit. Runs record the revision they executed. */
   revision: number;
-  /** Next scheduled occurrence for preview; null when disabled or finished. */
+  /**
+   * Next occurrence by the schedule, shown even while disabled so the owner can
+   * see when it would run; `enabled` says whether it will. Null when finished or
+   * when the schedule has no further occurrence.
+   */
   next: { key: string; at: string } | null;
   /** Upper bound of the occurrence window already evaluated (UTC). */
   evaluatedThrough: string;

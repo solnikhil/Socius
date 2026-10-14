@@ -158,7 +158,21 @@ function parseOrFail<T>(schema: z.ZodType<T>, input: unknown): T {
 const needsModel = (r: Routine) =>
   r.work.kind !== "watcher" || r.work.prompt !== undefined;
 const extractLinks = (text: string) =>
-  [...new Set(text.match(/https?:\/\/[^\s)<>"\]]+/g) ?? [])].slice(0, 5);
+  [
+    ...new Set(
+      (text.match(/https?:\/\/[^\s)<>"\]]+/g) ?? []).map((url) =>
+        // Sentence punctuation after a URL is not part of it.
+        url.replace(/[.,;:!?'"]+$/, ""),
+      ),
+    ),
+  ].slice(0, 5);
+/** Attempt error for a graceful shutdown; such attempts do not use up `maxAttempts`. */
+const CLOSING = "Socius was closing.";
+/** Attempts that count toward `maxAttempts`: everything except graceful shutdowns. */
+const usedAttempts = (run: RoutineRun) =>
+  run.attempts.filter(
+    (a) => !(a.outcome === "interrupted" && a.error === CLOSING),
+  ).length;
 
 export class RoutineEngine {
   readonly records: RoutineRecords;
@@ -167,6 +181,8 @@ export class RoutineEngine {
   private status: "active" | "standby" | "stopped" = "stopped";
   private lastTickAt: number | null = null;
   private lastPrune = 0;
+  /** Routine revisions whose planning failure was already recorded. */
+  private readonly planErrors = new Set<string>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking: Promise<void> | null = null;
   private crashed = false;
@@ -288,6 +304,15 @@ export class RoutineEngine {
       if (work.until > addDays(today, 90))
         fail(400, "work.until: Goal follow-ups can run for at most 90 days");
     }
+    if (
+      input.schedule.kind === "once" &&
+      resolveLocal(input.schedule.date, input.schedule.time, input.timezone)
+        .at <= now
+    )
+      fail(
+        400,
+        `schedule: ${input.schedule.date} ${input.schedule.time} has already passed in ${input.timezone}`,
+      );
     if (input.schedule.kind === "interval" && !input.schedule.anchor)
       return {
         ...input,
@@ -313,18 +338,6 @@ export class RoutineEngine {
   create(input: unknown): Routine {
     const now = this.now();
     const parsed = this.validate(parseOrFail(RoutineInput, input), now);
-    if (parsed.schedule.kind === "once") {
-      const at = resolveLocal(
-        parsed.schedule.date,
-        parsed.schedule.time,
-        parsed.timezone,
-      ).at;
-      if (at <= now)
-        fail(
-          400,
-          `schedule: ${parsed.schedule.date} ${parsed.schedule.time} has already passed in ${parsed.timezone}`,
-        );
-    }
     const createdAt = this.iso(now);
     const routine: Routine = {
       ...parsed,
@@ -615,8 +628,10 @@ export class RoutineEngine {
       )
         fail(409, "This routine is already running.");
       if (
-        this.records.attemptsSince(id, this.iso(this.now() - 1440 * MINUTE)) >=
-        routine.limits.maxRunsPerDay
+        this.records.runsStartedSince(
+          id,
+          this.iso(this.now() - 1440 * MINUTE),
+        ) >= routine.limits.maxRunsPerDay
       )
         fail(429, "This routine reached its runs-per-day limit.");
       const run = this.newRun(routine, {
@@ -658,7 +673,7 @@ export class RoutineEngine {
     this.records.putNotification({ ...n, read: true });
     return { ...n, read: true };
   }
-  private cancelRunRecord(run: RoutineRun, reason: string) {
+  private cancelRunRecord(run: RoutineRun, reason: string, block = true) {
     const now = this.iso();
     const attempt = run.attempts.at(-1);
     if (attempt && !attempt.endedAt)
@@ -674,15 +689,24 @@ export class RoutineEngine {
       updatedAt: now,
     });
     this.records.putRun(run);
-    // Queued changes from this run can never start: pending proposals are blocked.
+    if (block) this.blockProposals(new Set([RUN_REF + run.id]));
+  }
+  /** Queued changes from cancelled runs can never start: pending proposals are blocked. */
+  private blockProposals(runRefs: Set<string>) {
+    if (!runRefs.size) return;
     this.broker.blockPending(
-      (actor) => actor.runId === RUN_REF + run.id,
+      (actor) => !!actor.runId && runRefs.has(actor.runId),
       "The routine run was cancelled before this change was approved.",
     );
   }
   private cancelActive(routineId: string, reason: string, states: RunState[]) {
-    for (const run of this.records.runs({ routineId, states, limit: 1000 }))
-      this.cancelRunRecord(run, reason);
+    const refs = new Set<string>();
+    for (const run of this.records.runs({ routineId, states, limit: 1000 })) {
+      this.cancelRunRecord(run, reason, false);
+      refs.add(RUN_REF + run.id);
+    }
+    // One scan of the action records for the whole batch.
+    this.blockProposals(refs);
   }
   private abortRuns(routineId: string, reason: AbortReason) {
     for (const a of this.active.values()) {
@@ -787,10 +811,15 @@ export class RoutineEngine {
       } catch (error) {
         if (error instanceof FencedError || error instanceof SimulatedCrash)
           throw error;
-        this.store.event(
-          "routine.error",
-          `Could not schedule “${routine.name}”.`,
-        );
+        // Recorded once per revision; an edit (new revision) reports again.
+        const key = `${routine.id}:${routine.revision}`;
+        if (!this.planErrors.has(key)) {
+          this.planErrors.add(key);
+          this.store.event(
+            "routine.error",
+            `Could not schedule “${routine.name}”. Edit or delete it.`,
+          );
+        }
       }
     }
     this.settleAwaiting();
@@ -833,7 +862,7 @@ export class RoutineEngine {
               "The routine changed after this run started, so it was not resumed.",
             endedAt: now,
           });
-        else if (run.attempts.length >= routine.limits.maxAttempts)
+        else if (usedAttempts(run) >= routine.limits.maxAttempts)
           Object.assign(run, {
             state: "interrupted",
             reason:
@@ -1026,7 +1055,7 @@ export class RoutineEngine {
     )
       return "The previous run was still in progress; overlapping runs are skipped.";
     if (
-      this.records.attemptsSince(
+      this.records.runsStartedSince(
         routine.id,
         this.iso(this.now() - 1440 * MINUTE),
       ) >= routine.limits.maxRunsPerDay
@@ -1085,11 +1114,29 @@ export class RoutineEngine {
   }
   /** Runs waiting on approvals complete once every proposal is resolved. Unknown outcomes wait for a check. */
   private settleAwaiting() {
-    for (const run of this.records.runs({
+    const waiting = this.records.runs({
       states: ["awaiting-approval"],
       limit: 1000,
-    })) {
-      const actions = this.actions(run.id);
+    });
+    if (!waiting.length) return;
+    // One pass over the action records for every waiting run.
+    const now = this.now();
+    const byRun = new Map<string, ActionRecord[]>();
+    for (const action of this.store.all<ActionRecord>("action")) {
+      const ref = action.actor.runId;
+      if (!ref?.startsWith(RUN_REF)) continue;
+      // The broker marks an untouched proposal expired only when someone acts on
+      // it; past its window it can no longer be approved, so it counts as expired.
+      const effective: ActionRecord =
+        action.state === "pending" && Date.parse(action.expiresAt) <= now
+          ? { ...action, state: "expired" }
+          : action;
+      const list = byRun.get(ref.slice(RUN_REF.length)) ?? [];
+      list.push(effective);
+      byRun.set(ref.slice(RUN_REF.length), list);
+    }
+    for (const run of waiting) {
+      const actions = byRun.get(run.id) ?? [];
       if (actions.some((a) => a.state === "pending" || a.state === "executing"))
         continue;
       const unknown = actions.filter((a) => a.state === "unknown");
@@ -1128,6 +1175,11 @@ export class RoutineEngine {
   }
   /** Starts due runs: oldest first, one per bot, foreground chat first. */
   private dispatch(now: number) {
+    const queued = this.records
+      .runs({ states: ["queued"], limit: 1000 })
+      .reverse();
+    // Nothing to start: skip the foreground scans entirely.
+    if (!queued.length) return;
     const limit = this.host.foregroundActive()
       ? 1
       : (this.options.concurrency ?? 2);
@@ -1135,9 +1187,6 @@ export class RoutineEngine {
     const live = [...this.active.values()].filter((a) => a.reason !== "fenced");
     if (live.length >= limit) return;
     const busy = new Set(live.map((a) => a.botId));
-    const queued = this.records
-      .runs({ states: ["queued"], limit: 1000 })
-      .reverse();
     for (const run of queued) {
       if (busy.size >= limit) break;
       if (
@@ -1215,7 +1264,7 @@ export class RoutineEngine {
           ? (["cancelled", "The routine was turned off."] as const)
           : !bot
             ? (["blocked", "The bot no longer exists."] as const)
-            : initial.attempts.length >= routine.limits.maxAttempts
+            : usedAttempts(initial) >= routine.limits.maxAttempts
               ? (["failed", "No attempts left."] as const)
               : null;
     if (invalid) {
@@ -1865,32 +1914,22 @@ export class RoutineEngine {
       }
       if (run.state !== "running") return;
       if (reason === "shutdown") {
-        const left = n < routine.limits.maxAttempts;
+        // Closing Socius is not the run's failure: it resumes and keeps its attempts.
         Object.assign(attempt, {
           endedAt: now,
           outcome: "interrupted",
-          error: "Socius was closing.",
+          error: CLOSING,
         });
-        Object.assign(
-          run,
-          left
-            ? {
-                state: "queued",
-                dueAt: now,
-                reason:
-                  "Interrupted by shutdown; it resumes from completed steps.",
-              }
-            : {
-                state: "interrupted",
-                reason: "Interrupted by shutdown with no attempts left.",
-                endedAt: now,
-              },
-        );
+        Object.assign(run, {
+          state: "queued",
+          dueAt: now,
+          reason: "Interrupted by shutdown; it resumes from completed steps.",
+        });
         if (task)
           this.store.put("task", task.id, {
             ...task,
             state: "failed",
-            error: "Socius was closing.",
+            error: CLOSING,
           });
       } else if (reason === "cancel" || reason === "edited") {
         Object.assign(attempt, {
@@ -1925,7 +1964,7 @@ export class RoutineEngine {
             error: message,
             ...(failure ? { errorCode: failure.code } : {}),
           });
-        if (safeRetry && n < routine.limits.maxAttempts) {
+        if (safeRetry && usedAttempts(run) < routine.limits.maxAttempts) {
           const delay = (this.options.backoffMs ?? MINUTE) * 2 ** (n - 1);
           Object.assign(run, {
             state: "queued",

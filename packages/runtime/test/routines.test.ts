@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BotInstance } from "@socius/contracts";
-import type { Task } from "@socius/contracts/app";
+import type { ActionRecord, Task } from "@socius/contracts/app";
 import type { Routine, RoutineRun } from "@socius/contracts/routines";
 import { Store } from "../src/store.js";
 import type { ActionBroker } from "../src/broker.js";
@@ -657,7 +657,8 @@ test("watchers stay quiet while unchanged and deliver one update per meaningful 
           status: 502,
         });
       return {
-        summary: "Read Notion page https://www.notion.so/plan.",
+        summary:
+          "Read Notion page https://www.notion.so/plan, see https://www.notion.so/notes.",
         data: content,
       };
     };
@@ -711,7 +712,11 @@ test("watchers stay quiet while unchanged and deliver one update per meaningful 
     let notes = delivered(o, w.id);
     assert.equal(notes.length, 1);
     assert.equal(notes[0]!.kind, "change");
-    assert.deepEqual(notes[0]!.links, ["https://www.notion.so/plan."]);
+    // Sentence punctuation after a URL is not part of the link.
+    assert.deepEqual(notes[0]!.links, [
+      "https://www.notion.so/plan",
+      "https://www.notion.so/notes",
+    ]);
     assert.ok(notes[0]!.observedAt);
     await step(); // unchanged after the update
     assert.equal(delivered(o, w.id).length, 1);
@@ -1060,5 +1065,162 @@ test("routine run records stay separate from definitions and survive restart", (
       o.store.get<BotInstance>("bot", o.bot.id)!.routinesEnabled,
       false,
     );
+    await close(o);
+  }));
+
+test("review: a proposal that expires untouched completes its run", () =>
+  withDir("routine-expired", async (dir) => {
+    const c = clock();
+    const fake = fakeHost();
+    const o = open(dir, c, fake);
+    // The model proposes one change, as the broker would record it.
+    fake.generate = async (input) => {
+      const id = "33333333-3333-4333-8333-333333333333";
+      o.store.put("action", id, {
+        id,
+        actor: {
+          botId: input.bot.id,
+          taskId: input.taskId,
+          runId: input.runRef,
+        },
+        state: "pending",
+        summary: "Create Notion page “Plan”",
+        expiresAt: new Date(c.now() + DAY).toISOString(),
+      } as unknown as ActionRecord);
+      return "Proposed a page.";
+    };
+    const r = routine(o);
+    o.engine.runNow(r.id);
+    await o.cycle();
+    assert.equal(runs(o, r.id)[0]!.state, "awaiting-approval");
+    c.advance(DAY - MIN);
+    await o.cycle();
+    assert.equal(
+      runs(o, r.id)[0]!.state,
+      "awaiting-approval",
+      "still approvable",
+    );
+    // The window ends without anyone touching the proposal.
+    c.advance(2 * MIN);
+    await o.cycle();
+    const [run] = runs(o, r.id);
+    assert.equal(run!.state, "completed");
+    assert.equal(run!.reason, "Proposed changes: 1 expired.");
+    await close(o);
+  }));
+
+test("review: editing to a past one-time schedule is rejected", () =>
+  withDir("routine-edit-past", async (dir) => {
+    const c = clock();
+    const fake = fakeHost();
+    const o = open(dir, c, fake);
+    const past = { kind: "once", date: "2026-01-01", time: "08:00" };
+    const r = o.engine.setEnabled(
+      routine(o, {
+        schedule: { kind: "once", date: "2026-10-20", time: "08:00" },
+      }).id,
+      true,
+    );
+    assert.throws(
+      () => o.engine.edit(r.id, { schedule: past }),
+      /schedule: 2026-01-01 08:00 has already passed in Asia\/Kolkata/,
+    );
+    assert.throws(
+      () =>
+        o.engine.preview({
+          botId: r.botId,
+          name: r.name,
+          work: r.work,
+          timezone: r.timezone,
+          schedule: past,
+        }),
+      /has already passed/,
+    );
+    const stored = o.records.routine(r.id)!;
+    assert.equal(stored.revision, r.revision);
+    assert.equal(stored.next!.key, "2026-10-20T08:00");
+    await close(o);
+  }));
+
+test("review: retries and resumptions do not use up the daily run limit", () =>
+  withDir("routine-daily-runs", async (dir) => {
+    const c = clock();
+    const fake = fakeHost();
+    let failures = 1;
+    fake.generate = async () => {
+      if (failures-- > 0)
+        throw new ProviderFailure("rate_limited", "Rate limited.");
+      return "ok";
+    };
+    const o = open(dir, c, fake);
+    const r = routine(o, { limits: { maxRunsPerDay: 2 } });
+    o.engine.runNow(r.id);
+    await o.cycle();
+    c.advance(MIN);
+    await o.cycle();
+    assert.equal(runs(o, r.id)[0]!.attempts.length, 2);
+    // One run started (with two attempts): a second run is still allowed.
+    o.engine.runNow(r.id);
+    await o.cycle();
+    assert.equal(
+      runs(o, r.id).filter((x) => x.state === "completed").length,
+      2,
+    );
+    assert.throws(() => o.engine.runNow(r.id), /runs-per-day limit/);
+    await close(o);
+  }));
+
+test("review: closing Socius mid-run does not use up an attempt", () =>
+  withDir("routine-shutdown", async (dir) => {
+    const c = clock();
+    const fake = fakeHost();
+    // The first call waits until Socius closes; later calls answer.
+    fake.generate = (input) =>
+      fake.calls.length === 1
+        ? new Promise((_, reject) =>
+            input.signal.addEventListener("abort", () =>
+              reject(new Error("aborted")),
+            ),
+          )
+        : Promise.resolve("after restart");
+    let o = open(dir, c, fake);
+    const r = routine(o, { limits: { maxAttempts: 1 } });
+    o.engine.runNow(r.id);
+    await o.engine.tick();
+    await until(o, r.id, "running");
+    await close(o);
+    o = open(dir, c, fake);
+    assert.equal(
+      runs(o, r.id)[0]!.state,
+      "queued",
+      "requeued, not interrupted",
+    );
+    await o.cycle();
+    const [run] = runs(o, r.id);
+    assert.equal(run!.state, "completed");
+    assert.equal(run!.result, "after restart");
+    assert.deepEqual(
+      run!.attempts.map((a) => [a.outcome, a.error]),
+      [
+        ["interrupted", "Socius was closing."],
+        ["completed", null],
+      ],
+    );
+    await close(o);
+  }));
+
+test("review: next shows the scheduled occurrence while disabled", () =>
+  withDir("routine-next", async (dir) => {
+    const c = clock();
+    const fake = fakeHost();
+    const o = open(dir, c, fake);
+    const r = routine(o);
+    assert.equal(r.enabled, false);
+    assert.equal(r.next!.key, "2026-10-14T08:00");
+    o.engine.setEnabled(r.id, true);
+    const off = o.engine.setEnabled(r.id, false);
+    assert.equal(off.enabled, false);
+    assert.equal(off.next!.key, "2026-10-14T08:00");
+    assert.equal(o.engine.finish(r.id).next, null);
     await close(o);
   }));
