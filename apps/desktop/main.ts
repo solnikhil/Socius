@@ -163,7 +163,24 @@ app.on("activate", () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  if (quitting || !child) {
+    child?.kill();
+    return;
+  }
+  // Let the runtime close bot browsers and its database before exiting.
   quitting = true;
-  child?.kill();
+  event.preventDefault();
+  const worker = child;
+  const done = () => {
+    clearTimeout(timer);
+    worker.kill();
+    app.quit();
+  };
+  const timer = setTimeout(done, 5000);
+  worker.on("message", (message: { type?: string }) => {
+    if (message.type === "stopped") done();
+  });
+  worker.once("exit", done);
+  worker.postMessage({ type: "shutdown" });
 });

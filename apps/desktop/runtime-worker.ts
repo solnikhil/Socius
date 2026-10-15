@@ -28,7 +28,17 @@ function secret(operation: string, value: string): Promise<string> {
   });
 }
 let started = false;
+let runtime: Awaited<ReturnType<typeof startRuntime>> | undefined;
 parent.on("message", async ({ data }) => {
+  // Graceful quit: tasks stop, browser windows close and the database closes.
+  if (data.type === "shutdown") {
+    try {
+      await runtime?.close();
+    } finally {
+      parent.postMessage({ type: "stopped" });
+    }
+    return;
+  }
   if (data.type === "secret-result") {
     const request = requests.get(data.id);
     if (!request) return;
@@ -45,7 +55,7 @@ parent.on("message", async ({ data }) => {
         encrypt: (v) => secret("encrypt", v),
         decrypt: (v) => secret("decrypt", v),
       };
-      const runtime = await startRuntime({
+      runtime = await startRuntime({
         dataDir: data.dataDir,
         preferredPort: data.preferredPort,
         webDir: data.webDir,

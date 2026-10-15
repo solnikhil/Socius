@@ -91,6 +91,10 @@ Watcher: `"work": {"kind":"watcher","source":{"action":"notion.fetch","arguments
 
 Chat input: `{botId,content,attachment?:{name,text}}`. The bot's override, else the default model, is resolved before the task is recorded. Events: `started` with task ID, `text` with cumulative text, `done`, or `error` with a safe message and stable `code` (`unauthorized`, `model_not_found`, `unreachable`, `rate_limited`, `quota_exceeded`, `tools_unsupported`, `context_too_long`, …). Provider bodies are used for classification only and never returned, logged or persisted. If a model rejects tools before producing output, the task retries once without tools and the model is marked tool-less. Disconnecting does not cancel work; saved progress can be read again. One task per bot runs at a time, with six model steps and a three-minute timeout.
 
+### Browser control
+
+Local sessions only. `/api/browser/grant`, `take-control`, `resume`, `stop`, `show`, `reset` and `actions/resolve`; `GET /api/state` adds `browserSessions`, `browserActions` and `browser`. See [Browser control](browser-control.md) for bodies and the control state machine.
+
 ## Ownership
 
 - `apps/desktop`: lifecycle, runtime supervision and OS encryption over a private parent/child channel. No renderer credential IPC.
@@ -103,6 +107,7 @@ Chat input: `{botId,content,attachment?:{name,text}}`. The bot's override, else 
 - `packages/contracts/src/providers.ts`: provider descriptors (fields, env fallbacks, discovery, destination) and connection/model DTOs.
 - `packages/runtime/src/providers`: one AI SDK factory per provider, model discovery, model checks, error classification and the connection service.
 - `packages/runtime/src/model.ts`: streaming tool loop and capability-gated tools.
+- `packages/contracts/src/browser.ts`, `packages/runtime/src/browser`: browser session DTOs, the per-bot Playwright session service, control gate and the filtering proxy ([Browser control](browser-control.md)).
 - `packages/contracts/src/routines.ts`, `packages/runtime/src/routines`: routine DTOs, time-zone math, typed records/lease and the routine engine.
 - `packages/runtime/src/server.ts`: auth, validation, installation/approval orchestration and streaming.
 - `packages/runtime/src/store.ts`, `migrations.ts`, `provider-store.ts`: versioned SQLite schema, records, provider tables, Markdown memory and derived FTS index. Migration 3 imports v1 single-provider settings.

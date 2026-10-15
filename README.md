@@ -25,6 +25,7 @@ Cloud keys entered in Electron are encrypted using OS-backed `safeStorage`. The 
 - Install previews show source, trust, digest, dependencies and requested permissions. Newly requested permissions need consent; installation verifies the plan digest and file integrity, then persists receipts atomically. Packages can be enabled, disabled, updated, rolled back and uninstalled.
 - Import standard [Agent Skills](https://agentskills.io/specification) folders (`SKILL.md`) as instruction-only, locally unverified releases; export skills and bot templates after reviewing flagged text. Bots load skill instructions and reference files on demand.
 - **Notion connector** over Notion's official MCP server: sign in through the system browser (OAuth with PKCE), with tokens encrypted by the OS. Grant each bot read and/or write access. Bots search and read pages; creating a page needs your approval of the exact title and content, survives restart, and runs once. Unclear outcomes are checked, never blindly repeated. See [skills and connectors](docs/architecture/skills-and-connectors.md) for setup and scopes.
+- **Visible web browser per bot** (development builds): grant a bot browsing, watch it research public pages in its own Chromium window, take control to sign in or navigate, then resume. Clicks, typing and submissions need your review of the exact page, element and text; local and private-network addresses are blocked. Run `npx playwright install chromium` first. Packaged builds do not include it yet. See [browser control](docs/architecture/browser-control.md).
 - Browse the official MCP Registry from Connect Apps. Listings are metadata only; only Socius-reviewed servers are installable.
 - Memory is private per bot: editable Markdown files plus SQLite FTS5 search. External file edits reconcile when memory is read.
 - Enable memory per bot explicitly; model-proposed saves require review and recheck permissions.
@@ -53,7 +54,7 @@ The API binds loopback and uses one-time pairing, an HttpOnly same-site cookie, 
 
 ## Remaining workstreams
 
-Public publishing and signed releases, arbitrary executable skills, connectors beyond Notion, browser automation, a routine UI, closed-app or cloud scheduling, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
+Public publishing and signed releases, arbitrary executable skills, connectors beyond Notion, a routine UI, closed-app or cloud scheduling, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
 
 Skill scripts are stored inert; there is no executable sandbox. Digest checks bind review to content, not publisher identity: imported releases are labelled unverified. Connecting accounts requires the desktop app's OS-backed encryption. The interface currently uses shared CSS tokens and native dialogs; Tailwind/shadcn adoption can occur inside the UI workstream without altering runtime contracts.
 
