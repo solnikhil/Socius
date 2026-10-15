@@ -530,7 +530,9 @@ export function Chat({
   const empty = messages.length === 0 && !busy;
   const working = busy || !!running;
   return (
-    <div className={`chat${docked ? " has-browser" : ""}`}>
+    <div
+      className={`chat${docked ? " has-browser" : sessions.length ? " has-browser-chip" : ""}`}
+    >
       {sessions.length > 0 && (
         <aside
           className={`browser-dock${docked ? "" : " compact"}`}

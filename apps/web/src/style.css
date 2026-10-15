@@ -4121,6 +4121,15 @@ dialog.create-bot,
   overflow: visible;
   z-index: 11;
 }
+/* Electron ignores a no-drag control layered over another element's drag
+   region, so the header's drag area stops short of the corner globe. */
+.browser-dock {
+  -webkit-app-region: no-drag;
+}
+.chat.has-browser-chip .chat-head {
+  right: 64px;
+  padding-left: 64px; /* keeps the bot pill centered */
+}
 /* The chat slides to make room as a panel opens, and back as it closes. */
 .chat {
   transition: padding-right 0.36s cubic-bezier(0.22, 1, 0.36, 1);
