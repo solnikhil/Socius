@@ -1,0 +1,204 @@
+/* Bot faces and their motion. Shared by the app and the product site (apps/site);
+   hosts define --main-avatar and --main-avatar-eyes. */
+.avatar {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.avatar svg {
+  display: block;
+  overflow: visible;
+}
+/* Living avatars. avatarMotion.ts sets --mx/--my (gaze, -1…1) and --pull (magnet,
+   0…1); everything else is CSS so idle motion runs off the main thread. */
+.avatar-lean,
+.avatar-breathe {
+  display: block;
+  transform-origin: 50% 80%;
+}
+.avatar-lean {
+  transform: translate(
+      calc(var(--mx, 0) * var(--pull, 0) * 14%),
+      calc(var(--my, 0) * var(--pull, 0) * 12%)
+    )
+    rotate(calc(var(--mx, 0) * var(--pull, 0) * 8deg))
+    scale(calc(1 + var(--pull, 0) * 0.07));
+}
+.avatar-breathe {
+  animation: avatar-breathe 4.4s ease-in-out var(--breathe-delay, 0s) infinite;
+}
+.avatar-eyes {
+  transform: translate(calc(var(--mx, 0) * 2.8px), calc(var(--my, 0) * 2.4px));
+}
+.avatar-pupils {
+  transform: translate(calc(var(--mx, 0) * 1.4px), calc(var(--my, 0) * 1.4px));
+}
+.avatar-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: avatar-blink var(--blink-time, 5s) var(--blink-delay, 0s) infinite;
+}
+.avatar[data-eyes="sleepy"] .avatar-blink {
+  animation-name: avatar-doze;
+}
+.avatar[data-idle="orbit"] .avatar-idle {
+  animation: avatar-orbit 9s ease-in-out var(--idle-delay, 0s) infinite;
+}
+.avatar[data-idle="glance"] .avatar-idle {
+  animation: avatar-glance 8s ease-in-out var(--idle-delay, 0s) infinite;
+}
+.avatar[data-idle="wander"] .avatar-idle {
+  animation: avatar-wander 11s ease-in-out var(--idle-delay, 0s) infinite;
+}
+/* While the eyes follow the pointer, idle glances wait. */
+.avatars-watching .avatar:not(.busy) .avatar-idle {
+  animation: none;
+}
+/* Working on a reply: a quicker bob and eyes that keep revolving. */
+.avatar.busy .avatar-breathe {
+  animation: avatar-bob 0.9s ease-in-out infinite;
+}
+.avatar.busy .avatar-idle {
+  animation: avatar-spin 1.6s linear infinite;
+}
+@keyframes avatar-breathe {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translateY(-2.5%) scale(0.985, 1.025);
+  }
+}
+@keyframes avatar-bob {
+  0%,
+  100% {
+    transform: none;
+  }
+  35% {
+    transform: translateY(-7%) scale(0.97, 1.04);
+  }
+  70% {
+    transform: translateY(1%) scale(1.03, 0.97);
+  }
+}
+@keyframes avatar-blink {
+  0%,
+  92%,
+  100% {
+    transform: none;
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes avatar-doze {
+  0%,
+  70%,
+  100% {
+    transform: none;
+  }
+  80%,
+  88% {
+    transform: scaleY(0.35) translateY(1px);
+  }
+}
+/* Rest, then one slow loop around the face. */
+@keyframes avatar-orbit {
+  0%,
+  52%,
+  100% {
+    transform: none;
+  }
+  58% {
+    transform: translate(2.2px, 0);
+  }
+  63% {
+    transform: translate(1.6px, 1.6px);
+  }
+  68% {
+    transform: translate(0, 2.2px);
+  }
+  73% {
+    transform: translate(-1.6px, 1.6px);
+  }
+  78% {
+    transform: translate(-2.2px, 0);
+  }
+  83% {
+    transform: translate(-1.6px, -1.6px);
+  }
+  88% {
+    transform: translate(0, -2.2px);
+  }
+  93% {
+    transform: translate(1.6px, -1.6px);
+  }
+}
+@keyframes avatar-glance {
+  0%,
+  30%,
+  100% {
+    transform: none;
+  }
+  36%,
+  52% {
+    transform: translate(-2.4px, 0.4px);
+  }
+  58%,
+  74% {
+    transform: translate(2.4px, -0.4px);
+  }
+  80% {
+    transform: none;
+  }
+}
+@keyframes avatar-wander {
+  0%,
+  100% {
+    transform: none;
+  }
+  20%,
+  32% {
+    transform: translate(1.8px, -1.6px);
+  }
+  45%,
+  55% {
+    transform: translate(-1.4px, 1.2px);
+  }
+  70%,
+  80% {
+    transform: translate(0.6px, 2px);
+  }
+}
+/* rotate·translate·counter-rotate nets a pure translation around a circle, so the
+   eyes travel right → bottom → left → top smoothly without tilting. */
+@keyframes avatar-spin {
+  from {
+    transform: rotate(0deg) translateX(2.2px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(2.2px) rotate(-360deg);
+  }
+}
+.group-avatar {
+  position: relative;
+}
+.group-avatar > span {
+  position: absolute;
+  display: flex;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--sidebar);
+  background: var(--sidebar);
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-lean,
+  .avatar-breathe,
+  .avatar-eyes,
+  .avatar-pupils,
+  .avatar-idle,
+  .avatar-blink {
+    animation: none !important;
+    transform: none !important;
+  }
+}

@@ -1,0 +1,302 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../../web/src/avatar.css";
+
+/* The site borrows shadcn primitives from the app; make sure their classes are generated. */
+@source "../../web/src/components/ui";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Notion-inspired palette: warm paper, soft ink, and the familiar pastel tag colors. */
+:root {
+  color-scheme: light;
+  --paper: #ffffff;
+  --paper-2: #f7f6f3;
+  --paper-3: #f1f1ef;
+  --ink: #191919;
+  --ink-2: #37352f;
+  --ink-3: #787774;
+  --line: rgba(55, 53, 47, 0.09);
+  --line-strong: rgba(55, 53, 47, 0.16);
+  --blue: #0075de;
+  --blue-hover: #005bab;
+  --c-gray: #787774;
+  --c-gray-bg: #f1f1ef;
+  --c-brown: #9f6b53;
+  --c-brown-bg: #f4eeee;
+  --c-orange: #d9730d;
+  --c-orange-bg: #fbecdd;
+  --c-yellow: #cb912f;
+  --c-yellow-bg: #fbf3db;
+  --c-green: #448361;
+  --c-green-bg: #edf3ec;
+  --c-blue: #337ea9;
+  --c-blue-bg: #e7f3f8;
+  --c-purple: #9065b0;
+  --c-purple-bg: #f6f3f9;
+  --c-pink: #c14c8a;
+  --c-pink-bg: #faf1f5;
+  --c-red: #d44c47;
+  --c-red-bg: #fdebec;
+  --card-shadow:
+    0 1px 2px rgba(15, 15, 15, 0.04), 0 8px 24px -6px rgba(15, 15, 15, 0.08);
+  --window-shadow:
+    0 0 0 1px rgba(15, 15, 15, 0.05), 0 24px 64px -12px rgba(15, 15, 15, 0.22),
+    0 8px 20px -8px rgba(15, 15, 15, 0.1);
+  /* Read by the shared avatar faces. */
+  --sidebar: var(--paper-2);
+  --main-avatar: #191919;
+  --main-avatar-eyes: #ffffff;
+}
+.dark {
+  color-scheme: dark;
+  --paper: #191919;
+  --paper-2: #202020;
+  --paper-3: #2a2a2a;
+  --ink: #f0efed;
+  --ink-2: #d3d3d1;
+  --ink-3: #9b9b9b;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --blue: #2e8fe8;
+  --blue-hover: #4aa0ef;
+  --c-gray: #9b9b9b;
+  --c-gray-bg: #2f2f2f;
+  --c-brown: #ba856f;
+  --c-brown-bg: #3a2a24;
+  --c-orange: #c77d48;
+  --c-orange-bg: #44301f;
+  --c-yellow: #ca984d;
+  --c-yellow-bg: #433822;
+  --c-green: #529e72;
+  --c-green-bg: #22352a;
+  --c-blue: #5e87c9;
+  --c-blue-bg: #1d3140;
+  --c-purple: #9d68d3;
+  --c-purple-bg: #322a3d;
+  --c-pink: #d15796;
+  --c-pink-bg: #3d2733;
+  --c-red: #df5452;
+  --c-red-bg: #402826;
+  --card-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -6px rgba(0, 0, 0, 0.5);
+  --window-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 64px -12px rgba(0, 0, 0, 0.7);
+  --main-avatar: #f5f5f5;
+  --main-avatar-eyes: #111111;
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* shadcn tokens used by the shared primitives. */
+  --color-background: var(--paper);
+  --color-foreground: var(--ink-2);
+  --color-card: var(--paper);
+  --color-card-foreground: var(--ink-2);
+  --color-popover: var(--paper);
+  --color-popover-foreground: var(--ink-2);
+  --color-primary: var(--ink);
+  --color-primary-foreground: var(--paper);
+  --color-secondary: var(--paper-3);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--paper-2);
+  --color-muted-foreground: var(--ink-3);
+  --color-accent: var(--paper-3);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--c-red);
+  --color-border: var(--line-strong);
+  --color-input: var(--line-strong);
+  --color-ring: var(--blue);
+  --radius: 0.75rem;
+  --radius-xs: calc(var(--radius) * 0.5);
+  --radius-sm: calc(var(--radius) * 0.75);
+  --radius-md: calc(var(--radius) * 0.875);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+
+  /* Site tokens. */
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-brand: var(--blue);
+  --color-brand-hover: var(--blue-hover);
+  --color-n-gray: var(--c-gray);
+  --color-n-gray-bg: var(--c-gray-bg);
+  --color-n-brown: var(--c-brown);
+  --color-n-brown-bg: var(--c-brown-bg);
+  --color-n-orange: var(--c-orange);
+  --color-n-orange-bg: var(--c-orange-bg);
+  --color-n-yellow: var(--c-yellow);
+  --color-n-yellow-bg: var(--c-yellow-bg);
+  --color-n-green: var(--c-green);
+  --color-n-green-bg: var(--c-green-bg);
+  --color-n-blue: var(--c-blue);
+  --color-n-blue-bg: var(--c-blue-bg);
+  --color-n-purple: var(--c-purple);
+  --color-n-purple-bg: var(--c-purple-bg);
+  --color-n-pink: var(--c-pink);
+  --color-n-pink-bg: var(--c-pink-bg);
+  --color-n-red: var(--c-red);
+  --color-n-red-bg: var(--c-red-bg);
+  --shadow-card: var(--card-shadow);
+  --shadow-window: var(--window-shadow);
+
+  --animate-marquee: marquee var(--marquee-time, 40s) linear infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-float: float 6s ease-in-out infinite;
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes scan {
+  0%,
+  100% {
+    top: 8%;
+  }
+  50% {
+    top: 86%;
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--paper);
+    color: var(--ink-2);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--blue) 22%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Thinking text: a soft light sweeps across it. */
+  .shimmer-text {
+    background: linear-gradient(
+        90deg,
+        var(--ink-3) 0%,
+        var(--ink-3) 40%,
+        var(--ink) 50%,
+        var(--ink-3) 60%,
+        var(--ink-3) 100%
+      )
+      0 0 / 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: var(--animate-shimmer);
+  }
+  /* Faded edges for marquees and overflowing rows. */
+  .edge-fade {
+    mask-image: linear-gradient(
+      90deg,
+      transparent,
+      #000 12%,
+      #000 88%,
+      transparent
+    );
+  }
+  /* Notion's subtle dotted paper. */
+  .dot-grid {
+    background-image: radial-gradient(var(--line-strong) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  /* Pointer-following highlight; Spotlight sets --x/--y. */
+  .spotlight::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    background: radial-gradient(
+      420px circle at var(--x, 50%) var(--y, 50%),
+      color-mix(in srgb, var(--ink) 7%, transparent),
+      transparent 60%
+    );
+  }
+  .spotlight:hover::before {
+    opacity: 1;
+  }
+
+  /* Provider marks from the app (ProviderMark). */
+  .provider-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-radius: 28%;
+    color: #fff;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+  .provider-mark.logo {
+    background: var(--paper);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+    color: var(--ink);
+  }
+  .provider-mark.logo img {
+    display: block;
+  }
+  .provider-glyph {
+    display: block;
+    background: currentColor;
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .animate-marquee,
+  .animate-float,
+  .shimmer-text {
+    animation: none !important;
+  }
+}

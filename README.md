@@ -52,6 +52,15 @@ Desktop data is under Electron's per-user app-data directory in `workspace/`. Br
 
 The API binds loopback and uses one-time pairing, an HttpOnly same-site cookie, host/origin checks and bounded requests. Private phone pairing/Tailscale access is available as a bounded milestone: see [setup and the manual phone checklist](docs/architecture/remote-access.md). Real tailnet/device verification and full remote lifecycle remain pending. Packaging uses electron-builder; public signing, notarization and updater hosting are release work.
 
+## Product site
+
+```sh
+npm run site         # dev server for the marketing site in apps/site
+npm run site:build   # static build into dist/site
+```
+
+A static, Notion-styled product page. It reuses the app's own avatar faces, provider marks and shadcn primitives through the `@` alias, so the mascot and logos stay in sync with the app. It describes only shipped behavior, and labels previews (browser control, phone access) as such. It has no analytics. It loads fonts from Google Fonts, and it is not deployed anywhere yet.
+
 ## Remaining workstreams
 
 Public publishing and signed releases, arbitrary executable skills, connectors beyond Notion, a routine UI, closed-app or cloud scheduling, PDF/Office parsing, phone access and auto-updates are not implemented. There are no fake production model responses.
