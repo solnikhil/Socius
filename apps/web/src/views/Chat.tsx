@@ -64,10 +64,12 @@ import {
   type OpenSettings,
 } from "../models.js";
 
+// Show the range: everyday questions first, then the bot workspace.
 const suggestions = [
-  "Create a research bot that turns my supplied sources into evidence-based briefs.",
-  "Help me summarise a document. I’ll attach it here.",
-  "Help me make a plan for the work I need to get done today.",
+  "Plan my day: two classes, gym, and an assignment due at 11 PM.",
+  "Explain how UPI payments work, in three short lines.",
+  "What time is it in New York right now, and how far ahead is India?",
+  "Set up a small team of bots to help with my college work.",
 ];
 const groupSuggestions = [
   "Plan a product launch: research the risks first, then draft the announcement.",
