@@ -11,7 +11,13 @@ import type { BotInstance } from "@socius/contracts";
 import type { Memory, BotDraft } from "@socius/contracts/app";
 import type { ModelRef } from "@socius/contracts/providers";
 import { ProviderFailure, failureMessage } from "./providers/errors.js";
-import { hostTimeZone, isTimeZone, timeContext, timeFacts } from "./clock.js";
+import {
+  environmentContext,
+  hostTimeZone,
+  isTimeZone,
+  timeFacts,
+  turnNote,
+} from "./clock.js";
 
 export interface ModelRequest {
   /** AI SDK language model built from the selected provider connection. */
@@ -66,6 +72,10 @@ export interface ModelRequest {
   now?: () => Date;
   /** IANA zone for time facts. Defaults to the host's zone. */
   timeZone?: string;
+  /** The selected model's display name, stated to the model so it doesn't guess. */
+  modelLabel?: string;
+  /** Where the user is writing from, when known. */
+  client?: "desktop" | "phone";
 }
 /** Proposals that wait for the user's review card and report the outcome. */
 export interface Orchestration {
@@ -109,7 +119,7 @@ export interface ConnectorTool {
 }
 /** Framing for direct chats. Group calls supply their own briefing instead. */
 export const DEFAULT_FRAMING =
-  "You are running in Socius. Only the abilities and connected apps supplied in this call exist. The main bot can propose new specialists for approval; delegation happens in group chats. Web browsing exists only when browser tools are supplied in this call. No external messaging or file-system access is available. Do not claim to perform unavailable actions.";
+  "You are running in Socius. Answer questions and help with thinking, writing, maths and code directly from what you know. For actions in the outside world and live data, only the tools and connected apps supplied in this call exist: no web browsing, external messaging or file-system access unless a tool for it is listed. Do not claim to perform actions you have no tool for, but never refuse a question just because no tool covers it.";
 /**
  * How a bot talks about its connected apps: as apps the user connected, in
  * plain words, never as tools or internal names. Changes wait for review.
@@ -132,6 +142,25 @@ export type ModelRunner = (
   request: ModelRequest,
   onText: (text: string) => void,
 ) => Promise<string>;
+/** Appends `note` to the newest user message without changing stored history. */
+export function withTurnNote(
+  messages: ModelMessage[],
+  note: string,
+): ModelMessage[] {
+  const i = messages.findLastIndex((m) => m.role === "user");
+  if (i < 0) return messages;
+  const m = messages[i]!;
+  const content =
+    typeof m.content === "string"
+      ? `${m.content}\n\n${note}`
+      : [
+          ...(m.content as Exclude<typeof m.content, string>),
+          { type: "text" as const, text: note },
+        ];
+  return messages.map((x, k) =>
+    k === i ? ({ ...m, content } as ModelMessage) : x,
+  );
+}
 export const runModel: ModelRunner = async (request, onText) => {
   const { bot } = request;
   const preloaded = request.preloadedSkills ?? [];
@@ -181,13 +210,21 @@ export const runModel: ModelRunner = async (request, onText) => {
       execute: ({ bot: name, request: text }) => ask(name, text),
     });
   }
-  if (request.tools && request.orchestrate && bot.template.id === "socius/main") {
+  if (
+    request.tools &&
+    request.orchestrate &&
+    bot.template.id === "socius/main"
+  ) {
     const o = request.orchestrate;
     tools.updateBot = tool({
       description:
         "Propose changing a specialist's name, role or instructions. The user reviews the exact change and you wait for their decision. Only include fields that change; instructions replace the old ones completely.",
       inputSchema: z.object({
-        bot: z.string().min(1).max(100).describe("The bot's current exact name"),
+        bot: z
+          .string()
+          .min(1)
+          .max(100)
+          .describe("The bot's current exact name"),
         name: z.string().min(1).max(100).optional(),
         role: z.string().min(1).max(200).optional(),
         instructions: z.string().min(1).max(8000).optional(),
@@ -211,7 +248,11 @@ export const runModel: ModelRunner = async (request, onText) => {
       description:
         "Propose adding or removing members of an existing group chat. The user reviews the new member list, and you wait for their decision.",
       inputSchema: z.object({
-        group: z.string().min(1).max(100).describe("The group chat's exact name"),
+        group: z
+          .string()
+          .min(1)
+          .max(100)
+          .describe("The group chat's exact name"),
         add: z.array(z.string().min(1).max(100)).max(12).optional(),
         remove: z.array(z.string().min(1).max(100)).max(12).optional(),
       }),
@@ -319,9 +360,15 @@ export const runModel: ModelRunner = async (request, onText) => {
     // forwards this to streamText, though its settings type omits it.
     onError: () => undefined,
     instructions: [
+      environmentContext({
+        now: now(),
+        timeZone: zone,
+        model: request.modelLabel,
+        client: request.client,
+        tools: Object.keys(tools),
+      }),
       bot.instructions,
       request.briefing ?? DEFAULT_FRAMING,
-      timeContext(now(), zone, request.tools),
       CHAT_STYLE,
       ...(request.feedback ? [request.feedback] : []),
       ...(request.tools
@@ -374,7 +421,7 @@ export const runModel: ModelRunner = async (request, onText) => {
             },
           ]
         : []),
-      ...request.messages,
+      ...withTurnNote(request.messages, turnNote(now(), zone)),
     ],
     abortSignal: request.signal,
   });

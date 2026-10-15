@@ -246,6 +246,8 @@ export async function startRuntime(options: RuntimeOptions) {
   const taskSkills = new Map<string, TaskSkill[]>();
   let pairingToken = randomBytes(32).toString("hex");
   const devices = new DeviceService(store);
+  // Running task id → where the user wrote from, stated to the model (issue #25 H07).
+  const taskClient = new Map<string, "desktop" | "phone">();
   // Running task id → its controller and the provider connection it uses.
   const active = new Map<
     string,
@@ -764,9 +766,12 @@ export async function startRuntime(options: RuntimeOptions) {
           hold: running?.hold,
         });
     const browserBriefing = browserTools.length ? browser.briefing(b) : null;
+    const client = taskClient.get(taskId);
     return {
       model: selected.model,
       modelRef: selected.ref,
+      modelLabel: selected.entry.label,
+      ...(client ? { client } : {}),
       tools: selected.entry.tools !== false,
       bot: b,
       dreamingEnabled: dreaming.settings().enabled,
@@ -911,6 +916,7 @@ export async function startRuntime(options: RuntimeOptions) {
     } finally {
       clearTimeout(timeout);
       active.delete(task.id);
+      taskClient.delete(task.id);
       // Anything still waiting on this task (an unanswered review) stops waiting.
       controller.abort();
       taskSkills.delete(task.id);
@@ -1226,7 +1232,10 @@ export async function startRuntime(options: RuntimeOptions) {
       store.event("bot.updated", `Updated ${target.name}.`);
     } else if (approval.kind === "group") {
       const draft = approval.payload as GroupDraft;
-      createGroup({ name: draft.name, memberIds: MemberIds.parse(draft.memberIds) });
+      createGroup({
+        name: draft.name,
+        memberIds: MemberIds.parse(draft.memberIds),
+      });
     } else if (approval.kind === "group-members") {
       const change = approval.payload as GroupMembersChange;
       const g = group(change.groupId);
@@ -1374,7 +1383,9 @@ export async function startRuntime(options: RuntimeOptions) {
         const change: BotUpdate = { botId: target.id };
         for (const key of ["name", "role", "instructions"] as const)
           if (fields[key] !== undefined && fields[key] !== target[key])
-            change[key] = BotUpdateFields.shape[key].unwrap().parse(fields[key]);
+            change[key] = BotUpdateFields.shape[key]
+              .unwrap()
+              .parse(fields[key]);
         if (Object.keys(change).length === 1)
           return { error: "Nothing would change." };
         const parts = [
@@ -1454,7 +1465,8 @@ export async function startRuntime(options: RuntimeOptions) {
           "group-members",
           change,
           `Change members of “${g.name}”: ${[
-            adding.length && `add ${names(adding.map((b) => b!.id)).join(", ")}`,
+            adding.length &&
+              `add ${names(adding.map((b) => b!.id)).join(", ")}`,
             removing.length &&
               `remove ${names(removing.map((b) => b!.id)).join(", ")}`,
           ]
@@ -2659,6 +2671,10 @@ export async function startRuntime(options: RuntimeOptions) {
             createdAt: task.createdAt,
             taskId: task.id,
           };
+          taskClient.set(
+            task.id,
+            context.kind === "remote" ? "phone" : "desktop",
+          );
           await streamTask(
             res,
             task,
@@ -2764,9 +2780,7 @@ export async function startRuntime(options: RuntimeOptions) {
               const final = await executeModel(
                 {
                   ...(await modelContext(b, task.id, signal, user.content)),
-                  ...(main
-                    ? { briefing: workspaceBriefing(), askBot }
-                    : {}),
+                  ...(main ? { briefing: workspaceBriefing(), askBot } : {}),
                   messages: directHistory(store.messages(b.id), name),
                 },
                 show,
