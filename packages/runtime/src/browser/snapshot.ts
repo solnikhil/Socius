@@ -44,6 +44,25 @@ export function redactSnapshot(snapshot: string, max: number): string {
     : text;
 }
 
+/**
+ * Splits an observation into parts of at most `max` characters on line
+ * boundaries, so a long page can be read part by part instead of only its top.
+ * A single over-long line is cut rather than dropped.
+ */
+export function splitObservation(text: string, max: number): string[] {
+  const parts: string[] = [];
+  let current = "";
+  for (const raw of text.split("\n")) {
+    const line = raw.length > max ? raw.slice(0, max) : raw;
+    if (current && current.length + 1 + line.length > max) {
+      parts.push(current);
+      current = line;
+    } else current = current ? `${current}\n${line}` : line;
+  }
+  if (current || !parts.length) parts.push(current);
+  return parts;
+}
+
 /** Refs as Playwright writes them, e.g. `e12` or `f1e3` inside frames. */
 export const ELEMENT_REF = /^(?:f\d+)?e\d+$/;
 
