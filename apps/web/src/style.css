@@ -529,6 +529,12 @@ button.icon.ghost.sidebar-reveal:hover {
   color: var(--text-2);
 }
 .connect-apps {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
   height: 40px;
   border-radius: 999px;
   border: 1px solid var(--border-strong);
