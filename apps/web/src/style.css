@@ -4112,11 +4112,90 @@ dialog.create-bot,
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-/* Collapsed panels only: a corner strip that leaves the chat centered. */
+/* Collapsed panels only: small globe buttons in the corner; the chat stays centered. */
 .browser-dock.compact {
   bottom: auto;
+  width: auto;
+  display: flex;
+  gap: 6px;
   overflow: visible;
   z-index: 11;
+}
+/* The chat slides to make room as a panel opens, and back as it closes. */
+.chat {
+  transition: padding-right 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.chat-head {
+  transition: right 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.browser-chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--bubble);
+  color: var(--text-2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s,
+    box-shadow 0.2s,
+    translate 0.2s;
+}
+.browser-chip:hover {
+  color: var(--text);
+  background: var(--surface-2);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  translate: 0 -1px;
+}
+.browser-chip-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 2px var(--bubble);
+}
+.browser-chip.accent .browser-chip-dot {
+  background: var(--accent);
+}
+.browser-chip.good .browser-chip-dot {
+  background: var(--success);
+}
+.browser-chip.warn .browser-chip-dot {
+  background: #d97706;
+}
+/* Browsing or waiting on you: the dot breathes so it's noticeable from the corner. */
+.browser-chip.accent .browser-chip-dot::after,
+.browser-chip.warn .browser-chip-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: browser-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes browser-ping {
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat,
+  .chat-head {
+    transition: none;
+  }
+  .browser-chip-dot::after {
+    animation: none !important;
+  }
 }
 .browser-panel {
   border: 1px solid var(--border);
@@ -4234,6 +4313,13 @@ dialog.create-bot,
   }
   .chat.has-browser .thread {
     padding-top: 16px;
+  }
+  .browser-dock.compact {
+    position: absolute;
+    top: 14px;
+    right: 12px;
+    margin: 0;
+    max-height: none;
   }
   .browser-preview {
     width: 112px;

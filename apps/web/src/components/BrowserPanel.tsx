@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   Check,
-  ChevronDown,
   ChevronUp,
   Globe,
   Hand,
@@ -105,6 +105,14 @@ const OWNER: Record<BrowserControlMode, { label: string; tone: string }> = {
   failed: { label: "Couldn't start", tone: "warn" },
 };
 
+/** The panel and its corner button are one shape that morphs between sizes. */
+const morph = {
+  type: "spring",
+  stiffness: 420,
+  damping: 36,
+  mass: 0.8,
+} as const;
+
 /** Sessions worth showing: anything running, paused or with something to say. */
 export function visibleSessions(state: Snapshot, botIds: string[]) {
   return state.browserSessions.filter(
@@ -136,6 +144,7 @@ export function BrowserPanel({
 }) {
   const [busy, setBusy] = useState(""),
     [error, setError] = useState("");
+  const still = useReducedMotion();
   const tab = s.tabs.find((t) => t.active) ?? s.tabs[0];
   const owner = OWNER[s.mode];
   // `resumed:` marks a handback for the runtime; it is not a message.
@@ -162,105 +171,130 @@ export function BrowserPanel({
       // Take control available while that conversation continues.
       void onResume(s).catch((e: Error) => setError(e.message));
   }
+  const shape = `browser-${s.id}`;
+  const transition = still ? { duration: 0 } : morph;
+  if (collapsed)
+    return (
+      <motion.button
+        layoutId={shape}
+        transition={transition}
+        style={{ borderRadius: 18 }}
+        className={`browser-chip ${owner.tone}`}
+        aria-label={`Expand browser preview: ${botName}, ${owner.label}`}
+        aria-expanded={false}
+        title={`${botName}'s browser · ${owner.label}`}
+        onClick={onToggle}
+      >
+        <Globe size={16} aria-hidden />
+        <span className="browser-chip-dot" aria-hidden />
+      </motion.button>
+    );
   return (
-    <section className="browser-panel" aria-label={`${botName}'s browser`}>
-      <div className="browser-panel-row">
-        <Globe size={15} aria-hidden />
-        <strong>{botName}'s browser</strong>
-        <span className={`badge ${owner.tone}`} role="status">
-          {owner.label}
-        </span>
-        <button
-          className="icon ghost tiny"
-          aria-label={
-            collapsed ? "Expand browser preview" : "Collapse browser preview"
-          }
-          aria-expanded={!collapsed}
-          onClick={onToggle}
-        >
-          {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-        </button>
-      </div>
-      {!collapsed && (
-        <>
-          {!remote() &&
-          ["ready", "agent", "awaiting-approval"].includes(s.mode) &&
-          tab ? (
-            <PagePreview
-              key={`${s.id}:${s.revision}:${s.mode}:${tab.id}:${tab.url}`}
-              sessionId={s.id}
-            />
-          ) : (
-            <div className="browser-preview">
-              <p>
-                {s.mode === "human"
-                  ? "You have control. Preview pauses until you resume."
-                  : "Open the browser to view the page."}
-              </p>
-            </div>
-          )}
-          {tab && (
-            <p className="browser-panel-page" title={tab.url}>
-              {tab.title ? <span>{tab.title} · </span> : null}
-              <code>{tab.url}</code>
+    <motion.section
+      layoutId={shape}
+      transition={transition}
+      style={{ borderRadius: 14 }}
+      className="browser-panel"
+      aria-label={`${botName}'s browser`}
+    >
+      {/* Contents fade in once the shape has mostly grown, so text never stretches. */}
+      <motion.div
+        initial={still ? false : { opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: still ? 0 : 0.12, duration: 0.22 }}
+      >
+        <div className="browser-panel-row">
+          <Globe size={15} aria-hidden />
+          <strong>{botName}'s browser</strong>
+          <span className={`badge ${owner.tone}`} role="status">
+            {owner.label}
+          </span>
+          <button
+            className="icon ghost tiny"
+            aria-label="Collapse browser preview"
+            aria-expanded
+            onClick={onToggle}
+          >
+            <ChevronUp size={14} />
+          </button>
+        </div>
+        {!remote() &&
+        ["ready", "agent", "awaiting-approval"].includes(s.mode) &&
+        tab ? (
+          <PagePreview
+            key={`${s.id}:${s.revision}:${s.mode}:${tab.id}:${tab.url}`}
+            sessionId={s.id}
+          />
+        ) : (
+          <div className="browser-preview">
+            <p>
+              {s.mode === "human"
+                ? "You have control. Preview pauses until you resume."
+                : "Open the browser to view the page."}
             </p>
-          )}
-          {note && <p className="browser-panel-note">{note}</p>}
-          <ErrorNote error={error} />
-          {remote() ? (
-            <p className="browser-panel-note">
-              Control the browser from your laptop.
-            </p>
-          ) : (
-            <div className="modal-actions">
+          </div>
+        )}
+        {tab && (
+          <p className="browser-panel-page" title={tab.url}>
+            {tab.title ? <span>{tab.title} · </span> : null}
+            <code>{tab.url}</code>
+          </p>
+        )}
+        {note && <p className="browser-panel-note">{note}</p>}
+        <ErrorNote error={error} />
+        {remote() ? (
+          <p className="browser-panel-note">
+            Control the browser from your laptop.
+          </p>
+        ) : (
+          <div className="modal-actions">
+            <button
+              disabled={!!busy}
+              onClick={() => void run("show", post("show"))}
+            >
+              <SquareArrowOutUpRight size={14} />
+              Open browser
+            </button>
+            {s.mode !== "human" && (
+              <button
+                disabled={!!busy || s.mode === "handoff-pending"}
+                onClick={() => void run("minimize", post("minimize"))}
+              >
+                <Minimize2 size={14} /> Minimize window
+              </button>
+            )}
+            {s.mode === "human" ? (
+              <button
+                className="primary"
+                disabled={!!busy}
+                onClick={() => void resumeBrowser()}
+              >
+                <Play size={14} />
+                Resume {botName}
+              </button>
+            ) : (
+              <button
+                className="primary"
+                disabled={!!busy || s.mode === "handoff-pending"}
+                onClick={() => void run("take", post("take-control"))}
+              >
+                <Hand size={14} />
+                {busy === "take" ? "Taking control…" : "Take control"}
+              </button>
+            )}
+            {s.mode !== "stopped" && (
               <button
                 disabled={!!busy}
-                onClick={() => void run("show", post("show"))}
+                onClick={() => void run("stop", post("stop"))}
               >
-                <SquareArrowOutUpRight size={14} />
-                Open browser
+                <Square size={12} />
+                Stop
               </button>
-              {s.mode !== "human" && (
-                <button
-                  disabled={!!busy || s.mode === "handoff-pending"}
-                  onClick={() => void run("minimize", post("minimize"))}
-                >
-                  <Minimize2 size={14} /> Minimize window
-                </button>
-              )}
-              {s.mode === "human" ? (
-                <button
-                  className="primary"
-                  disabled={!!busy}
-                  onClick={() => void resumeBrowser()}
-                >
-                  <Play size={14} />
-                  Resume {botName}
-                </button>
-              ) : (
-                <button
-                  className="primary"
-                  disabled={!!busy || s.mode === "handoff-pending"}
-                  onClick={() => void run("take", post("take-control"))}
-                >
-                  <Hand size={14} />
-                  {busy === "take" ? "Taking control…" : "Take control"}
-                </button>
-              )}
-              {s.mode !== "stopped" && (
-                <button
-                  disabled={!!busy}
-                  onClick={() => void run("stop", post("stop"))}
-                >
-                  <Square size={12} />
-                  Stop
-                </button>
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </section>
+            )}
+          </div>
+        )}
+      </motion.div>
+    </motion.section>
   );
 }
 
