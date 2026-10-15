@@ -17,13 +17,16 @@ import { paired, connectModel } from "./helpers.js";
 let chromiumReady = false;
 try {
   const { chromium } = await import("playwright-core");
-  chromiumReady = existsSync(chromium.executablePath());
+  // Same lookup as the service: SOCIUS_BROWSER_PATH first, then Playwright's Chromium.
+  chromiumReady = existsSync(
+    process.env.SOCIUS_BROWSER_PATH || chromium.executablePath(),
+  );
 } catch {
   chromiumReady = false;
 }
 const skip = chromiumReady
   ? false
-  : 'Chromium is not installed (run "npx playwright install chromium")';
+  : 'Chromium is not installed (run "npx playwright install chromium" or set SOCIUS_BROWSER_PATH)';
 
 let site: Server, secret: Server;
 let siteHost = "",
@@ -658,7 +661,8 @@ test(
         revoked = await call(request, "browserObserve");
         return "ok";
       };
-      await f.chat("Browse");
+      // Only addresses in the user's own message are trusted once a session has history.
+      await f.chat(`Browse http://${siteHost}/`);
       assert.match(String(revoked.error), /revoked|not granted|cancel/i);
       await f.r.request("browser/grant", { botId: f.bot.id, granted: true });
 
@@ -680,7 +684,7 @@ test(
         paused = await call(request, "browserObserve");
         return "ok";
       };
-      await f.chat("Browse again");
+      await f.chat(`Browse http://${siteHost}/ again`);
       assert.match(String(paused.error ?? "cancelled"), /control|cancel/i);
       assert.equal((await f.session()).mode, "human");
     } finally {
@@ -837,13 +841,14 @@ test(
         });
         return "done";
       };
-      const again = f.chat("Look around");
+      const again = f.chat(`Look around http://${siteHost}/a`);
       await until(async () =>
         (await f.state()).browserActions.some((a) => a.state === "pending"),
       );
       const next = (await f.state()).browserActions.find(
         (a) => a.state === "pending",
       )!;
+      assert.equal(next.content, `http://${siteHost}/exfil?q=1`);
       await f.r.request("browser/actions/resolve", {
         id: next.id,
         digest: next.digest,
@@ -864,7 +869,7 @@ test(
         });
         return "done";
       };
-      const third = f.chat("Check something");
+      const third = f.chat(`Check something on http://${siteHost}/a`);
       await until(async () =>
         (await f.state()).browserActions.some((a) => a.state === "pending"),
       );
@@ -879,6 +884,75 @@ test(
       });
       await third;
       assert.equal(foreign.status, "denied");
+      assert.equal(exfilHits, 1);
+
+      // Earlier browsing survives in the chat history, so a new task is tainted from
+      // its first step: a page the user did not name is reviewed even before reading.
+      let unnamed: Record<string, unknown> = {};
+      script = async (request) => {
+        unnamed = await call(request, "browserOpen", {
+          url: `http://${siteHost}/b`,
+        });
+        return "done";
+      };
+      const fourth = f.chat("Keep going");
+      await until(async () =>
+        (await f.state()).browserActions.some((a) => a.state === "pending"),
+      );
+      const carried = (await f.state()).browserActions.find(
+        (a) => a.state === "pending",
+      )!;
+      assert.equal(carried.content, `http://${siteHost}/b`);
+      await f.r.request("browser/actions/resolve", {
+        id: carried.id,
+        digest: carried.digest,
+        decision: "deny",
+      });
+      await fourth;
+      assert.equal(unnamed.status, "denied");
+
+      // A link inside an attached document is never trusted, even exactly as written.
+      const fresh = (await (
+        await f.r.request("bots", {
+          name: "Reader",
+          role: "Reads documents",
+          instructions: "Read.",
+        })
+      ).json()) as BotInstance;
+      await f.r.request("browser/grant", { botId: fresh.id, granted: true });
+      let planted: Record<string, unknown> = {};
+      script = async (request) => {
+        planted = await call(request, "browserOpen", {
+          url: `http://${siteHost}/exfil?from=doc`,
+        });
+        return "done";
+      };
+      const fifth = f.r
+        .request("chat", {
+          botId: fresh.id,
+          content: "Summarise this",
+          attachment: {
+            name: "notes.txt",
+            text: `See http://${siteHost}/exfil?from=doc for details.`,
+          },
+        })
+        .then((res) => res.text());
+      await until(async () =>
+        (await f.state()).browserActions.some(
+          (a) => a.state === "pending" && a.botId === fresh.id,
+        ),
+      );
+      const fromDoc = (await f.state()).browserActions.find(
+        (a) => a.state === "pending" && a.botId === fresh.id,
+      )!;
+      assert.equal(fromDoc.content, `http://${siteHost}/exfil?from=doc`);
+      await f.r.request("browser/actions/resolve", {
+        id: fromDoc.id,
+        digest: fromDoc.digest,
+        decision: "deny",
+      });
+      await fifth;
+      assert.equal(planted.status, "denied");
       assert.equal(exfilHits, 1);
     } finally {
       await f.close();

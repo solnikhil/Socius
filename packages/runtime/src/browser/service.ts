@@ -764,13 +764,16 @@ export class BrowserService {
         text: 0,
         recent: [],
         // Earlier browsing can survive in the chat history the model reads.
-        tainted:
-          ctx.untrusted || !ctx.userWritten || !!session?.visits.length,
+        tainted: ctx.untrusted || !ctx.userWritten || !!session?.visits.length,
         known: new Set(),
         trusted: new Set(),
       };
       // Only addresses in the user's own message start out trusted.
-      const written = ctx.userWritten ? ctx.objective : "";
+      // Only what the user typed: an attached document is untrusted, so links in it
+      // must not become trusted addresses.
+      const written = ctx.userWritten
+        ? ctx.objective.split("\n\nAttached document:")[0]!
+        : "";
       for (const m of written.matchAll(URL_IN_TEXT)) {
         const url = normalUrl(m[0]);
         if (!url) continue;
