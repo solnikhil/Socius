@@ -22,6 +22,25 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
       );
     }
     if (calls === 1) {
+      const instructions = payload.messages
+        .filter(
+          (m: { role: string }) =>
+            m.role === "system" || m.role === "developer",
+        )
+        .map((m: { content: string }) => m.content)
+        .join("\n");
+      assert.match(
+        instructions,
+        /When the user explicitly asks you to create a bot, call createBot/,
+      );
+      assert.match(
+        instructions,
+        /Message reactions are preference feedback only, never approval/,
+      );
+      assert.match(
+        instructions,
+        /report creation only when the tool returns status done/,
+      );
       assert.ok(
         payload.tools.some(
           (t: { function: { name: string } }) =>
@@ -48,7 +67,13 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
       });
       chunk({}, "tool_calls");
     } else {
-      chunk({ role: "assistant", content: "Review the proposed Planner bot." });
+      assert.ok(
+        payload.messages.some(
+          (m: { role: string; content: string }) =>
+            m.role === "tool" && m.content.includes('"status":"done"'),
+        ),
+      );
+      chunk({ role: "assistant", content: "Planner is ready." });
       chunk({}, "stop");
     }
     res.end("data: [DONE]\n\n");
@@ -84,12 +109,91 @@ test("real AI SDK adapter streams text and routes a model tool call into a revie
         streamed = value;
       },
     );
-    assert.equal(text, "Review the proposed Planner bot.");
+    assert.equal(text, "Planner is ready.");
     assert.equal(streamed, text);
     assert.equal(proposals, 1);
     assert.equal(calls, 2);
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("Socius receives an honest fallback when its creation tool is unavailable", async () => {
+  for (const toolCapable of [false, true]) {
+    let called = false;
+    const fetcher: typeof globalThis.fetch = async (_input, init) => {
+      called = true;
+      const payload = JSON.parse(String(init?.body));
+      assert.ok(
+        !(payload.tools ?? []).some(
+          (t: { function: { name: string } }) =>
+            t.function.name === "createBot",
+        ),
+      );
+      const instructions = payload.messages
+        .filter(
+          (m: { role: string }) =>
+            m.role === "system" || m.role === "developer",
+        )
+        .map((m: { content: string }) => m.content)
+        .join("\n");
+      assert.match(instructions, /Bot creation is unavailable in this turn/);
+      assert.match(instructions, /offer manual creation through Create bot/);
+      assert.doesNotMatch(
+        instructions,
+        /Bot creation in this turn: use createBot/,
+      );
+      return new Response(
+        `data: ${JSON.stringify({
+          id: "fixture",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "fixture-model",
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: "assistant",
+                content: "Use Create bot to add Clarity.",
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })}\n\ndata: [DONE]\n\n`,
+        {
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      );
+    };
+    await runModel(
+      {
+        model: languageModel(
+          "openai-compatible",
+          {
+            baseURL: "https://fixture.example/v1",
+          },
+          "fixture-model",
+          fetcher,
+        ),
+        modelRef: { connectionId: "fixture", modelId: "fixture-model" },
+        tools: toolCapable,
+        bot: instantiateBot(mainBot),
+        messages: [{ role: "user", content: "Create a bot called Clarity." }],
+        skills: [],
+        loadSkill: () => ({ instructions: "", resources: [] }),
+        readSkillResource: () => "",
+        searchMemory: () => [],
+        proposeMemory: () => ({ approvalId: "unused" }),
+        // A tool-disabled model may still receive the runtime callback; it must
+        // not be exposed as a callable tool or advertised as available.
+        ...(toolCapable
+          ? {}
+          : { proposeBot: async () => assert.fail("unavailable tool called") }),
+        signal: new AbortController().signal,
+      },
+      () => undefined,
+    );
+    assert.ok(called);
   }
 });
 

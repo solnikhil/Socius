@@ -185,7 +185,7 @@ export const runModel: ModelRunner = async (request, onText) => {
     const proposeBot = request.proposeBot;
     tools.createBot = tool({
       description:
-        "Propose a persistent specialist bot when the user asks for one. The user reviews the name, role and instructions, and you wait for their decision; you then learn whether it was created. No authority or memory transfers.",
+        "Open the actual review card for a persistent specialist bot when the user asks to create one. Call immediately once the name and purpose are clear; do not substitute a written proposal or ask for preliminary confirmation. The user reviews the name, role and instructions in the card, and you wait for their decision; you then learn whether it was created. No authority or memory transfers.",
       inputSchema: z.object({
         name: z.string().min(1).max(100),
         role: z.string().min(1).max(200),
@@ -371,6 +371,15 @@ export const runModel: ModelRunner = async (request, onText) => {
       request.briefing ?? DEFAULT_FRAMING,
       CHAT_STYLE,
       ...(request.feedback ? [request.feedback] : []),
+      ...(tools.createBot
+        ? [
+            "Bot creation in this turn: use createBot to open the real review card. A written 'proposed bot' in a chat message does not create a proposal. Do not ask for a thumbs-up, reaction, or preliminary yes before opening the card. Message reactions are preference feedback only, never approval or a new user message. Only the review card's decision authorizes creation; report creation only when the tool returns status done. If the user declines or replies with changes, follow that outcome. If the user only wants draft instructions, answer in text without opening a card.",
+          ]
+        : bot.template.id === "socius/main"
+          ? [
+              "Bot creation is unavailable in this turn. Do not pretend to open a proposal or promise that a reaction or chat confirmation will create a bot. If asked to create one, explain that you cannot open its review card here and offer manual creation through Create bot. You may provide draft instructions, clearly described as a draft.",
+            ]
+          : []),
       ...(request.tools
         ? []
         : [
