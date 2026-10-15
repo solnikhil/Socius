@@ -5,12 +5,10 @@
 import {
   createServer,
   request as httpRequest,
-  type IncomingMessage,
   type Server,
 } from "node:http";
 import { connect, BlockList, isIP, type Socket } from "node:net";
 import { lookup } from "node:dns/promises";
-import { randomBytes, timingSafeEqual } from "node:crypto";
 
 const blocked = new BlockList();
 for (const [net, prefix] of [
@@ -93,8 +91,6 @@ export function checkUrl(raw: string, allowHosts: ReadonlySet<string>): URL {
 export interface FilteringProxy {
   /** `http://127.0.0.1:port`, for Chromium's proxy setting. */
   server: string;
-  username: string;
-  password: string;
   /** Destinations refused so far, newest last (host only, for diagnostics). */
   refused: string[];
   close(): Promise<void>;
@@ -127,33 +123,21 @@ async function publicTarget(
 }
 
 /**
- * Starts the proxy on loopback. Clients must present the generated Basic
- * credentials, so other local processes cannot borrow it.
+ * Starts the proxy on loopback. It needs no credentials: it only reaches
+ * public addresses, which any local process can reach anyway, and web pages
+ * cannot send proxy requests. (A 407 challenge also made Playwright's
+ * navigations occasionally stall.)
  */
 export async function startFilteringProxy(
   allowHosts: ReadonlySet<string> = new Set(),
 ): Promise<FilteringProxy> {
-  const username = "socius";
-  const password = randomBytes(18).toString("hex");
-  const expected = Buffer.from(
-    `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`,
-  );
   const refused: string[] = [];
-  const authorized = (req: IncomingMessage) => {
-    const given = Buffer.from(req.headers["proxy-authorization"] ?? "");
-    return given.length === expected.length && timingSafeEqual(given, expected);
-  };
   const refuse = (host: string) => {
     refused.push(host);
     if (refused.length > 50) refused.shift();
   };
   const sockets = new Set<Socket>();
   const server: Server = createServer(async (req, res) => {
-    if (!authorized(req)) {
-      res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="Socius"' });
-      res.end();
-      return;
-    }
     let target: URL;
     try {
       target = new URL(req.url ?? "");
@@ -186,6 +170,9 @@ export async function startFilteringProxy(
         path: `${target.pathname}${target.search}`,
         headers: { ...headers, host: target.host },
         setHost: false,
+        // One upstream connection per request: a reused keep-alive socket the
+        // site is closing can stall the page's navigation.
+        agent: false,
       },
       (response) => {
         res.writeHead(response.statusCode ?? 502, response.headers);
@@ -204,12 +191,6 @@ export async function startFilteringProxy(
   });
   server.on("connect", async (req, client: Socket, head: Buffer) => {
     client.on("error", () => client.destroy());
-    if (!authorized(req)) {
-      client.end(
-        'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="Socius"\r\n\r\n',
-      );
-      return;
-    }
     const match = /^(\[[^\]]+\]|[^:]+):(\d+)$/.exec(req.url ?? "");
     const address = match
       ? await publicTarget(match[1]!, Number(match[2]), allowHosts)
@@ -239,8 +220,6 @@ export async function startFilteringProxy(
     throw new Error("Browser proxy failed to bind");
   return {
     server: `http://127.0.0.1:${address.port}`,
-    username,
-    password,
     refused,
     close: () =>
       new Promise<void>((resolve) => {

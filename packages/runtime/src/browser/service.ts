@@ -317,11 +317,12 @@ export class BrowserService {
         proxy: {
           server: proxy.server,
           bypass: "<-loopback>",
-          username: proxy.username,
-          password: proxy.password,
         },
         acceptDownloads: false,
         serviceWorkers: "block",
+        // A launch that cannot start (for example a locked profile) fails
+        // instead of waiting Playwright's default three minutes.
+        timeout: 30_000,
         args: [
           "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
           "--webrtc-ip-handling-policy=disable_non_proxied_udp",
@@ -474,7 +475,13 @@ export class BrowserService {
     if (!live) return;
     live.closing = true;
     this.live.delete(sessionId);
-    await live.context.close().catch(() => undefined);
+    // A stuck browser must not hold up stop, reset or shutdown.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      live.context.close().catch(() => undefined),
+      new Promise((resolve) => (timer = setTimeout(resolve, 10_000))),
+    ]);
+    clearTimeout(timer);
     await live.proxy.close();
   }
 
@@ -764,8 +771,7 @@ export class BrowserService {
         text: 0,
         recent: [],
         // Earlier browsing can survive in the chat history the model reads.
-        tainted:
-          ctx.untrusted || !ctx.userWritten || !!session?.visits.length,
+        tainted: ctx.untrusted || !ctx.userWritten || !!session?.visits.length,
         known: new Set(),
         trusted: new Set(),
       };

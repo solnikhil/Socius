@@ -58,7 +58,7 @@ test("agent navigation accepts only public http(s) addresses", () => {
   assert.throws(() => checkUrl("http://127.0.0.1:4556/x", fixture));
 });
 
-test("the proxy needs its credentials and refuses private destinations", async () => {
+test("the proxy refuses private destinations", async () => {
   const proxy = await startFilteringProxy();
   const port = Number(new URL(proxy.server).port);
   const send = (
@@ -81,11 +81,8 @@ test("the proxy needs its credentials and refuses private destinations", async (
       req.on("error", reject);
       req.end();
     });
-  const auth = {
-    "Proxy-Authorization": `Basic ${Buffer.from(`${proxy.username}:${proxy.password}`).toString("base64")}`,
-  };
+  const auth = {};
   try {
-    assert.equal(await send({}), 407);
     assert.equal(await send(auth), 403);
     assert.equal(await send(auth, "CONNECT", "127.0.0.1:443"), 403);
     assert.equal(await send(auth, "CONNECT", "localhost:443"), 403);

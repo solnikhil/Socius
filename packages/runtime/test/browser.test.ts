@@ -658,7 +658,7 @@ test(
         revoked = await call(request, "browserObserve");
         return "ok";
       };
-      await f.chat("Browse");
+      await f.chat(`Browse http://${siteHost}/`);
       assert.match(String(revoked.error), /revoked|not granted|cancel/i);
       await f.r.request("browser/grant", { botId: f.bot.id, granted: true });
 
@@ -680,7 +680,7 @@ test(
         paused = await call(request, "browserObserve");
         return "ok";
       };
-      await f.chat("Browse again");
+      await f.chat(`Browse http://${siteHost}/ again`);
       assert.match(String(paused.error ?? "cancelled"), /control|cancel/i);
       assert.equal((await f.session()).mode, "human");
     } finally {
@@ -837,7 +837,7 @@ test(
         });
         return "done";
       };
-      const again = f.chat("Look around");
+      const again = f.chat(`Look around http://${siteHost}/a`);
       await until(async () =>
         (await f.state()).browserActions.some((a) => a.state === "pending"),
       );
@@ -864,7 +864,7 @@ test(
         });
         return "done";
       };
-      const third = f.chat("Check something");
+      const third = f.chat(`Check http://${siteHost}/a`);
       await until(async () =>
         (await f.state()).browserActions.some((a) => a.state === "pending"),
       );
