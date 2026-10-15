@@ -6,7 +6,7 @@ import {
   privateAddress,
   startFilteringProxy,
 } from "../src/browser/network.js";
-import { redactSnapshot } from "../src/browser/snapshot.js";
+import { redactSnapshot, splitObservation } from "../src/browser/snapshot.js";
 
 test("private, loopback, tailnet and special addresses are never public", () => {
   for (const address of [
@@ -141,4 +141,17 @@ test("rich-text editors, odd names and ref-less fields never leak content", () =
     assert.ok(!out.includes(secret), secret);
   assert.ok(out.includes('textbox "Re: subject" [ref=e8]: [value hidden]'));
   assert.ok(out.includes('heading "After"'));
+});
+
+test("observations split on line boundaries without losing lines", () => {
+  const lines = Array.from(
+    { length: 50 },
+    (_, i) => `- link "Item ${i}" [ref=e${i}]`,
+  );
+  const parts = splitObservation(lines.join("\n"), 200);
+  assert.ok(parts.length > 1);
+  assert.ok(parts.every((p) => p.length <= 200));
+  assert.deepEqual(parts.join("\n").split("\n"), lines);
+  assert.deepEqual(splitObservation("", 100), [""]);
+  assert.equal(splitObservation("x".repeat(500), 100)[0]!.length, 100);
 });
