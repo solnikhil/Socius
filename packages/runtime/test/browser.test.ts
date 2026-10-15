@@ -133,8 +133,11 @@ before(async () => {
           `<img src="http://127.0.0.1:${secretPort}/pixel.png"><script>fetch("http://127.0.0.1:${secretPort}/x").catch(()=>{})</script><p>done</p>`,
         ),
       );
-    if (url.pathname === "/slow") {
-      setTimeout(() => html(200, page("Slow", "<p>slow page</p>")), 1200);
+    if (url.pathname === "/slow" || url.pathname === "/very-slow") {
+      setTimeout(
+        () => html(200, page("Slow", "<p>slow page</p>")),
+        url.pathname === "/very-slow" ? 17_000 : 1200,
+      );
       return;
     }
     if (url.pathname === "/comment" && req.method === "POST") {
@@ -186,14 +189,14 @@ const refFor = (observation: unknown, label: string) => {
   return ref;
 };
 
-async function setup() {
+async function setup(commandTimeoutMs = 8000) {
   const dir = await mkdtemp(join(tmpdir(), "socius-browser-"));
   const r = await paired(dir, runner, {
     browser: {
       headless: true,
       // The same fixture under a second name acts as an untrusted site.
       allowHosts: [siteHost, siteHost.replace("127.0.0.1", "localhost")],
-      commandTimeoutMs: 8000,
+      commandTimeoutMs,
     },
   });
   await connectModel(r);
@@ -573,47 +576,54 @@ test(
   },
 );
 
-test(
-  "takeover drains the in-flight command and discards its result",
-  { skip },
-  async () => {
-    const f = await setup();
-    try {
-      await f.r.request("browser/grant", { botId: f.bot.id, granted: true });
-      let slow: Record<string, unknown> = {};
-      let started = false;
-      script = async (request) => {
-        await call(request, "browserOpen", { url: `http://${siteHost}/` });
-        started = true;
-        slow = await call(request, "browserOpen", {
-          url: `http://${siteHost}/slow`,
-        });
-        return "late";
-      };
-      const chat = f.chat("Open the slow page");
-      await until(async () => started);
-      await new Promise((r) => setTimeout(r, 150));
-      const session = await f.session();
-      const t0 = Date.now();
-      const taken = (await (
-        await f.r.request("browser/take-control", { sessionId: session.id })
-      ).json()) as BrowserSession;
-      // Acknowledged only after the slow navigation finished.
-      assert.equal(taken.mode, "human");
-      assert.ok(Date.now() - t0 > 400, "takeover should wait for the drain");
-      assert.ok(taken.revision > session.revision);
-      await chat;
-      assert.ok(slow.error, "the in-flight result must be discarded");
-      // The late navigation never writes back an older owner or revision.
-      const after = await f.session();
-      assert.equal(after.mode, "human");
-      assert.equal(after.revision, taken.revision);
-      assert.ok(!after.visits.some((v) => v.url.endsWith("/slow")));
-    } finally {
-      await f.close();
-    }
-  },
-);
+for (const { path, commandTimeoutMs, minDrainMs } of [
+  { path: "slow", commandTimeoutMs: 8000, minDrainMs: 400 },
+  { path: "very-slow", commandTimeoutMs: 20_000, minDrainMs: 16_000 },
+])
+  test(
+    `takeover drains the ${path} command and discards its result`,
+    { skip },
+    async () => {
+      const f = await setup(commandTimeoutMs);
+      try {
+        await f.r.request("browser/grant", { botId: f.bot.id, granted: true });
+        let slow: Record<string, unknown> = {};
+        let started = false;
+        script = async (request) => {
+          await call(request, "browserOpen", { url: `http://${siteHost}/` });
+          started = true;
+          slow = await call(request, "browserOpen", {
+            url: `http://${siteHost}/${path}`,
+          });
+          return "late";
+        };
+        const chat = f.chat("Open the slow page");
+        await until(async () => started);
+        await new Promise((r) => setTimeout(r, 150));
+        const session = await f.session();
+        const t0 = Date.now();
+        const taken = (await (
+          await f.r.request("browser/take-control", { sessionId: session.id })
+        ).json()) as BrowserSession;
+        // Acknowledged only after the slow navigation finished.
+        assert.equal(taken.mode, "human");
+        assert.ok(
+          Date.now() - t0 > minDrainMs,
+          "takeover should wait for the drain",
+        );
+        assert.ok(taken.revision > session.revision);
+        await chat;
+        assert.ok(slow.error, "the in-flight result must be discarded");
+        // The late navigation never writes back an older owner or revision.
+        const after = await f.session();
+        assert.equal(after.mode, "human");
+        assert.equal(after.revision, taken.revision);
+        assert.ok(!after.visits.some((v) => v.url.endsWith(`/${path}`)));
+      } finally {
+        await f.close();
+      }
+    },
+  );
 
 test(
   "long pages are read part by part, and links deep in the page can be followed",

@@ -499,16 +499,10 @@ export class BrowserService {
         this.saveAction(a, { state: "invalidated", error: reason });
   }
 
-  /** Waits for the command in flight (if any) to finish, up to `ms`. */
-  private async drain(sessionId: string, ms = 15_000) {
+  /** Acknowledging takeover requires the entire in-flight command to settle. */
+  private async drain(sessionId: string) {
     const live = this.live.get(sessionId);
-    if (!live) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      live.queue.catch(() => undefined),
-      new Promise((resolve) => (timer = setTimeout(resolve, ms))),
-    ]);
-    clearTimeout(timer);
+    if (live) await live.queue.catch(() => undefined);
   }
 
   /**
@@ -540,9 +534,13 @@ export class BrowserService {
       s.id,
       "You took control of the browser, so this proposal was withdrawn.",
     );
+    const handoffRevision = s.revision;
     if (taskId) this.hooks.cancelTask(taskId);
     await this.drain(s.id);
     s = this.session(sessionId);
+    // A concurrent stop, revoke or window close takes precedence over this handoff.
+    if (s.revision !== handoffRevision || s.mode !== "handoff-pending")
+      return s;
     this.save(s, {
       mode: "human",
       taskId: null,
