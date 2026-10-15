@@ -2,7 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { instantiateBot, mainBot } from "@socius/marketplace";
-import { isTimeZone, timeContext, timeFacts } from "../src/clock.js";
+import {
+  environmentContext,
+  isTimeZone,
+  timeContext,
+  timeFacts,
+} from "../src/clock.js";
 import { runModel } from "../src/model.js";
 import { languageModel } from "../src/providers/factory.js";
 
@@ -38,10 +43,27 @@ test("every model call carries the current time, and getCurrentTime answers othe
     for await (const c of req) chunks.push(c);
     const payload = JSON.parse(Buffer.concat(chunks).toString());
     calls++;
-    const system = JSON.stringify(
-      payload.messages.filter((m: { role: string }) => m.role === "system"),
+    // Runtime facts come first, before any role instructions, so they can't be missed.
+    const first = String(
+      payload.messages.find((m: { role: string }) => m.role === "system")
+        ?.content,
     );
-    assert.match(system, /Thursday, 15 October 2026, 02:00 \(Asia\/Kolkata/);
+    assert.match(
+      first,
+      /^Runtime facts for this message[\s\S]*Now: Thursday, 15 October 2026, 02:00 in Asia\/Kolkata \(UTC\+05:30\)/,
+    );
+    assert.match(
+      first,
+      /you are running on "NVIDIA: Nemotron 3 Super \(free\)"/,
+    );
+    assert.match(first, /writing from their phone/);
+    assert.match(first, /Tools you can call right now: [^\n]*getCurrentTime/);
+    assert.match(first, /Never say you can't access the time/);
+    assert.match(first, /Answer general questions/);
+    assert.ok(
+      first.indexOf("Runtime facts") < first.indexOf("You are Socius"),
+      "facts precede the bot's own instructions",
+    );
     assert.ok(
       payload.tools.some(
         (t: { function: { name: string } }) =>
@@ -102,6 +124,8 @@ test("every model call carries the current time, and getCurrentTime answers othe
         proposeMemory: () => ({ approvalId: "unused" }),
         now: () => instant,
         timeZone: "Asia/Kolkata",
+        modelLabel: "NVIDIA: Nemotron 3 Super (free)",
+        client: "phone",
       },
       () => {},
     );
@@ -110,4 +134,27 @@ test("every model call carries the current time, and getCurrentTime answers othe
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
   }
+});
+
+test("the environment block lists only real tools and states plainly when there are none", () => {
+  const none = environmentContext({ now: instant, timeZone: "UTC", tools: [] });
+  assert.match(none, /You have no tools in this call/);
+  assert.doesNotMatch(none, /getCurrentTime/);
+  assert.doesNotMatch(none, /Model:|phone|desktop app/);
+  const some = environmentContext({
+    now: instant,
+    timeZone: "UTC",
+    tools: ["searchMemory"],
+    client: "desktop",
+  });
+  assert.match(
+    some,
+    /Tools you can call right now: searchMemory\. Nothing else/,
+  );
+  assert.match(some, /Socius desktop app/);
+  assert.doesNotMatch(some, /call getCurrentTime/);
+  assert.match(
+    timeContext(instant, "UTC"),
+    /Wednesday, 14 October 2026, 20:30/,
+  );
 });
