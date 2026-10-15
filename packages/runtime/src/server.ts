@@ -2593,11 +2593,8 @@ export async function startRuntime(options: RuntimeOptions) {
             const session =
               browser.sessions().find((x) => x.id === input.sessionId) ??
               fail(404, "Browser session not found");
-            json(
-              res,
-              200,
-              browser.resume(input.sessionId, device.id, bot(session.botId)),
-            );
+            browser.resume(input.sessionId, device.id, bot(session.botId));
+            json(res, 200, await browser.minimize(input.sessionId));
             return;
           }
           if (req.method === "POST" && path === "/api/browser/stop") {
@@ -2608,6 +2605,17 @@ export async function startRuntime(options: RuntimeOptions) {
           if (req.method === "POST" && path === "/api/browser/show") {
             const input = BrowserSessionInput.parse(await body(req));
             json(res, 200, await browser.show(input.sessionId));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/browser/minimize") {
+            const input = BrowserSessionInput.parse(await body(req));
+            json(res, 200, await browser.minimize(input.sessionId));
+            return;
+          }
+          if (req.method === "POST" && path === "/api/browser/preview") {
+            const input = BrowserSessionInput.parse(await body(req));
+            res.setHeader("Cache-Control", "no-store");
+            json(res, 200, await browser.preview(input.sessionId));
             return;
           }
           if (req.method === "POST" && path === "/api/browser/reset") {

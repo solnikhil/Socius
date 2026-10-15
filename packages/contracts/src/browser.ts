@@ -30,6 +30,12 @@ export interface BrowserTab {
   active: boolean;
 }
 
+/** Ephemeral local UI image. Never persisted or included in model context. */
+export interface BrowserPreview {
+  image: string | null;
+  note: string | null;
+}
+
 /** A page the agent read during a task, kept so answers can cite their sources. */
 export interface BrowserVisit {
   url: string;

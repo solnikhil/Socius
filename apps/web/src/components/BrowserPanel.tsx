@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
+  ChevronDown,
+  ChevronUp,
   Globe,
   Hand,
+  Minimize2,
   Play,
   Square,
   SquareArrowOutUpRight,
@@ -11,6 +14,7 @@ import type { Snapshot } from "@socius/contracts/app";
 import type {
   BrowserAction,
   BrowserControlMode,
+  BrowserPreview,
   BrowserSession,
 } from "@socius/contracts/browser";
 import { api } from "../api.js";
@@ -18,6 +22,77 @@ import { ErrorNote } from "./chrome.js";
 
 /** The browser window is on the laptop; phones see status only. */
 const remote = () => location.protocol === "https:";
+
+/** Poll only while mounted and visible; frames never enter shared app state. */
+function PagePreview({ sessionId }: { sessionId: string }) {
+  const [preview, setPreview] = useState<BrowserPreview>({
+    image: null,
+    note: "Loading preview…",
+  });
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let controller: AbortController | undefined;
+    let generation = 0;
+    async function refresh() {
+      if (stopped || document.hidden) return;
+      const current = ++generation;
+      const request = new AbortController();
+      controller = request;
+      try {
+        const response = await fetch("/api/browser/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+          signal: request.signal,
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Preview unavailable");
+        const frame = (await response.json()) as BrowserPreview;
+        if (!stopped && !document.hidden && current === generation)
+          setPreview(frame);
+      } catch {
+        if (!stopped && current === generation && !request.signal.aborted)
+          setPreview({
+            image: null,
+            note: "Preview unavailable. Open the browser to view it.",
+          });
+      } finally {
+        if (!stopped && !document.hidden && current === generation)
+          timer = setTimeout(refresh, 2000);
+      }
+    }
+    const visibility = () => {
+      generation++;
+      clearTimeout(timer);
+      controller?.abort();
+      setPreview({ image: null, note: "Loading preview…" });
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener("visibilitychange", visibility);
+    void refresh();
+    return () => {
+      stopped = true;
+      generation++;
+      clearTimeout(timer);
+      controller?.abort();
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [sessionId]);
+  return (
+    <div className="browser-preview">
+      {preview.image?.startsWith("data:image/jpeg;base64,") ? (
+        <img
+          src={preview.image}
+          alt="Current browser page preview"
+          draggable={false}
+        />
+      ) : (
+        <p>{preview.note ?? "No preview available."}</p>
+      )}
+    </div>
+  );
+}
 
 /** Who has the browser, in the words the panel shows. */
 const OWNER: Record<BrowserControlMode, { label: string; tone: string }> = {
@@ -56,7 +131,8 @@ export function BrowserPanel({
   onResume: (session: BrowserSession) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [collapsed, setCollapsed] = useState(false);
   const tab = s.tabs.find((t) => t.active) ?? s.tabs[0];
   const owner = OWNER[s.mode];
   // `resumed:` marks a handback for the runtime; it is not a message.
@@ -66,8 +142,10 @@ export function BrowserPanel({
     setError("");
     try {
       await action();
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       await onRefresh();
       setBusy("");
@@ -75,6 +153,12 @@ export function BrowserPanel({
   }
   const post = (path: string) => () =>
     api(`browser/${path}`, { sessionId: s.id });
+  async function resumeBrowser() {
+    if (await run("resume", post("resume")))
+      // A resumed task can wait on an approval for minutes. Keep Stop and
+      // Take control available while that conversation continues.
+      void onResume(s).catch((e: Error) => setError(e.message));
+  }
   return (
     <section className="browser-panel" aria-label={`${botName}'s browser`}>
       <div className="browser-panel-row">
@@ -83,63 +167,95 @@ export function BrowserPanel({
         <span className={`badge ${owner.tone}`} role="status">
           {owner.label}
         </span>
-        {s.tabs.length > 1 && <small>{s.tabs.length} tabs</small>}
+        <button
+          className="icon ghost tiny"
+          aria-label={
+            collapsed ? "Expand browser preview" : "Collapse browser preview"
+          }
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+        </button>
       </div>
-      {tab && (
-        <p className="browser-panel-page" title={tab.url}>
-          {tab.title ? <span>{tab.title} · </span> : null}
-          <code>{tab.url}</code>
-        </p>
-      )}
-      {note && <p className="browser-panel-note">{note}</p>}
-      <ErrorNote error={error} />
-      {remote() ? (
-        <p className="browser-panel-note">
-          Control the browser from your laptop.
-        </p>
-      ) : (
-        <div className="modal-actions">
-          <button
-            disabled={!!busy}
-            onClick={() => void run("show", post("show"))}
-          >
-            <SquareArrowOutUpRight size={14} />
-            Open browser
-          </button>
-          {s.mode === "human" ? (
-            <button
-              className="primary"
-              disabled={!!busy}
-              onClick={() =>
-                void run("resume", async () => {
-                  await post("resume")();
-                  await onResume(s);
-                })
-              }
-            >
-              <Play size={14} />
-              Resume {botName}
-            </button>
+      {!collapsed && (
+        <>
+          {!remote() &&
+          ["ready", "agent", "awaiting-approval"].includes(s.mode) &&
+          tab ? (
+            <PagePreview
+              key={`${s.id}:${s.revision}:${s.mode}:${tab.id}:${tab.url}`}
+              sessionId={s.id}
+            />
           ) : (
-            <button
-              className="primary"
-              disabled={!!busy || s.mode === "handoff-pending"}
-              onClick={() => void run("take", post("take-control"))}
-            >
-              <Hand size={14} />
-              {busy === "take" ? "Taking control…" : "Take control"}
-            </button>
+            <div className="browser-preview">
+              <p>
+                {s.mode === "human"
+                  ? "You have control. Preview pauses until you resume."
+                  : "Open the browser to view the page."}
+              </p>
+            </div>
           )}
-          {s.mode !== "stopped" && (
-            <button
-              disabled={!!busy}
-              onClick={() => void run("stop", post("stop"))}
-            >
-              <Square size={12} />
-              Stop
-            </button>
+          {tab && (
+            <p className="browser-panel-page" title={tab.url}>
+              {tab.title ? <span>{tab.title} · </span> : null}
+              <code>{tab.url}</code>
+            </p>
           )}
-        </div>
+          {note && <p className="browser-panel-note">{note}</p>}
+          <ErrorNote error={error} />
+          {remote() ? (
+            <p className="browser-panel-note">
+              Control the browser from your laptop.
+            </p>
+          ) : (
+            <div className="modal-actions">
+              <button
+                disabled={!!busy}
+                onClick={() => void run("show", post("show"))}
+              >
+                <SquareArrowOutUpRight size={14} />
+                Open browser
+              </button>
+              {s.mode !== "human" && (
+                <button
+                  disabled={!!busy || s.mode === "handoff-pending"}
+                  onClick={() => void run("minimize", post("minimize"))}
+                >
+                  <Minimize2 size={14} /> Minimize window
+                </button>
+              )}
+              {s.mode === "human" ? (
+                <button
+                  className="primary"
+                  disabled={!!busy}
+                  onClick={() => void resumeBrowser()}
+                >
+                  <Play size={14} />
+                  Resume {botName}
+                </button>
+              ) : (
+                <button
+                  className="primary"
+                  disabled={!!busy || s.mode === "handoff-pending"}
+                  onClick={() => void run("take", post("take-control"))}
+                >
+                  <Hand size={14} />
+                  {busy === "take" ? "Taking control…" : "Take control"}
+                </button>
+              )}
+              {s.mode !== "stopped" && (
+                <button
+                  disabled={!!busy}
+                  onClick={() => void run("stop", post("stop"))}
+                >
+                  <Square size={12} />
+                  Stop
+                </button>
+              )}
+            </div>
+          )}
+        </>
       )}
     </section>
   );

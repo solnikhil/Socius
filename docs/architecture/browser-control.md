@@ -4,7 +4,9 @@ Issue [#26](https://github.com/solnikhil/Socius/issues/26). Status on 15 October
 
 ## What it does
 
-A bot the user has granted browser access gets its own dedicated, visible Chromium window. In a direct or group chat it can open public pages, follow links, use site search boxes, scroll, read page text and manage tabs. Its answer cites the pages it read. The user can press **Take control** at any time, drive the same window (sign in, solve a CAPTCHA, navigate), then press **Resume** to hand it back. The bot re-observes the page and continues the original request. Clicking buttons, typing into fields and submitting forms always wait for the user's review of the exact page, element and text; the user can approve, decline or choose **I'll do it myself**.
+A bot the user has granted browser access gets its own dedicated Chromium window. It starts minimized, with a periodically refreshed page preview in a right-hand column beside the chat. The column reserves layout space rather than covering messages or the composer; narrow screens stack a bounded panel above the conversation. The preview can be collapsed. **Open browser** restores the window; **Minimize window** puts it away without stopping work. Native minimization is best effort when the window manager does not support it.
+
+In a direct or group chat the bot can open public pages, follow links, use site search boxes, scroll, read page text and manage tabs. Its answer cites the pages it read. The user can press **Take control** at any time, restoring the window to drive it (sign in, solve a CAPTCHA, navigate), then press **Resume** to hand it back and minimize it. The bot re-observes the page and continues the original request. Clicking buttons, typing into fields and submitting forms always wait for the user's review of the exact page, element and text; the user can approve, decline or choose **I'll do it myself**.
 
 ## Decision
 
@@ -62,8 +64,9 @@ A site's own JavaScript can still react to a click in ways the fingerprint does 
 ## Model context and privacy
 
 - Observations remove every form-field value (text, password, code, multi-line and rich-text editor content), and `browserReadText` leaves out inputs, text areas and editable regions, so typed passwords or drafts are never sent to a model. Pages that show a password, one-time-code or payment field carry a note telling the bot to ask the user to take control.
-- Page text is labelled untrusted data; the instructions tell the bot never to follow instructions on pages. No screenshots, traces, cookies or network bodies are captured.
+- Page text is labelled untrusted data; the instructions tell the bot never to follow instructions on pages. Models receive no screenshots, traces, cookies or network bodies.
 - Page text the bot reads is sent to that bot's model provider. The grant dialog discloses this. Local browser execution is not a no-cloud claim.
+- The local UI can request a JPEG of the current 1280×800 viewport. Captures share the command queue, mask inputs, textareas, selects, editable regions and embedded frames, and are discarded if the grant, control revision, page or active tab changes. Capture pauses during human control, handoff, stop and failure. The UI polls at most once every two seconds after each response, only while the preview is expanded and the app is visible; it clears frames on session/control/tab changes. Images are returned with `Cache-Control: no-store`, never written to disk, included in app snapshots, exported, or supplied to models. They remain page content visible to the local user, not a general secret detector. The endpoint is authenticated and local-only, so phones cannot fetch preview images.
 
 ## API
 
@@ -76,6 +79,8 @@ Local session only (`localOnly`); phones see status but cannot drive the browser
 | `/api/browser/resume`          | `{sessionId}`            | Hands control back (`ready`); the next task re-observes               |
 | `/api/browser/stop`            | `{sessionId}`            | Cancels the task, withdraws proposals, closes the window              |
 | `/api/browser/show`            | `{sessionId}`            | Starts the window if needed and brings it to the front                |
+| `/api/browser/minimize`        | `{sessionId}`            | Minimizes the window while preserving the session; refused in human mode |
+| `/api/browser/preview`         | `{sessionId}`            | Returns ephemeral `{image, note}` for the local UI; masked JPEG or a paused/unavailable explanation |
 | `/api/browser/reset`           | `{botId}`                | Deletes the bot's browser profile and history                         |
 | `/api/browser/actions/resolve` | `{id, digest, decision}` | `approve`, `deny` or `manual`                                         |
 
@@ -89,6 +94,7 @@ Local session only (`localOnly`); phones see status but cannot drive the browser
 
 ## Verification
 
+- `e2e/browser-preview.spec.ts`: actual local Chromium window starts minimized, restores on Open/Take control and minimizes on Resume; preview, collapse/expand, reserved desktop layout and narrow-screen layout. Native window-state assertions run on the local host, not headless CI. The preview privacy fixture also decodes JPEG pixels to verify masks, checks authenticated/no-store responses and verifies capture pauses on takeover and fails after revocation. These fixtures do not establish live-model browsing or human sign-in acceptance.
 - `packages/runtime/test/browser-policy.test.ts`: address classification, URL checks, proxy authentication/refusals and observation redaction, including rich-text editors and field names containing ": ".
 - `packages/runtime/test/browser.test.ts` (real headless Chromium, scripted model, local fixture site; skipped when Chromium is not installed): grant gating; multipage research with links, new/switched tabs, GET search and cited visits; local/private/redirect/subresource refusal; field-value redaction and refused password fills; guessed and stale refs; exact approval running once and refusing a wrong digest or a repeat; takeover while a proposal waits (proposal withdrawn, task cancelled, no submission), agent refused in human mode, resume with fresh context and void old refs; takeover during a slow navigation waits for the drain and discards the result; one device at a time; per-bot sessions; mid-task revocation; real input pausing the agent; window close mid-proposal; restart; stop; reset; after reading pages, a self-built address with data or on an unnamed site waits for review (denied: no request reaches the site; approved: exactly one), while user-written addresses and page links stay free; editable text is left out of reads.
 - A headed smoke run against `https://example.com` through the proxy opened, observed, refused `localhost` and took over in 9 ms.

@@ -14,6 +14,7 @@ import type { BotInstance } from "@socius/contracts";
 import type {
   BrowserAction,
   BrowserInteraction,
+  BrowserPreview,
   BrowserSession,
 } from "@socius/contracts/browser";
 import type { Store } from "../store.js";
@@ -37,7 +38,7 @@ const fail = (status: number, message: string): never => {
 };
 
 export interface BrowserOptions {
-  /** Tests run the same adapter headless; the product always shows the window. */
+  /** Tests run the same adapter headless; the product uses a minimized window. */
   headless?: boolean;
   /** Chromium binary. Defaults to SOCIUS_BROWSER_PATH, then Playwright's Chromium. */
   executablePath?: string;
@@ -104,6 +105,7 @@ interface Live {
   /** Tab and counter of the latest observation whose refs are still valid. */
   valid: { tabId: string; n: number } | null;
   queue: Promise<unknown>;
+  windowQueue: Promise<unknown>;
   commanding: number;
   lastCommandEnd: number;
   closing: boolean;
@@ -148,6 +150,7 @@ const digestOf = (value: unknown) =>
 export class BrowserService {
   private readonly live = new Map<string, Live>();
   private readonly launching = new Map<string, Promise<Live>>();
+  private readonly previewing = new Map<string, Promise<BrowserPreview>>();
   private readonly budgets = new Map<string, TaskBudget>();
   private readonly listeners = new Set<(action: BrowserAction) => void>();
   private readonly allowHosts: Set<string>;
@@ -317,7 +320,7 @@ export class BrowserService {
       context = await chromium.launchPersistentContext(dir, {
         headless: !!this.options.headless,
         ...(executablePath ? { executablePath } : {}),
-        viewport: this.options.headless ? { width: 1280, height: 800 } : null,
+        viewport: { width: 1280, height: 800 },
         // Loopback must also go through the proxy, which refuses it.
         proxy: {
           server: proxy.server,
@@ -333,6 +336,8 @@ export class BrowserService {
           "--webrtc-ip-handling-policy=disable_non_proxied_udp",
           "--no-default-browser-check",
           "--no-first-run",
+          "--window-size=1280,880",
+          "--start-minimized",
         ],
       });
     } catch (error) {
@@ -359,6 +364,7 @@ export class BrowserService {
       observation: 0,
       valid: null,
       queue: Promise.resolve(),
+      windowQueue: Promise.resolve(),
       commanding: 0,
       lastCommandEnd: 0,
       closing: false,
@@ -398,7 +404,38 @@ export class BrowserService {
       note: null,
     });
     this.store.event("browser.started", "A bot's browser window opened.");
+    await this.windowState(live, "minimized");
     return live;
+  }
+
+  /** Internal window presentation only; CDP is never exposed to bots or the UI. */
+  private async windowState(live: Live, state: "normal" | "minimized") {
+    if (this.options.headless) return;
+    const step = live.windowQueue.then(async () => {
+      const allowed = () =>
+        !live.closing &&
+        (state === "normal" ||
+          ["ready", "agent", "awaiting-approval"].includes(
+            this.session(live.sessionId).mode,
+          ));
+      if (!allowed()) return;
+      const page = this.activePage(live);
+      if (!page) return;
+      const cdp = await live.context.newCDPSession(page);
+      try {
+        const { windowId } = await cdp.send("Browser.getWindowForTarget");
+        if (allowed())
+          await cdp.send("Browser.setWindowBounds", {
+            windowId,
+            bounds: { windowState: state },
+          });
+      } finally {
+        await cdp.detach();
+      }
+    });
+    // Window-manager failures must not change browser ownership or cancel work.
+    live.windowQueue = step.catch(() => undefined);
+    await live.windowQueue;
   }
 
   private track(sessionId: string, live: Live, page: Page) {
@@ -562,6 +599,7 @@ export class BrowserService {
     // The user needs a window to drive; open one if it is not running.
     try {
       const live = await this.ensureLive(this.session(sessionId));
+      await this.windowState(live, "normal");
       await this.activePage(live)?.bringToFront();
     } catch {
       /* The session already records why the browser could not open. */
@@ -620,8 +658,86 @@ export class BrowserService {
   async show(sessionId: string) {
     const live = await this.ensureLive(this.session(sessionId));
     const page = this.activePage(live) ?? (await live.context.newPage());
+    await this.windowState(live, "normal");
     await page.bringToFront();
     return this.session(sessionId);
+  }
+
+  /** Keeps the real browser running without covering the conversation. */
+  async minimize(sessionId: string) {
+    const s = this.session(sessionId);
+    if (s.mode === "human" || s.mode === "handoff-pending")
+      fail(409, "Resume the bot before minimizing its browser here");
+    const live = this.live.get(sessionId);
+    if (live) await this.windowState(live, "minimized");
+    return this.session(sessionId);
+  }
+
+  /** A bounded, masked viewport image for the authenticated local UI only. */
+  async preview(sessionId: string): Promise<BrowserPreview> {
+    const pending = this.previewing.get(sessionId);
+    if (pending) return pending;
+    const unavailable = (note: string): BrowserPreview => ({
+      image: null,
+      note,
+    });
+    const s = this.session(sessionId);
+    const permitted = () =>
+      this.store
+        .get<BotInstance>("bot", s.botId)
+        ?.grantedCapabilities.includes("browser.control");
+    if (!permitted())
+      return fail(403, "Browser access is not granted to this bot");
+    const live = this.live.get(sessionId);
+    if (!live) return unavailable("No browser page open yet.");
+    const revision = s.revision;
+    const valid = () =>
+      permitted() &&
+      this.session(sessionId).revision === revision &&
+      ["ready", "agent", "awaiting-approval"].includes(
+        this.session(sessionId).mode,
+      ) &&
+      live &&
+      !live.closing;
+    if (!valid())
+      return unavailable("Preview paused. Open the browser to view it.");
+    if (live.commanding) return unavailable("The browser is loading a page.");
+    const step = live.queue.then(async (): Promise<BrowserPreview> => {
+      if (!valid()) return unavailable("Preview paused.");
+      const page = this.activePage(live);
+      if (!page || page.isClosed()) return unavailable("No page open yet.");
+      const url = page.url();
+      try {
+        const image = await page.screenshot({
+          type: "jpeg",
+          quality: 40,
+          scale: "css",
+          timeout: 3000,
+          // Keep all form values, editable drafts and embedded frames private.
+          mask: [
+            page.locator("input, textarea, select, [contenteditable], iframe"),
+          ],
+          maskColor: "#252525",
+        });
+        if (!valid() || this.activePage(live) !== page || page.url() !== url)
+          return unavailable("The browser changed. Updating preview…");
+        return {
+          image: `data:image/jpeg;base64,${image.toString("base64")}`,
+          note: null,
+        };
+      } catch {
+        return unavailable(
+          "Preview unavailable. You can still open the browser.",
+        );
+      }
+    });
+    live.queue = step.catch(() => undefined);
+    this.previewing.set(sessionId, step);
+    try {
+      return await step;
+    } finally {
+      this.previewing.delete(sessionId);
+    }
   }
 
   /** Deletes the bot's profile (cookies, sign-ins, history) when nobody is using it. */

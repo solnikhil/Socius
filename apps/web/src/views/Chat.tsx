@@ -523,7 +523,20 @@ export function Chat({
   const empty = messages.length === 0 && !busy;
   const working = busy || !!running;
   return (
-    <div className="chat">
+    <div className={`chat${sessions.length ? " has-browser" : ""}`}>
+      {sessions.length > 0 && (
+        <aside className="browser-dock" aria-label="Browser workspace">
+          {sessions.map((session) => (
+            <BrowserPanel
+              key={session.id}
+              session={session}
+              botName={author(session.botId)?.name ?? bot.name}
+              onRefresh={onRefresh}
+              onResume={continueBrowsing}
+            />
+          ))}
+        </aside>
+      )}
       <header className="chat-head drag">
         <div className="bot-pill-wrap">
           <Popover
@@ -890,15 +903,6 @@ export function Chat({
             {busy ? "New reply below" : "Jump to latest"}
           </button>
         )}
-        {sessions.map((session) => (
-          <BrowserPanel
-            key={session.id}
-            session={session}
-            botName={author(session.botId)?.name ?? bot.name}
-            onRefresh={onRefresh}
-            onResume={continueBrowsing}
-          />
-        ))}
         <ErrorNote
           // After a reload the failure comes from the task, not this session.
           error={error || (unfinished?.error ?? "")}
@@ -1073,12 +1077,13 @@ export function Chat({
       {browserConsent && (
         <Modal title="Web browser" onClose={() => setBrowserConsent(false)}>
           <p className="muted">
-            Let {bot.name} use its own visible browser window to research public
-            websites. It has a separate profile from your own browser. Clicking,
-            typing and submitting always wait for your review, and you can take
-            control at any time. Text from the pages it reads is sent to this
-            bot's model provider. Local and private-network addresses are
-            blocked.
+            Let {bot.name} research public websites with a page preview beside
+            your chat. Its separate browser starts minimized; open it or take
+            control whenever you need. Clicking, typing and submitting always
+            wait for your review, and you can take control at any time. Text
+            from the pages it reads is sent to this bot's model provider.
+            Preview images stay on this computer and pause while you have
+            control. Local and private-network addresses are blocked.
           </p>
           {!state.browser.available && state.browser.detail && (
             <p className="muted">{state.browser.detail}</p>

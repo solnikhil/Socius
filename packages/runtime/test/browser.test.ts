@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BotInstance } from "@socius/contracts";
 import type { Snapshot } from "@socius/contracts/app";
-import type { BrowserSession } from "@socius/contracts/browser";
+import type { BrowserPreview, BrowserSession } from "@socius/contracts/browser";
 import type { ModelRequest, ModelRunner } from "../src/model.js";
 import { paired, connectModel } from "./helpers.js";
 
@@ -90,6 +90,21 @@ before(async () => {
         page(
           "Sign in",
           `<form method="post" action="/session"><input name="user" value="alice" aria-label="User"><input type="password" name="pw" value="hunter2" aria-label="Password"><button>Sign in</button></form>`,
+        ),
+      );
+    if (url.pathname === "/preview")
+      return html(
+        200,
+        page(
+          "Preview privacy",
+          `
+        <style>body {background:white;margin:0} input,textarea,select,[contenteditable],iframe {
+        position:absolute;left:10px;width:220px;height:60px;background:red;border:0;padding:0;margin:0}</style>
+        <input style="top:10px" type="password" value="private-password">
+        <textarea style="top:90px">private draft</textarea>
+        <div style="top:170px" contenteditable="true">private editor</div>
+        <iframe style="top:250px" srcdoc="private embedded page"></iframe>
+        <select style="top:330px"><option>private selection</option></select>`,
         ),
       );
     if (url.pathname === "/inject")
@@ -265,6 +280,86 @@ test("browser tools exist only with the runtime grant", { skip }, async () => {
     await f.close();
   }
 });
+
+test(
+  "local previews mask private fields, pause for takeover and require the grant",
+  { skip },
+  async () => {
+    const f = await setup();
+    const { chromium } = await import("playwright-core");
+    const decoder = await chromium.launch({
+      headless: true,
+      ...(process.env.SOCIUS_BROWSER_PATH
+        ? { executablePath: process.env.SOCIUS_BROWSER_PATH }
+        : {}),
+    });
+    try {
+      await f.r.request("browser/grant", { botId: f.bot.id, granted: true });
+      script = async (request) => {
+        await call(request, "browserOpen", {
+          url: `http://${siteHost}/preview`,
+        });
+        return "Opened preview fixture.";
+      };
+      await f.chat(`Open http://${siteHost}/preview`);
+      const s = await f.session();
+      const image = async () =>
+        f.r.request("browser/preview", { sessionId: s.id });
+      assert.equal(
+        (
+          await fetch(`${f.r.origin}/api/browser/preview`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Origin: f.r.origin },
+            body: JSON.stringify({ sessionId: s.id }),
+          })
+        ).status,
+        401,
+      );
+      const response = await image();
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      const frame = (await response.json()) as BrowserPreview;
+      assert.ok(frame.image?.startsWith("data:image/jpeg;base64,"));
+      const page = await decoder.newPage();
+      const pixels = await page.evaluate(async (src) => {
+        const img = new Image();
+        img.src = src;
+        await img.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        return [40, 120, 200, 280, 360].map((y) =>
+          Array.from(ctx.getImageData(100, y, 1, 1).data),
+        );
+      }, frame.image!);
+      for (const pixel of pixels)
+        for (const channel of pixel.slice(0, 3))
+          assert.ok(
+            Math.abs(channel - 37) < 6,
+            `private field was not masked: ${pixel}`,
+          );
+      assert.ok(!JSON.stringify(await f.state()).includes("data:image/jpeg"));
+      await f.r.request("browser/take-control", { sessionId: s.id });
+      assert.equal(
+        ((await (await image()).json()) as BrowserPreview).image,
+        null,
+      );
+      assert.equal(
+        (await f.r.request("browser/minimize", { sessionId: s.id })).status,
+        409,
+      );
+      await f.r.request("browser/resume", { sessionId: s.id });
+      assert.ok(((await (await image()).json()) as BrowserPreview).image);
+      await f.r.request("browser/grant", { botId: f.bot.id, granted: false });
+      assert.equal((await image()).status, 403);
+      await f.r.request("browser/stop", { sessionId: s.id });
+    } finally {
+      await decoder.close();
+      await f.close();
+    }
+  },
+);
 
 test(
   "multipage research with links, tabs, search and cited sources",

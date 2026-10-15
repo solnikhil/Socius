@@ -93,7 +93,7 @@ Chat input: `{botId,content,attachment?:{name,text}}`. The bot's override, else 
 
 ### Browser control
 
-Local sessions only. `/api/browser/grant`, `take-control`, `resume`, `stop`, `show`, `reset` and `actions/resolve`; `GET /api/state` adds `browserSessions`, `browserActions` and `browser`. See [Browser control](browser-control.md) for bodies and the control state machine.
+Local sessions only. `/api/browser/grant`, `take-control`, `resume`, `stop`, `show`, `minimize`, `preview`, `reset` and `actions/resolve`; `GET /api/state` adds `browserSessions`, `browserActions` and `browser`. `preview` returns an ephemeral masked viewport image, with no caching or model access. See [Browser control](browser-control.md) for bodies and the control state machine.
 
 ## Ownership
 

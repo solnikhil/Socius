@@ -4298,12 +4298,61 @@ dialog.create-bot,
 }
 
 /* ---------- Browser control ---------- */
+.chat.has-browser {
+  padding-right: 344px;
+}
+.chat.has-browser .chat-head {
+  right: 344px;
+}
+.browser-dock {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: 312px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .browser-panel {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--bubble);
   padding: 10px 14px;
   margin-bottom: 8px;
+}
+.browser-panel-row strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browser-panel-row .badge {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.browser-preview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 8 / 5;
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.browser-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.browser-preview p {
+  margin: 0;
+  padding: 16px;
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
 }
 .browser-panel-row {
   display: flex;
@@ -4332,6 +4381,91 @@ dialog.create-bot,
 }
 .browser-panel .modal-actions {
   margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.browser-panel .modal-actions button {
+  justify-content: center;
+  padding: 7px 6px;
+  font-size: 11px;
+}
+@media (max-width: 1100px) {
+  .chat.has-browser {
+    padding-right: 284px;
+  }
+  .chat.has-browser .chat-head {
+    right: 284px;
+  }
+  .browser-dock {
+    width: 260px;
+    right: 12px;
+  }
+  .chat.has-browser .thread {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .chat.has-browser .composer-wrap {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+@media (max-width: 760px) {
+  .chat.has-browser {
+    padding-right: 0;
+  }
+  .chat.has-browser .chat-head {
+    right: 0;
+  }
+  .browser-dock {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    width: auto;
+    margin: 68px 16px 0;
+    max-height: 230px;
+    flex-shrink: 0;
+  }
+  .chat.has-browser .thread {
+    padding-top: 16px;
+  }
+  .browser-preview {
+    width: 112px;
+    height: 70px;
+    margin-top: 0;
+    grid-column: 1;
+    grid-row: 2 / span 2;
+  }
+  .browser-panel {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 6px;
+    padding: 10px;
+  }
+  .browser-panel-row,
+  .browser-panel .modal-actions,
+  .browser-panel > .error {
+    grid-column: 1 / -1;
+  }
+  .browser-panel-page,
+  .browser-panel-note {
+    grid-column: 2;
+    margin: 0;
+    font-size: 11px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .browser-panel-note {
+    max-height: 44px;
+    overflow-y: auto;
+  }
+  .browser-panel .modal-actions {
+    margin-top: 0;
+  }
+  .browser-panel .modal-actions button {
+    min-height: 44px;
+  }
 }
 .browser-action-details {
   display: grid;
