@@ -191,7 +191,9 @@ npm run site         # dev server for the marketing site in apps/site
 npm run site:build   # static build into dist/site
 ```
 
-A static, Notion-styled product page with animated sections and a live product demo. It reuses the app's own avatar faces, provider marks and shadcn primitives through the `@` alias, so the mascot and logos stay in sync with the app. It describes only shipped behavior, and it labels previews as previews. It has no analytics. Fonts load from Google Fonts. It isn't deployed anywhere yet.
+A static, Notion-styled product page with animated sections and a live product demo. It reuses the app's own avatar faces, provider marks and shadcn primitives through the `@` alias, so the mascot and logos stay in sync with the app. It describes only shipped behavior, and it labels previews as previews. It has no analytics. Fonts load from Google Fonts.
+
+Live at **https://socius-site.vercel.app** (Vercel project `socius-site`). To redeploy, run `npm run site:build`, then run `npx vercel deploy --prod` from a copy of `dist/site` in a folder named `socius-site`. The folder name selects the Vercel project.
 
 ## Not implemented yet
 

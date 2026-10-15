@@ -16,7 +16,6 @@ const links = [
   ["Features", "#features"],
   ["How it works", "#how"],
   ["Privacy", "#privacy"],
-  ["Pricing", "#pricing"],
   ["FAQ", "#faq"],
 ] as const;
 

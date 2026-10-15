@@ -161,7 +161,7 @@ export function Hero() {
 
         <motion.div style={{ opacity: fade }}>
           <motion.a
-            href="#pricing"
+            href="#get"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease, delay: 0.3 }}

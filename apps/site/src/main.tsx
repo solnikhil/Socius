@@ -8,7 +8,7 @@ import { Providers } from "./sections/Providers.js";
 import { Features } from "./sections/Features.js";
 import { HowItWorks } from "./sections/HowItWorks.js";
 import { Privacy } from "./sections/Privacy.js";
-import { Pricing } from "./sections/Pricing.js";
+import { GetStarted } from "./sections/GetStarted.js";
 import { Faq } from "./sections/Faq.js";
 import { Closing, Footer } from "./sections/Closing.js";
 import "./site.css";
@@ -25,7 +25,7 @@ function Site() {
         <Features />
         <HowItWorks />
         <Privacy />
-        <Pricing />
+        <GetStarted />
         <Faq />
         <Closing />
       </main>

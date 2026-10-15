@@ -60,7 +60,6 @@ export function Footer() {
       [
         ["Features", "#features"],
         ["How it works", "#how"],
-        ["Pricing", "#pricing"],
         ["FAQ", "#faq"],
       ],
     ],
