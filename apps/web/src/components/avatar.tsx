@@ -36,6 +36,27 @@ const shapes: Record<BotShape, ReactNode> = {
   ),
   wide: <ellipse cx="20" cy="22" rx="18" ry="14.5" />,
 };
+/**
+ * Socius's own silhouette: a soft nine-lobed "cookie" no specialist can pick, traced
+ * as a smooth closed curve through points on r(θ) = 16.4 + 1.25·cos 9θ.
+ */
+const sociusPath = (() => {
+  const steps = 72;
+  const pts = Array.from({ length: steps }, (_, i) => {
+    const t = (i / steps) * 2 * Math.PI;
+    const r = 16.4 + 1.25 * Math.cos(9 * t);
+    return [20 + r * Math.sin(t), 21 - r * Math.cos(t)] as const;
+  });
+  const at = (i: number) => pts[(i + steps) % steps]!;
+  const f = (n: number) => n.toFixed(2);
+  let d = `M${f(pts[0]![0])} ${f(pts[0]![1])}`;
+  // Catmull-Rom segments as cubic Béziers keep the scallops smooth.
+  for (let i = 0; i < steps; i++) {
+    const [a, b, c, e] = [at(i - 1), at(i), at(i + 1), at(i + 2)];
+    d += `C${f(b[0] + (c[0] - a[0]) / 6)} ${f(b[1] + (c[1] - a[1]) / 6)} ${f(c[0] - (e[0] - b[0]) / 6)} ${f(c[1] - (e[1] - b[1]) / 6)} ${f(c[0])} ${f(c[1])}`;
+  }
+  return `${d}z`;
+})();
 export const shapeNames: Record<BotShape, string> = {
   round: "Round",
   squircle: "Soft square",
@@ -141,7 +162,7 @@ function Eyes({ eyes, main }: { eyes: BotEyes; main: boolean }) {
 
 /**
  * A bot's face. It breathes, blinks, glances or circles its eyes when idle, follows
- * the pointer like a magnet and gets livelier while `busy`. Reduced motion keeps it still.
+ * the pointer like a magnet and, while `busy`, bobs and revolves its eyes in a smooth circle. Reduced motion keeps it still.
  */
 export function Avatar({
   name,
@@ -162,7 +183,7 @@ export function Avatar({
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => trackAvatar(ref.current!), []);
   const h = hash(name);
-  // Socius keeps its round monochrome face; specialists wear their chosen look.
+  // Socius keeps its monochrome cookie face; specialists wear their chosen look.
   const look = main
     ? { shape: "round" as const, eyes: appearance?.eyes ?? "slant" }
     : appearanceOf(name, appearance);
@@ -188,7 +209,7 @@ export function Avatar({
         <span className="avatar-breathe">
           <svg viewBox="0 0 40 40" width={size} height={size}>
             <g fill={main ? "var(--main-avatar)" : botColor(name)}>
-              {shapes[look.shape]}
+              {main ? <path d={sociusPath} /> : shapes[look.shape]}
             </g>
             <g className="avatar-eyes">
               <g className="avatar-idle">

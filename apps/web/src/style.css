@@ -624,12 +624,12 @@ main > .error {
 .avatars-watching .avatar:not(.busy) .avatar-idle {
   animation: none;
 }
-/* Working on a reply: a quicker bob and eyes that keep circling. */
+/* Working on a reply: a quicker bob and eyes that keep revolving. */
 .avatar.busy .avatar-breathe {
   animation: avatar-bob 0.9s ease-in-out infinite;
 }
 .avatar.busy .avatar-idle {
-  animation: avatar-spin 1.4s linear infinite;
+  animation: avatar-spin 1.6s linear infinite;
 }
 @keyframes avatar-breathe {
   0%,
@@ -741,19 +741,14 @@ main > .error {
     transform: translate(0.6px, 2px);
   }
 }
+/* rotate·translate·counter-rotate nets a pure translation around a circle, so the
+   eyes travel right → bottom → left → top smoothly without tilting. */
 @keyframes avatar-spin {
-  0%,
-  100% {
-    transform: translate(2px, 0);
+  from {
+    transform: rotate(0deg) translateX(2.2px) rotate(0deg);
   }
-  25% {
-    transform: translate(0, 2px);
-  }
-  50% {
-    transform: translate(-2px, 0);
-  }
-  75% {
-    transform: translate(0, -2px);
+  to {
+    transform: rotate(360deg) translateX(2.2px) rotate(-360deg);
   }
 }
 @media (prefers-reduced-motion: reduce) {
