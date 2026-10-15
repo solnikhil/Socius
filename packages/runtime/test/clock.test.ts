@@ -60,6 +60,14 @@ test("every model call carries the current time, and getCurrentTime answers othe
     assert.match(first, /Tools you can call right now: [^\n]*getCurrentTime/);
     assert.match(first, /Never say you can't access the time/);
     assert.match(first, /Answer general questions/);
+    // The newest user turn also carries the time, for models that skim system prompts.
+    const lastUser = payload.messages.findLast(
+      (m: { role: string }) => m.role === "user",
+    );
+    assert.match(
+      JSON.stringify(lastUser.content),
+      /Socius runtime note[^"]*02:00 on Thursday, 15 October 2026/,
+    );
     assert.ok(
       first.indexOf("Runtime facts") < first.indexOf("You are Socius"),
       "facts precede the bot's own instructions",

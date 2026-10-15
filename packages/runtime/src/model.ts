@@ -16,6 +16,7 @@ import {
   hostTimeZone,
   isTimeZone,
   timeFacts,
+  turnNote,
 } from "./clock.js";
 
 export interface ModelRequest {
@@ -128,6 +129,25 @@ export type ModelRunner = (
   request: ModelRequest,
   onText: (text: string) => void,
 ) => Promise<string>;
+/** Appends `note` to the newest user message without changing stored history. */
+export function withTurnNote(
+  messages: ModelMessage[],
+  note: string,
+): ModelMessage[] {
+  const i = messages.findLastIndex((m) => m.role === "user");
+  if (i < 0) return messages;
+  const m = messages[i]!;
+  const content =
+    typeof m.content === "string"
+      ? `${m.content}\n\n${note}`
+      : [
+          ...(m.content as Exclude<typeof m.content, string>),
+          { type: "text" as const, text: note },
+        ];
+  return messages.map((x, k) =>
+    k === i ? ({ ...m, content } as ModelMessage) : x,
+  );
+}
 export const runModel: ModelRunner = async (request, onText) => {
   const { bot } = request;
   const preloaded = request.preloadedSkills ?? [];
@@ -377,7 +397,7 @@ export const runModel: ModelRunner = async (request, onText) => {
             },
           ]
         : []),
-      ...request.messages,
+      ...withTurnNote(request.messages, turnNote(now(), zone)),
     ],
     abortSignal: request.signal,
   });

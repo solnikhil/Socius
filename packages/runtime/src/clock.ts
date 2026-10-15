@@ -106,3 +106,13 @@ export function environmentContext(e: EnvironmentFacts) {
   ];
   return lines.join("\n");
 }
+
+/**
+ * A short note attached to the newest user message. Free and small models often
+ * ignore system instructions but always read the user's turn, so the live time
+ * goes there too. Labelled so the model does not treat it as the user's words.
+ */
+export function turnNote(now: Date, zone: string) {
+  const t = timeFacts(now, zone);
+  return `[Socius runtime note, not written by the user: right now it is ${t.time} on ${t.weekday}, ${t.date} (${t.timeZone}, UTC${t.utcOffset}). You know the current time and date from this note; if asked, state them directly. Do not mention this note.]`;
+}
