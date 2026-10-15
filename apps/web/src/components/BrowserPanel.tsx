@@ -122,17 +122,20 @@ export function visibleSessions(state: Snapshot, botIds: string[]) {
 export function BrowserPanel({
   session: s,
   botName,
+  collapsed,
+  onToggle,
   onRefresh,
   onResume,
 }: {
   session: BrowserSession;
   botName: string;
+  collapsed: boolean;
+  onToggle: () => void;
   onRefresh: () => Promise<void>;
   onResume: (session: BrowserSession) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(""),
-    [error, setError] = useState(""),
-    [collapsed, setCollapsed] = useState(false);
+    [error, setError] = useState("");
   const tab = s.tabs.find((t) => t.active) ?? s.tabs[0];
   const owner = OWNER[s.mode];
   // `resumed:` marks a handback for the runtime; it is not a message.
@@ -173,7 +176,7 @@ export function BrowserPanel({
             collapsed ? "Expand browser preview" : "Collapse browser preview"
           }
           aria-expanded={!collapsed}
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={onToggle}
         >
           {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </button>

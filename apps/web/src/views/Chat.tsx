@@ -118,6 +118,8 @@ export function Chat({
     // The reply whose reaction badge is animating out.
     [leaving, setLeaving] = useState(""),
     [busy, setBusy] = useState(false),
+    // Browser panels the user expanded or collapsed, by session ID.
+    [browserOpen, setBrowserOpen] = useState<Record<string, boolean>>({}),
     [taskId, setTaskId] = useState(""),
     [error, setError] = useState(""),
     [errorCode, setErrorCode] = useState(""),
@@ -446,6 +448,11 @@ export function Chat({
     state,
     group ? [bot.id, ...group.memberIds] : [bot.id],
   );
+  // A stopped browser starts collapsed. Only an expanded panel reserves the
+  // side column; collapsed ones sit in the corner and leave the chat centered.
+  const expanded = (s: (typeof sessions)[number]) =>
+    browserOpen[s.id] ?? s.mode !== "stopped";
+  const docked = sessions.some(expanded);
   const browserActions = state.browserActions
     .filter(
       (a) =>
@@ -523,13 +530,23 @@ export function Chat({
   const empty = messages.length === 0 && !busy;
   const working = busy || !!running;
   return (
-    <div className={`chat${sessions.length ? " has-browser" : ""}`}>
+    <div className={`chat${docked ? " has-browser" : ""}`}>
       {sessions.length > 0 && (
-        <aside className="browser-dock" aria-label="Browser workspace">
+        <aside
+          className={`browser-dock${docked ? "" : " compact"}`}
+          aria-label="Browser workspace"
+        >
           {sessions.map((session) => (
             <BrowserPanel
               key={session.id}
               session={session}
+              collapsed={!expanded(session)}
+              onToggle={() =>
+                setBrowserOpen((open) => ({
+                  ...open,
+                  [session.id]: !expanded(session),
+                }))
+              }
               botName={author(session.botId)?.name ?? bot.name}
               onRefresh={onRefresh}
               onResume={continueBrowsing}

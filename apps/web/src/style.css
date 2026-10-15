@@ -4112,6 +4112,12 @@ dialog.create-bot,
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* Collapsed panels only: a corner strip that leaves the chat centered. */
+.browser-dock.compact {
+  bottom: auto;
+  overflow: visible;
+  z-index: 11;
+}
 .browser-panel {
   border: 1px solid var(--border);
   border-radius: 14px;

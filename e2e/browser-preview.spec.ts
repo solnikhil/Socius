@@ -115,8 +115,11 @@ test("browser preview sits beside chat and native window minimizes, restores and
       .getByRole("button", { name: "Collapse browser preview" })
       .click();
     await expect(preview).toHaveCount(0);
+    // A collapsed panel gives the column back, so the chat stays centered.
+    await expect(page.locator(".chat")).not.toHaveClass(/has-browser/);
     await dock.getByRole("button", { name: "Expand browser preview" }).click();
     await expect(preview).toBeVisible();
+    await expect(page.locator(".chat")).toHaveClass(/has-browser/);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Hide sidebar" }).click();
     await expect(page.locator(".sidebar")).toBeHidden();
