@@ -166,3 +166,18 @@ test("the environment block lists only real tools and states plainly when there 
     /Wednesday, 14 October 2026, 20:30/,
   );
 });
+
+test("with browser tools, live questions are sent to the web; without them, nothing is promised", () => {
+  const withBrowser = environmentContext({
+    now: instant,
+    timeZone: "UTC",
+    tools: ["getCurrentTime", "browserOpen", "browserSearch"],
+  });
+  assert.match(withBrowser, /use the browser tools to look it up/);
+  const without = environmentContext({
+    now: instant,
+    timeZone: "UTC",
+    tools: ["getCurrentTime"],
+  });
+  assert.doesNotMatch(without, /browser tools/);
+});

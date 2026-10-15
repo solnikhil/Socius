@@ -103,6 +103,11 @@ export function environmentContext(e: EnvironmentFacts) {
         ]
       : []),
     "- Answer general questions (knowledge, explanations, writing, maths, code, advice) directly from what you know. Tool and app limits are about actions and live data, never about knowledge.",
+    ...(e.tools.some((t) => t.startsWith("browser"))
+      ? [
+          "- For live or recent information you don't know (news, prices, scores, weather, schedules, anything after your training), use the browser tools to look it up on the public web, then answer briefly and name the site. Don't browse for things you already know.",
+        ]
+      : []),
   ];
   return lines.join("\n");
 }
